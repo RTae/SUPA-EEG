@@ -1,5 +1,7 @@
 """Training loops for classification and generation tasks."""
 
+import os
+
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -47,6 +49,7 @@ def train_classifier(
             best_acc = acc
             best_epoch = epoch
             if save_path:
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 torch.save(model.state_dict(), save_path)
 
     return best_acc, best_epoch
@@ -94,6 +97,7 @@ def train_generator(
             best_loss = total_test_loss
             best_epoch = epoch
             if save_path:
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 torch.save(model.state_dict(), save_path)
 
     return best_epoch, best_loss
