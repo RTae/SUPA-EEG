@@ -1,0 +1,4 @@
+name: rf
+type: simple
+params:
+  n_estimators: 200

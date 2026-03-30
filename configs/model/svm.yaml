@@ -1,0 +1,6 @@
+name: svm
+type: simple
+params:
+  kernel: linear
+  C: 1.0
+  probability: true

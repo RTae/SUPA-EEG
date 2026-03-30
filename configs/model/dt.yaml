@@ -1,0 +1,4 @@
+name: dt
+type: simple
+params:
+  criterion: entropy

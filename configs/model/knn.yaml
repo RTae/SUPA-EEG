@@ -1,0 +1,4 @@
+name: knn
+type: simple
+params:
+  n_neighbors: 5

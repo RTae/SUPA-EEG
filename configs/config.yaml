@@ -1,0 +1,28 @@
+defaults:
+  - model: eegnet
+  - _self_
+
+dataset_dir: data/
+granularity: coarse
+subject: 0
+batch_size: 40
+output_dir: output/
+pretrained_model: null
+
+diffusion:
+  sd_model: CompVis/stable-diffusion-v1-4
+  image_size: 512
+  num_inference_steps: 50
+  guidance_scale: 7.5
+  seed: 42
+
+blip:
+  model: Salesforce/blip-image-captioning-base
+  generation:
+    max_length: 200
+    num_beams: 20
+    temperature: 0.5
+    top_k: 0
+    top_p: 0.9
+    repetition_penalty: 2.0
+    do_sample: true
