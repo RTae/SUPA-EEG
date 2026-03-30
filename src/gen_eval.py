@@ -5,13 +5,17 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import typer
 from transformers import CLIPTextModel, CLIPTokenizer
 from diffusers import AutoencoderKL, PNDMScheduler, UNet2DConditionModel
 
 from dataset import EEGImageNetDataset
 from preprocessing.de_feat_cal import de_feat_cal
 from model.mlp_sd import MLPMapper
-from utilities import build_arg_parser, get_device
+from utilities import (
+    Args, BatchSize, DatasetDir, Granularity, Model,
+    OutputDir, PretrainedModel, Subject, get_device,
+)
 
 SD_MODEL_NAME = "CompVis/stable-diffusion-v1-4"
 IMAGE_SIZE = 512
@@ -104,12 +108,18 @@ def save_generated_images(args, dataloader, model, clip_embeddings, device, pipe
                 img.save(os.path.join(output_subdir, f"{i + 1 + batch_idx * args.batch_size}.png"))
 
 
-if __name__ == "__main__":
-    parser = build_arg_parser()
-    args = parser.parse_args()
+def main(
+    dataset_dir: DatasetDir = "data/",
+    granularity: Granularity = "coarse",
+    model: Model = "mlp_sd",
+    batch_size: BatchSize = 40,
+    subject: Subject = 0,
+    output_dir: OutputDir = "output/",
+    pretrained_model: PretrainedModel = None,
+) -> None:
+    args = Args(dataset_dir, granularity, model, batch_size, subject, output_dir, pretrained_model)
     print(args)
-    
-    # Device
+
     device = get_device()
 
     dataset = EEGImageNetDataset.from_args(args, map_location=device)
@@ -117,16 +127,19 @@ if __name__ == "__main__":
     de_feat = de_feat_cal(eeg_data, args.subject, args.granularity)
     dataset.add_frequency_feat(de_feat)
 
-    device = get_device()
-    model = model_init(args.model)
+    nn_model = model_init(args.model)
     clip_embeddings = torch.load(os.path.join(args.output_dir, "clip_embeddings.pth"), map_location="cpu")
 
     if args.pretrained_model:
-        model.load_state_dict(torch.load(os.path.join(args.output_dir, args.pretrained_model), map_location="cpu"))
+        nn_model.load_state_dict(torch.load(os.path.join(args.output_dir, args.pretrained_model), map_location="cpu"))
 
     if args.model.lower() == "mlp_sd":
         dataset.use_frequency_feat = True
         dataset.use_image_label = True
         dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
         pipeline = load_diffusion_pipeline(device)
-        save_generated_images(args, dataloader, model, clip_embeddings, device, pipeline)
+        save_generated_images(args, dataloader, nn_model, clip_embeddings, device, pipeline)
+
+
+if __name__ == "__main__":
+    typer.run(main)

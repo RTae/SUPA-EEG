@@ -1,7 +1,9 @@
-import argparse
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated, Optional
 
 import torch
+import typer
 
 # -- EEG channel groups --
 PRE_FRONTAL = ["FP1", "FPZ", "FP2", "AF3", "AF4"]
@@ -60,16 +62,23 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    """Return the shared CLI argument parser used by most scripts."""
+# -- Typer CLI option type aliases --
+DatasetDir = Annotated[str, typer.Option("-d", "--dataset-dir", help="EEG-ImageNet dataset directory")]
+Granularity = Annotated[str, typer.Option("-g", "--granularity", help="coarse | fine0-fine4 | all")]
+Model = Annotated[str, typer.Option("-m", "--model", help="model name")]
+BatchSize = Annotated[int, typer.Option("-b", "--batch-size", help="batch size")]
+Subject = Annotated[int, typer.Option("-s", "--subject", help="subject id (0-15)")]
+OutputDir = Annotated[str, typer.Option("-o", "--output-dir", help="directory to save results")]
+PretrainedModel = Annotated[Optional[str], typer.Option("-p", "--pretrained-model", help="pretrained model filename")]
 
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset_dir", required=True, help="EEG-ImageNet dataset directory")
-    parser.add_argument("-g", "--granularity", required=True, help="coarse | fine0-fine4 | all")
-    parser.add_argument("-m", "--model", required=True, help="model name")
-    parser.add_argument("-b", "--batch_size", default=40, type=int, help="batch size")
-    parser.add_argument("-p", "--pretrained_model", help="pretrained model filename")
-    parser.add_argument("-s", "--subject", default=0, type=int, help="subject id (0-15)")
-    parser.add_argument("-o", "--output_dir", required=True, help="directory to save results")
-    return parser
+@dataclass
+class Args:
+    """Container mirroring the old argparse namespace so downstream code stays compatible."""
+    dataset_dir: str
+    granularity: str
+    model: str
+    batch_size: int
+    subject: int
+    output_dir: str
+    pretrained_model: Optional[str]

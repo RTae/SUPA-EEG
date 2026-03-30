@@ -6,6 +6,8 @@ import torch.optim as optim
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
 
+import typer
+
 from dataset import EEGImageNetDataset
 from preprocessing.de_feat_cal import de_feat_cal
 from model.eegnet import EEGNet
@@ -13,7 +15,10 @@ from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
 from trainer import build_label_map, train_classifier
-from utilities import build_arg_parser, get_device
+from utilities import (
+    Args, BatchSize, DatasetDir, Granularity, Model,
+    OutputDir, PretrainedModel, Subject, get_device,
+)
 
 SIMPLE_MODELS = {"svm", "rf", "knn", "dt", "ridge"}
 
@@ -51,11 +56,18 @@ def model_init(args, is_simple: bool, num_classes: int, device: torch.device) ->
     raise ValueError(f"Unknown model: {args.model}")
 
 
-if __name__ == "__main__":
-    parser = build_arg_parser()
-    args = parser.parse_args()
+def main(
+    dataset_dir: DatasetDir = "data/",
+    granularity: Granularity = "coarse",
+    model: Model = "eegnet",
+    batch_size: BatchSize = 40,
+    subject: Subject = 0,
+    output_dir: OutputDir = "output/",
+    pretrained_model: PretrainedModel = None,
+) -> None:
+    args = Args(dataset_dir, granularity, model, batch_size, subject, output_dir, pretrained_model)
     print(args)
-    
+
     device = get_device()
 
     dataset = EEGImageNetDataset.from_args(args, map_location=device)
@@ -72,15 +84,14 @@ if __name__ == "__main__":
 
     model_name = args.model.lower()
     is_simple = model_name in SIMPLE_MODELS
-    device = get_device()
-    model = model_init(args, is_simple, len(dataset) // 50, device)
+    model_obj = model_init(args, is_simple, len(dataset) // 50, device)
 
     if args.pretrained_model:
-        model.load_state_dict(torch.load(os.path.join(args.output_dir, args.pretrained_model), map_location="cpu"))
+        model_obj.load_state_dict(torch.load(os.path.join(args.output_dir, args.pretrained_model), map_location="cpu"))
 
     if is_simple:
-        model.fit(de_feat[train_idx], all_labels[train_idx])
-        acc = accuracy_score(all_labels[test_idx], model.predict(de_feat[test_idx]))
+        model_obj.fit(de_feat[train_idx], all_labels[train_idx])
+        acc = accuracy_score(all_labels[test_idx], model_obj.predict(de_feat[test_idx]))
         with open(os.path.join(args.output_dir, "simple.txt"), "a", encoding="utf-8") as f:
             f.write(f"{acc}\n")
     else:
@@ -89,11 +100,15 @@ if __name__ == "__main__":
         train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True)
         test_loader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
         criterion = cfg["criterion"]()
-        optimizer = cfg["optimizer"](model.parameters())
+        optimizer = cfg["optimizer"](model_obj.parameters())
         save_path = os.path.join(args.output_dir, f"eegnet_s{args.subject}_1x_22.pth")
         acc, epoch = train_classifier(
-            model, train_loader, test_loader, criterion, optimizer, 1000, device, label_map,
+            model_obj, train_loader, test_loader, criterion, optimizer, 1000, device, label_map,
             save_path=save_path,
         )
         with open(os.path.join(args.output_dir, "eegnet.txt"), "a", encoding="utf-8") as f:
             f.write(f"{epoch}: {acc}\n")
+
+
+if __name__ == "__main__":
+    typer.run(main)

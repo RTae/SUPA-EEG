@@ -3,6 +3,7 @@ import os
 import torch
 from PIL import Image
 from tqdm import tqdm
+import typer
 from transformers import (
     BlipForConditionalGeneration,
     BlipProcessor,
@@ -11,7 +12,10 @@ from transformers import (
 )
 
 from dataset import EEGImageNetDataset
-from utilities import build_arg_parser, get_device
+from utilities import (
+    Args, BatchSize, DatasetDir, Granularity, Model,
+    OutputDir, PretrainedModel, Subject, get_device,
+)
 
 SD_MODEL_NAME = "CompVis/stable-diffusion-v1-4"
 BLIP_MODEL_NAME = "Salesforce/blip-image-captioning-base"
@@ -67,12 +71,22 @@ def generate_clip_embeddings(dataset: EEGImageNetDataset, output_dir: str, devic
     torch.save(embeddings, os.path.join(output_dir, "clip_embeddings.pth"))
 
 
-if __name__ == "__main__":
-    parser = build_arg_parser()
-    args = parser.parse_args()
+def main(
+    dataset_dir: DatasetDir = "data/",
+    granularity: Granularity = "all",
+    model: Model = "mlp_sd",
+    batch_size: BatchSize = 40,
+    subject: Subject = 0,
+    output_dir: OutputDir = "output/",
+    pretrained_model: PretrainedModel = None,
+) -> None:
+    args = Args(dataset_dir, granularity, model, batch_size, subject, output_dir, pretrained_model)
     print(args)
-    
-    device = get_device()
 
+    device = get_device()
     dataset = EEGImageNetDataset.from_args(args, map_location=device)
     generate_clip_embeddings(dataset, args.output_dir, device)
+
+
+if __name__ == "__main__":
+    typer.run(main)
