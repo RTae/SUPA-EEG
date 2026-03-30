@@ -107,6 +107,9 @@ python src/object_classification.py
 # Specify model and subject
 python src/object_classification.py model=rgnn subject=3
 
+# Change training hyperparameters
+python src/object_classification.py model.optimizer.lr=0.005 model.epochs=100
+
 # Sklearn baseline
 python src/object_classification.py model=svm
 ```
