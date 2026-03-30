@@ -41,7 +41,7 @@ data/
 
 2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) and place the `.pth` files in the `data/` directory.
 
-3. Download the ImageNet stimulus images and place them under `data/imageNet_images/`.
+3. Download the ImageNet images and place them under `data/imageNet_images/`. For generative task only, if you don't need to run a generator evaluation, you can skip this step.
 
 ## Installation
 1. Create the virtual environment and and preprocess the dataset (one-time setup):
