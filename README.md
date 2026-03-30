@@ -1,33 +1,9 @@
-# EEG-ImageNet: EEG-to-Image Generation & Classification
+# Time Series Project: EEG-ImageNet Dataset
 
-This project trains models to decode visual perception from EEG signals recorded while subjects viewed ImageNet images. It supports:
+This project trains models to decode visual perception from EEG signals recorded while subjects viewed ImageNet images which supports two main tasks:
 
 - **Object classification** — classify viewed object categories from EEG (EEGNet, MLP, RGNN, SVM, RF, KNN, etc.)
 - **Image generation** — reconstruct viewed images from EEG via Stable Diffusion (BLIP captioning → CLIP embedding → MLP mapper → diffusion)
-
-## Prerequisites
-
-1. Install [uv](https://github.com/astral-sh/uv):
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-
-2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) and place the `.pth` files in the `data/` directory.
-
-3. Download the ImageNet stimulus images and place them under `data/imageNet_images/`.
-
-## Installation
-
-```bash
-# Create the virtual environment and install dependencies (one-time)
-uv venv && uv sync
-
-# Activate
-source .venv/bin/activate
-
-# Merge the split dataset files (one-time)
-python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.pth data/EEG-ImageNet.pth
-```
 
 ## Project Structure
 
@@ -53,6 +29,32 @@ data/
 ├── EEG-ImageNet.pth          # Merged dataset
 ├── imageNet_images/          # Stimulus images (by synset)
 └── mode/                     # EEG montage files
+```
+
+
+## Prerequisites
+
+1. Install [uv](https://github.com/astral-sh/uv):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) and place the `.pth` files in the `data/` directory.
+
+3. Download the ImageNet stimulus images and place them under `data/imageNet_images/`.
+
+## Installation
+1. Create the virtual environment and and preprocess the dataset (one-time setup):
+```bash
+uv venv && uv sync
+
+uv python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.pth data/EEG-ImageNet.pth
+```
+
+## Development
+Activate the virtual environment:
+```bash
+source .venv/bin/activate
 ```
 
 ## Usage
