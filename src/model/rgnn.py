@@ -1,45 +1,67 @@
+import json
+from pathlib import Path
+
 import mne
 import numpy as np
-import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Function
-from torch_geometric.nn import global_add_pool, SGConv
+from torch_geometric.nn import SGConv, global_add_pool
 from torch_scatter import scatter_add
 
-channels = ["FP1", "FPZ", "FP2", "AF3", "AF4", "F7", "F5", "F3", "F1", "FZ", "F2", "F4", "F6", "F8", "FT7", "FC5",
-            "FC3", "FC1", "FCZ", "FC2", "FC4", "FC6", "FT8", "T7", "C5", "C3", "C1", "CZ", "C2", "C4", "C6", "T8",
-            "TP7", "CP5", "CP3", "CP1", "CPZ", "CP2", "CP4", "CP6", "TP8", "P7", "P5", "P3", "P1", "PZ", "P2",
-            "P4", "P6", "P8", "PO7", "PO5", "PO3", "POZ", "PO4", "PO6", "PO8", "CB1", "O1", "OZ", "O2", "CB2"]
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+
+CHANNELS = [
+    "FP1", "FPZ", "FP2", "AF3", "AF4", "F7", "F5", "F3", "F1", "FZ",
+    "F2", "F4", "F6", "F8", "FT7", "FC5", "FC3", "FC1", "FCZ", "FC2",
+    "FC4", "FC6", "FT8", "T7", "C5", "C3", "C1", "CZ", "C2", "C4",
+    "C6", "T8", "TP7", "CP5", "CP3", "CP1", "CPZ", "CP2", "CP4", "CP6",
+    "TP8", "P7", "P5", "P3", "P1", "PZ", "P2", "P4", "P6", "P8",
+    "PO7", "PO5", "PO3", "POZ", "PO4", "PO6", "PO8", "CB1", "O1", "OZ",
+    "O2", "CB2",
+]
+
+GLOBAL_CONNECTIONS = [
+    ("FP1", "FP2"), ("AF3", "AF4"), ("F5", "F6"), ("FC5", "FC6"),
+    ("C5", "C6"), ("CP5", "CP6"), ("P5", "P6"), ("PO5", "PO6"),
+    ("O1", "O2"),
+]
 
 
-def get_edge_weight():
-    montage = mne.channels.read_dig_fif('../data/mode/' + 'montage.fif')
-    montage.ch_names = json.load(open('../data/mode/' + "montage_ch_names.json"))
-    edge_pos = montage.get_positions()['ch_pos']
-    edge_weight = np.zeros([len(channels), len(channels)])
-    edge_pos_value = [edge_pos[key] for key in channels]
-    delta = 4710000000
-    edge_index = [[], []]
-    for i in range(len(channels)):
-        for j in range(len(channels)):
+def get_edge_weight(montage_dir: str | Path | None = None):
+    if montage_dir is None:
+        montage_dir = _DATA_DIR / "mode"
+    montage_dir = Path(montage_dir)
+
+    montage = mne.channels.read_dig_fif(str(montage_dir / "montage.fif"))
+    with open(montage_dir / "montage_ch_names.json", encoding="utf-8") as f:
+        montage.ch_names = json.load(f)
+
+    edge_pos = montage.get_positions()["ch_pos"]
+    n = len(CHANNELS)
+    edge_weight = np.zeros([n, n])
+    pos_values = [edge_pos[ch] for ch in CHANNELS]
+    delta = 4_710_000_000
+
+    edge_index: list[list[int]] = [[], []]
+    for i in range(n):
+        for j in range(n):
             edge_index[0].append(i)
             edge_index[1].append(j)
             if i == j:
                 edge_weight[i][j] = 1
             else:
-                edge_weight[i][j] = np.sum([(edge_pos_value[i][k] - edge_pos_value[j][k]) ** 2 for k in range(3)])
-                edge_weight[i][j] = min(1, delta / edge_weight[i][j])
-    global_connections = [['FP1', 'FP2'], ['AF3', 'AF4'], ['F5', 'F6'], ['FC5', 'FC6'], ['C5', 'C6'],
-                          ['CP5', 'CP6'], ['P5', 'P6'], ['PO5', 'PO6'], ['O1', 'O2']]
-    for item in global_connections:
-        i, j = item
-        if i in channels and j in channels:
-            i = channels.index(item[0])
-            j = channels.index(item[1])
+                dist_sq = sum((pos_values[i][k] - pos_values[j][k]) ** 2 for k in range(3))
+                edge_weight[i][j] = min(1, delta / dist_sq)
+
+    for ch_a, ch_b in GLOBAL_CONNECTIONS:
+        if ch_a in CHANNELS and ch_b in CHANNELS:
+            i = CHANNELS.index(ch_a)
+            j = CHANNELS.index(ch_b)
             edge_weight[i][j] -= 1
             edge_weight[j][i] -= 1
+
     return edge_index, edge_weight
 
 
