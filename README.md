@@ -87,7 +87,7 @@ python src/object_classification.py -d data/ -g coarse -m eegnet -s 0 -o output/
 python src/object_classification.py -d data/ -g coarse -m svm -s 0 -o output/
 ```
 
-### 3. Train EEG → CLIP mapper
+### 3. Train EEG to create image mapper (MLP to CLIP embedding space)
 
 ```bash
 python src/image_generation.py -d data/ -g coarse -m mlp_sd -s 0 -o output/
@@ -100,5 +100,5 @@ python src/gen_eval.py -d data/ -g coarse -m mlp_sd -s 0 -o output/ -p mlpsd_s0_
 ```
 
 ### 5. Visualization
-
+#### 5.1 Dataset visualization
 Open `viz.ipynb` in Jupyter to explore the EEG data interactively.
