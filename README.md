@@ -19,6 +19,14 @@ The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/ar
 ## Project Structure
 
 ```
+configs/
+├── config.yaml               # Shared defaults (dataset, output, diffusion, blip)
+└── model/                     # Per-model training hyperparameters
+    ├── eegnet.yaml
+    ├── mlp.yaml
+    ├── rgnn.yaml
+    ├── mlp_sd.yaml
+    ├── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
 src/
 ├── utilities.py              # Shared constants, helpers, CLI parser, device detection
 ├── dataset.py                # EEGImageNetDataset (PyTorch Dataset)
@@ -72,39 +80,48 @@ source .venv/bin/activate
 
 ## Usage
 
-All scripts share the same CLI (see `utilities.build_arg_parser()`):
+All scripts use [Hydra](https://hydra.cc/) for configuration. Defaults live in `configs/config.yaml` and per-model settings in `configs/model/`. Override any value from the CLI:
 
-| Flag | Description |
-|------|-------------|
-| `-d` | Dataset directory (e.g. `data/`) |
-| `-g` | Granularity: `coarse`, `fine0`–`fine4`, or `all` |
-| `-m` | Model name (e.g. `eegnet`, `mlp`, `rgnn`, `svm`, `mlp_sd`) |
-| `-b` | Batch size (default: 40) |
-| `-s` | Subject ID, 0–15 (default: 0) |
-| `-o` | Output directory |
-| `-p` | Pretrained model filename (optional) |
+| Key | Description | Default |
+|-----|-------------|---------|
+| `dataset_dir` | Dataset directory | `data/` |
+| `granularity` | `coarse`, `fine0`–`fine4`, or `all` | `coarse` |
+| `model` | Model config group (`eegnet`, `mlp`, `rgnn`, `svm`, `mlp_sd`, …) | `eegnet` |
+| `batch_size` | Batch size | `40` |
+| `subject` | Subject ID, 0–15 | `0` |
+| `output_dir` | Output directory | `output/` |
+| `pretrained_model` | Pretrained model filename | `null` |
+
+Training hyperparameters (lr, epochs, optimizer, …) are set per-model in `configs/model/<name>.yaml` and can also be overridden:
+
+```bash
+python src/object_classification.py model.optimizer.lr=0.005 model.epochs=500
+```
 
 ### 1. Object Classification (Baseline)
 
 ```bash
-# Deep model
-python src/object_classification.py -d data/ -g coarse -m eegnet -s 0 -o output/
+# Deep model (defaults to eegnet)
+python src/object_classification.py
+
+# Specify model and subject
+python src/object_classification.py model=rgnn subject=3
 
 # Sklearn baseline
-python src/object_classification.py -d data/ -g coarse -m svm -s 0 -o output/
+python src/object_classification.py model=svm
 ```
 
 ### 2. Image Generation (Baseline)
 
 ```bash
 # Step 1: Generate CLIP embeddings (one-time)
-python src/preprocessing/blip_clip.py -d data/ -g all -m mlp_sd -o output/
+python src/preprocessing/blip_clip.py granularity=all
 
 # Step 2: Train EEG → CLIP mapper
-python src/image_generation.py -d data/ -g coarse -m mlp_sd -s 0 -o output/
+python src/image_generation.py model=mlp_sd
 
 # Step 3: Generate images from EEG
-python src/gen_eval.py -d data/ -g coarse -m mlp_sd -s 0 -o output/ -p mlpsd_s0_0.pth
+python src/gen_eval.py model=mlp_sd pretrained_model=mlpsd_s0_0.pth
 ```
 
 ### 3. Visualization
