@@ -1,15 +1,17 @@
 import os
 
 from dataset import EEGImageNetDataset
-from utilities import build_arg_parser, wnid2category
+from utilities import build_arg_parser, get_device, wnid2category
 
 
 if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
     print(args)
-
-    dataset = EEGImageNetDataset.from_args(args)
+    
+    # Device
+    device = get_device()
+    dataset = EEGImageNetDataset.from_args(args, map_location=device)
 
     # Write per-sample image filenames
     with open(os.path.join(args.output_dir, f"s{args.subject}.txt"), "w", encoding="utf-8") as f:

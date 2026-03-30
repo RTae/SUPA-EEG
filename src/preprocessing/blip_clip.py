@@ -71,7 +71,8 @@ if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
     print(args)
-
-    dataset = EEGImageNetDataset.from_args(args)
+    
     device = get_device()
+
+    dataset = EEGImageNetDataset.from_args(args, map_location=device)
     generate_clip_embeddings(dataset, args.output_dir, device)

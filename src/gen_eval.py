@@ -108,8 +108,11 @@ if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
     print(args)
+    
+    # Device
+    device = get_device()
 
-    dataset = EEGImageNetDataset.from_args(args)
+    dataset = EEGImageNetDataset.from_args(args, map_location=device)
     eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
     de_feat = de_feat_cal(eeg_data, args.subject, args.granularity)
     dataset.add_frequency_feat(de_feat)

@@ -16,6 +16,7 @@ class EEGImageNetDataset(Dataset):
         subject: int = -1,
         granularity: str = "all",
         eeg_window: tuple[int, int] = (40, 440),
+        map_location: str | torch.device = "cpu",
     ) -> None:
         self.dataset_dir = dataset_dir
         self.subject = subject
@@ -23,7 +24,7 @@ class EEGImageNetDataset(Dataset):
         self.transform = transform
         self.eeg_window = eeg_window
 
-        loaded = self._load_checkpoint(os.path.join(self.dataset_dir, pth_name))
+        loaded = self._load_checkpoint(os.path.join(self.dataset_dir, pth_name), map_location)
         self.labels = loaded["labels"]
         self.images = loaded["images"]
         self.label_to_index = {label: idx for idx, label in enumerate(self.labels)}
@@ -42,6 +43,7 @@ class EEGImageNetDataset(Dataset):
         transform: Callable[[Image.Image], Any] | None = None,
         pth_name: str = "EEG-ImageNet.pth",
         eeg_window: tuple[int, int] = (40, 440),
+        map_location: str | torch.device = "cpu",
     ) -> "EEGImageNetDataset":
         dataset_dir = cls._read_opt(args, "dataset_dir", required=True)
         subject = cls._read_opt(args, "subject", default=-1)
@@ -53,6 +55,7 @@ class EEGImageNetDataset(Dataset):
             subject=subject,
             granularity=granularity,
             eeg_window=eeg_window,
+            map_location=map_location,
         )
 
     @staticmethod
@@ -67,13 +70,11 @@ class EEGImageNetDataset(Dataset):
         return default
 
     @staticmethod
-    def _load_checkpoint(path: str) -> dict[str, Any]:
+    def _load_checkpoint(path: str, map_location: str | torch.device = "cpu") -> dict[str, Any]:
         try:
-            # Prefer safe loading mode introduced in newer PyTorch versions.
-            return torch.load(path, map_location="cpu", weights_only=True)
+            return torch.load(path, map_location=map_location, weights_only=True)
         except pickle.UnpicklingError:
-            # Fallback for legacy checkpoints. Use only for trusted files.
-            return torch.load(path, map_location="cpu", weights_only=False)
+            return torch.load(path, map_location=map_location, weights_only=False)
 
     def _filter_subject(self, dataset: list[dict[str, Any]], subject: int) -> list[dict[str, Any]]:
         if subject == -1:
