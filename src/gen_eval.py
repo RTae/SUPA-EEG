@@ -3,6 +3,7 @@ import os
 import hydra
 import numpy as np
 import torch
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from PIL import Image
 from torch.utils.data import DataLoader
@@ -82,10 +83,10 @@ def model_init(model_name: str) -> torch.nn.Module:
     raise ValueError(f"Unknown model: {model_name}")
 
 
-def save_generated_images(cfg, dataloader, model, clip_embeddings, device, pipeline):
+def save_generated_images(run_dir, cfg, dataloader, model, clip_embeddings, device, pipeline):
     """Generate and save images for every batch in the dataloader."""
     tokenizer, text_encoder, vae, unet, scheduler = pipeline
-    output_subdir = os.path.join(cfg.output_dir, f"generated_s{cfg.subject}")
+    output_subdir = os.path.join(run_dir, f"generated_s{cfg.subject}")
     os.makedirs(output_subdir, exist_ok=True)
 
     model.to(device)
@@ -129,7 +130,8 @@ def main(cfg: DictConfig) -> None:
         dataset.use_image_label = True
         dataloader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=False)
         pipeline = load_diffusion_pipeline(cfg.diffusion, device)
-        save_generated_images(cfg, dataloader, nn_model, clip_embeddings, device, pipeline)
+        run_dir = HydraConfig.get().runtime.output_dir
+        save_generated_images(run_dir, cfg, dataloader, nn_model, clip_embeddings, device, pipeline)
 
 
 if __name__ == "__main__":
