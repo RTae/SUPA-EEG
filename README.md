@@ -1,9 +1,20 @@
-# Time Series Project: EEG-ImageNet Dataset
+# EEG-Based Visual Decoding
 
-This project trains models to decode visual perception from EEG signals recorded while subjects viewed ImageNet images which supports two main tasks:
+Decoding visual perception from EEG signals recorded while subjects viewed ImageNet images. This project supports two tasks:
 
-- **Object classification** — classify viewed object categories from EEG (EEGNet, MLP, RGNN, SVM, RF, KNN, etc.)
-- **Image generation** — reconstruct viewed images from EEG via Stable Diffusion (BLIP captioning → CLIP embedding → MLP mapper → diffusion)
+- **Object Classification** — classify viewed object categories from EEG
+- **Image Generation** — reconstruct viewed images from EEG via Stable Diffusion
+
+## Baseline: CROSSPT-EEG
+
+The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/arXiv.2404.02717) pipeline as a baseline:
+
+| Task | Pipeline | Models |
+|------|----------|--------|
+| Classification | EEG → DE features → classifier | EEGNet, MLP, RGNN, SVM, RF, KNN |
+| Generation | EEG → DE features → MLP → CLIP embedding → Stable Diffusion | MLPMapper (cross-modal projection) |
+
+> **Adding your own model:** Register it in `object_classification.py` (classification) or `image_generation.py` / `gen_eval.py` (generation). The shared dataset, feature extraction, and evaluation infrastructure are reusable.
 
 ## Project Structure
 
@@ -11,26 +22,25 @@ This project trains models to decode visual perception from EEG signals recorded
 src/
 ├── utilities.py              # Shared constants, helpers, CLI parser, device detection
 ├── dataset.py                # EEGImageNetDataset (PyTorch Dataset)
-├── de_feat_cal.py            # Differential-entropy feature extraction
-├── blip_clip.py              # Generate CLIP text embeddings from images via BLIP captions
-├── image_generation.py       # Train MLP mapper (EEG to CLIP embeddings)
+├── de_feat_cal.py            # Differential-entropy (DE) feature extraction
+├── object_classification.py  # Train & evaluate EEG classifiers
+├── blip_clip.py              # BLIP captioning → CLIP text embeddings (one-time)
+├── image_generation.py       # Train MLP mapper (EEG → CLIP embeddings)
 ├── gen_eval.py               # Generate images from EEG via Stable Diffusion
 ├── gen_img_list.py           # Export image filename / label reference lists
-├── object_classification.py  # Train & evaluate EEG classifiers
 └── model/
-    ├── eegnet.py             # EEGNet architecture
-    ├── mlp.py                # MLP classifier
-    ├── mlp_sd.py             # MLP mapper to CLIP embedding space
-    ├── rgnn.py               # Regularized Graph Neural Network
-    └── simple_model.py       # Sklearn baselines (SVM, RF, KNN, DT, Ridge)
+    ├── eegnet.py             # [Baseline] EEGNet
+    ├── mlp.py                # [Baseline] MLP classifier
+    ├── mlp_sd.py             # [Baseline] MLP mapper to CLIP embedding space
+    ├── rgnn.py               # [Baseline] Regularized Graph Neural Network
+    └── simple_model.py       # [Baseline] Sklearn (SVM, RF, KNN, DT, Ridge)
 scripts/
 └── merge_dataset.py          # Merge split .pth dataset files
 data/
-├── EEG-ImageNet.pth          # Merged dataset
-├── imageNet_images/          # Stimulus images (by synset)
+├── EEG-ImageNet.pth          # Merged EEG dataset
+├── imageNet_images/          # Stimulus images by synset (generation task only)
 └── mode/                     # EEG montage files
 ```
-
 
 ## Prerequisites
 
@@ -39,27 +49,25 @@ data/
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) and place the `.pth` files in the `data/` directory.
+2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) and place the `.pth` files in `data/`.
 
-3. Download the ImageNet images and place them under `data/imageNet_images/`. For generative task only, if you don't need to run a generator evaluation, you can skip this step.
+3. *(Generation task only)* Download ImageNet images and place them under `data/imageNet_images/`.
 
 ## Installation
-1. Create the virtual environment and and preprocess the dataset (one-time setup):
+
 ```bash
 uv venv && uv sync
-
-uv python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.pth data/EEG-ImageNet.pth
+python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.pth data/EEG-ImageNet.pth
 ```
 
-## Development
-Activate the virtual environment every time you start a new terminal session:
+Activate the environment in each new terminal:
 ```bash
 source .venv/bin/activate
 ```
 
 ## Usage
 
-All scripts share the same CLI interface (see `utilities.build_arg_parser()`):
+All scripts share the same CLI (see `utilities.build_arg_parser()`):
 
 | Flag | Description |
 |------|-------------|
@@ -71,34 +79,29 @@ All scripts share the same CLI interface (see `utilities.build_arg_parser()`):
 | `-o` | Output directory |
 | `-p` | Pretrained model filename (optional) |
 
-### 1. Generate CLIP embeddings (one-time per dataset)
+### 1. Object Classification (Baseline)
 
 ```bash
-python src/blip_clip.py -d data/ -g all -m mlp_sd -o output/
-```
-
-### 2. Object classification
-
-```bash
-# Deep model (EEGNet)
+# Deep model
 python src/object_classification.py -d data/ -g coarse -m eegnet -s 0 -o output/
 
 # Sklearn baseline
 python src/object_classification.py -d data/ -g coarse -m svm -s 0 -o output/
 ```
 
-### 3. Train EEG to create image mapper (MLP to CLIP embedding space)
+### 2. Image Generation (Baseline)
 
 ```bash
+# Step 1: Generate CLIP embeddings (one-time)
+python src/blip_clip.py -d data/ -g all -m mlp_sd -o output/
+
+# Step 2: Train EEG → CLIP mapper
 python src/image_generation.py -d data/ -g coarse -m mlp_sd -s 0 -o output/
-```
 
-### 4. Generate images from EEG
-
-```bash
+# Step 3: Generate images from EEG
 python src/gen_eval.py -d data/ -g coarse -m mlp_sd -s 0 -o output/ -p mlpsd_s0_0.pth
 ```
 
-### 5. Visualization
-#### 5.1 Dataset visualization
+### 3. Visualization
+
 Open `viz.ipynb` in Jupyter to explore the EEG data interactively.
