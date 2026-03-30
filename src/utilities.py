@@ -75,10 +75,10 @@ PretrainedModel = Annotated[Optional[str], typer.Option("-p", "--pretrained-mode
 @dataclass
 class Args:
     """Container mirroring the old argparse namespace so downstream code stays compatible."""
-    dataset_dir: str
-    granularity: str
-    model: str
-    batch_size: int
-    subject: int
-    output_dir: str
-    pretrained_model: Optional[str]
+    dataset_dir: str = "data/"
+    granularity: str = "coarse"
+    model: str = "eegnet"
+    batch_size: int = 40
+    subject: int = 0
+    output_dir: str = "output/"
+    pretrained_model: Optional[str] = None
