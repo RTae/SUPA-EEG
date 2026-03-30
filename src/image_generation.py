@@ -3,6 +3,7 @@ import os
 import hydra
 import numpy as np
 import torch
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader, Subset
 
@@ -50,13 +51,14 @@ def main(cfg: DictConfig) -> None:
         test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
         optimizer = build_optimizer(nn_model.parameters(), cfg.model.optimizer)
         criterion = torch.nn.MSELoss()
-        save_path = os.path.join(cfg.output_dir, f"mlpsd_s{cfg.subject}_0.pth")
+        run_dir = HydraConfig.get().runtime.output_dir
+        save_path = os.path.join(run_dir, f"mlpsd_s{cfg.subject}_0.pth")
         epoch, loss = train_generator(
             nn_model, train_loader, test_loader, criterion, optimizer,
             cfg.model.epochs, device, clip_embeddings, save_path=save_path,
         )
 
-    with open(os.path.join(cfg.output_dir, "mlpsd.txt"), "a", encoding="utf-8") as f:
+    with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
         f.write(f"{epoch}: {loss}\n")
 
 

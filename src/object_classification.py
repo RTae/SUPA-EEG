@@ -4,6 +4,7 @@ import hydra
 import numpy as np
 import torch
 import torch.optim as optim
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
@@ -61,10 +62,12 @@ def main(cfg: DictConfig) -> None:
             torch.load(os.path.join(cfg.output_dir, cfg.pretrained_model), map_location="cpu")
         )
 
+    run_dir = HydraConfig.get().runtime.output_dir
+
     if is_simple:
         model_obj.fit(de_feat[train_idx], all_labels[train_idx])
         acc = accuracy_score(all_labels[test_idx], model_obj.predict(de_feat[test_idx]))
-        with open(os.path.join(cfg.output_dir, "simple.txt"), "a", encoding="utf-8") as f:
+        with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"{acc}\n")
     else:
         dataset.use_frequency_feat = cfg.model.use_freq
@@ -72,12 +75,12 @@ def main(cfg: DictConfig) -> None:
         test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
-        save_path = os.path.join(cfg.output_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
+        save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
         acc, epoch = train_classifier(
             model_obj, train_loader, test_loader, criterion, optimizer,
             cfg.model.epochs, device, label_map, save_path=save_path,
         )
-        with open(os.path.join(cfg.output_dir, f"{cfg.model.name}.txt"), "a", encoding="utf-8") as f:
+        with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"{epoch}: {acc}\n")
 
 

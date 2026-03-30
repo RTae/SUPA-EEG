@@ -9,6 +9,12 @@ batch_size: 40
 output_dir: outputs/
 pretrained_model: null
 
+hydra:
+  run:
+    dir: ${output_dir}/${model.name}/s${subject}/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: false
+
 diffusion:
   sd_model: CompVis/stable-diffusion-v1-4
   image_size: 512
