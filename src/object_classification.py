@@ -3,7 +3,6 @@ import os
 import hydra
 import numpy as np
 import torch
-import torch.optim as optim
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
