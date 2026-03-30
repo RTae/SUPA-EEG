@@ -1,9 +1,10 @@
 import os
 
+import hydra
 import torch
+from omegaconf import DictConfig, OmegaConf
 from PIL import Image
 from tqdm import tqdm
-import typer
 from transformers import (
     BlipForConditionalGeneration,
     BlipProcessor,
@@ -12,39 +13,27 @@ from transformers import (
 )
 
 from dataset import EEGImageNetDataset
-from utilities import (
-    Args, BatchSize, DatasetDir, Granularity, Model,
-    OutputDir, PretrainedModel, Subject, get_device,
-)
-
-SD_MODEL_NAME = "CompVis/stable-diffusion-v1-4"
-BLIP_MODEL_NAME = "Salesforce/blip-image-captioning-base"
-
-BLIP_GENERATION_CONFIG = {
-    "max_length": 200,
-    "num_beams": 20,
-    "temperature": 0.5,
-    "top_k": 0,
-    "top_p": 0.9,
-    "repetition_penalty": 2.0,
-    "do_sample": True,
-}
+from utilities import get_device
 
 
-def generate_clip_embeddings(dataset: EEGImageNetDataset, output_dir: str, device: torch.device) -> None:
+def generate_clip_embeddings(
+    dataset: EEGImageNetDataset, output_dir: str, blip_cfg, sd_model: str, device: torch.device,
+) -> None:
     """Caption every image with BLIP, then encode captions into CLIP text embeddings."""
-    processor = BlipProcessor.from_pretrained(BLIP_MODEL_NAME, local_files_only=True)
+    processor = BlipProcessor.from_pretrained(blip_cfg.model, local_files_only=True)
     blip_model = BlipForConditionalGeneration.from_pretrained(
-        BLIP_MODEL_NAME, use_safetensors=True, local_files_only=True,
+        blip_cfg.model, use_safetensors=True, local_files_only=True,
     ).to(device)
 
     tokenizer = CLIPTokenizer.from_pretrained(
-        SD_MODEL_NAME, subfolder="tokenizer", local_files_only=True,
+        sd_model, subfolder="tokenizer", local_files_only=True,
     )
     text_encoder = CLIPTextModel.from_pretrained(
-        SD_MODEL_NAME, subfolder="text_encoder",
+        sd_model, subfolder="text_encoder",
         use_safetensors=True, local_files_only=True,
     ).to(device)
+
+    generation_config = OmegaConf.to_container(blip_cfg.generation, resolve=True)
 
     embeddings: dict[str, torch.Tensor] = {}
     caption_path = os.path.join(output_dir, "caption.txt")
@@ -54,7 +43,7 @@ def generate_clip_embeddings(dataset: EEGImageNetDataset, output_dir: str, devic
         raw_image = Image.open(image_path).convert("RGB")
 
         blip_inputs = processor(images=raw_image, return_tensors="pt").to(device)
-        out = blip_model.generate(**blip_inputs, **BLIP_GENERATION_CONFIG)
+        out = blip_model.generate(**blip_inputs, **generation_config)
         caption = processor.decode(out[0], skip_special_tokens=True)
 
         with open(caption_path, "a", encoding="utf-8") as f:
@@ -71,22 +60,15 @@ def generate_clip_embeddings(dataset: EEGImageNetDataset, output_dir: str, devic
     torch.save(embeddings, os.path.join(output_dir, "clip_embeddings.pth"))
 
 
-def main(
-    dataset_dir: DatasetDir = "data/",
-    granularity: Granularity = "all",
-    model: Model = "mlp_sd",
-    batch_size: BatchSize = 40,
-    subject: Subject = 0,
-    output_dir: OutputDir = "output/",
-    pretrained_model: PretrainedModel = None,
-) -> None:
-    args = Args(dataset_dir, granularity, model, batch_size, subject, output_dir, pretrained_model)
-    print(args)
+@hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
+def main(cfg: DictConfig) -> None:
+    print(OmegaConf.to_yaml(cfg))
 
     device = get_device()
-    dataset = EEGImageNetDataset.from_args(args, map_location=device)
-    generate_clip_embeddings(dataset, args.output_dir, device)
+    dataset = EEGImageNetDataset.from_args(cfg)
+    os.makedirs(cfg.output_dir, exist_ok=True)
+    generate_clip_embeddings(dataset, cfg.output_dir, cfg.blip, cfg.diffusion.sd_model, device)
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    main()
