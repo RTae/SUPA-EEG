@@ -7,14 +7,16 @@ Decoding visual perception from EEG signals recorded while subjects viewed Image
 
 ## Baseline: CROSSPT-EEG
 
-The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/arXiv.2404.02717) pipeline as a baseline:
+The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/arXiv.2406.07151) pipeline as a baseline:
 
 | Task | Pipeline | Models |
 |------|----------|--------|
 | Classification | EEG → DE features → classifier | EEGNet, MLP, RGNN, SVM, RF, KNN |
 | Generation | EEG → DE features → MLP → CLIP embedding → Stable Diffusion | MLPMapper (cross-modal projection) |
 
-> **Adding your own model:** Register it in `object_classification.py` (classification) or `image_generation.py` / `gen_eval.py` (generation). The shared dataset, feature extraction, and evaluation infrastructure are reusable.
+A self-supervised **EEG-JEPA** (Joint Embedding Predictive Architecture) model is also provided as a template for exploring representation learning on EEG.
+
+> **Adding your own model:** Create a file in `src/model/`, add a Hydra config in `configs/model/`, and register it in `object_classification.py` (classification) or `image_generation.py` / `gen_eval.py` (generation). The shared dataset, feature extraction, and evaluation infrastructure are reusable.
 
 ## Project Structure
 
@@ -25,10 +27,11 @@ configs/
     ├── eegnet.yaml
     ├── mlp.yaml
     ├── rgnn.yaml
+    ├── jepa.yaml
     ├── mlp_sd.yaml
     ├── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
 src/
-├── utilities.py              # Shared constants, helpers, CLI parser, device detection
+├── utilities.py              # Shared constants, helpers, device detection, benchmark splits
 ├── dataset.py                # EEGImageNetDataset (PyTorch Dataset)
 ├── object_classification.py  # Train & evaluate EEG classifiers
 ├── image_generation.py       # Train MLP mapper (EEG → CLIP embeddings)
@@ -46,7 +49,8 @@ src/
     ├── mlp.py                # [Baseline] MLP classifier
     ├── mlp_sd.py             # [Baseline] MLP mapper to CLIP embedding space
     ├── rgnn.py               # [Baseline] Regularized Graph Neural Network
-    └── simple_model.py       # [Baseline] Sklearn (SVM, RF, KNN, DT, Ridge)
+    ├── simple_model.py       # [Baseline] Sklearn (SVM, RF, KNN, DT, Ridge)
+    └── jepa.py               # EEG-JEPA (self-supervised + classifier)
 scripts/
 └── merge_dataset.py          # Merge split .pth dataset files
 data/
@@ -130,6 +134,21 @@ python src/object_classification.py model.optimizer.lr=0.005 model.epochs=100
 
 # Sklearn baseline
 python src/object_classification.py model=svm
+```
+
+### EEG-JEPA (Self-Supervised)
+
+JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation.
+
+```bash
+# Pre-train + fine-tune (pre-training runs automatically before classification)
+python src/object_classification.py model=jepa subject=0 metric=ct
+
+# Skip pre-training with a saved checkpoint
+python src/object_classification.py model=jepa pretrained_model=jepa_pretrained_s0.pth
+
+# Tune JEPA hyperparameters
+python src/object_classification.py model=jepa model.pretrain_epochs=200 model.mask_ratio=0.6 model.embed_dim=256
 ```
 
 ### Image Generation (Baseline)
