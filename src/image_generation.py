@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 
 from dataset import EEGImageNetDataset
-from de_feat_cal import de_feat_cal
+from preprocessing.de_feat_cal import de_feat_cal
 from model.mlp_sd import MLPMapper
 from trainer import train_generator
 from utilities import build_arg_parser, get_device

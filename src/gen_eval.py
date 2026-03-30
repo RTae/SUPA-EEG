@@ -9,7 +9,7 @@ from transformers import CLIPTextModel, CLIPTokenizer
 from diffusers import AutoencoderKL, PNDMScheduler, UNet2DConditionModel
 
 from dataset import EEGImageNetDataset
-from de_feat_cal import de_feat_cal
+from preprocessing.de_feat_cal import de_feat_cal
 from model.mlp_sd import MLPMapper
 from utilities import build_arg_parser, get_device
 

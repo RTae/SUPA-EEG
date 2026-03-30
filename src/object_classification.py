@@ -7,7 +7,7 @@ from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
 
 from dataset import EEGImageNetDataset
-from de_feat_cal import de_feat_cal
+from preprocessing.de_feat_cal import de_feat_cal
 from model.eegnet import EEGNet
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
