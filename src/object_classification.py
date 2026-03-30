@@ -5,7 +5,6 @@ import torch
 import torch.optim as optim
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
-from tqdm import tqdm
 
 from dataset import EEGImageNetDataset
 from de_feat_cal import de_feat_cal
@@ -13,6 +12,7 @@ from model.eegnet import EEGNet
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
+from trainer import build_label_map, train_classifier
 from utilities import build_arg_parser, get_device
 
 SIMPLE_MODELS = {"svm", "rf", "knn", "dt", "ridge"}
@@ -51,64 +51,6 @@ def model_init(args, is_simple: bool, num_classes: int, device: torch.device) ->
     raise ValueError(f"Unknown model: {args.model}")
 
 
-def train_and_evaluate(
-    args,
-    model: torch.nn.Module,
-    train_loader: DataLoader,
-    test_loader: DataLoader,
-    criterion: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    num_epochs: int,
-    device: torch.device,
-    all_labels: np.ndarray,
-) -> tuple[float, int]:
-    model = model.to(device)
-    unique_labels = torch.from_numpy(all_labels).unique()
-    label_map = {orig.item(): new for new, orig in enumerate(unique_labels)}
-
-    report_interval = max(len(train_loader) // 2, 1)
-    best_acc = 0.0
-    best_epoch = -1
-
-    for epoch in tqdm(range(num_epochs), desc="Training"):
-        # -- train --
-        model.train()
-        running_loss = 0.0
-        for batch_idx, (inputs, labels) in enumerate(train_loader):
-            labels = torch.tensor([label_map[l.item()] for l in labels])
-            inputs, labels = inputs.to(device), labels.to(device)
-            optimizer.zero_grad()
-            loss = criterion(model(inputs), labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            if batch_idx % report_interval == report_interval - 1:
-                print(f"[epoch {epoch}, batch {batch_idx}] loss: {running_loss / report_interval:.4f}")
-                running_loss = 0.0
-
-        # -- evaluate --
-        model.eval()
-        correct, total, test_loss = 0, 0, 0.0
-        with torch.no_grad():
-            for inputs, labels in test_loader:
-                labels = torch.tensor([label_map[l.item()] for l in labels])
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                test_loss += criterion(outputs, labels).item()
-                predicted = outputs.argmax(dim=1)
-                total += len(labels)
-                correct += accuracy_score(labels.cpu(), predicted.cpu(), normalize=False)
-
-        acc = correct / total
-        print(f"Accuracy: {acc:.4f}  |  Test loss: {test_loss / len(test_loader):.4f}")
-        if acc > best_acc:
-            best_acc = acc
-            best_epoch = epoch
-            torch.save(model.state_dict(), os.path.join(args.output_dir, f"eegnet_s{args.subject}_1x_22.pth"))
-
-    return best_acc, best_epoch
-
-
 if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
@@ -120,6 +62,7 @@ if __name__ == "__main__":
     dataset.add_frequency_feat(de_feat)
 
     all_labels = np.array([sample[1] for sample in dataset])
+    label_map = build_label_map(all_labels)
     train_idx = np.array([i for i in range(len(dataset)) if i % 50 < 30])
     test_idx = np.array([i for i in range(len(dataset)) if i % 50 >= 30])
     train_subset = Subset(dataset, train_idx)
@@ -145,8 +88,10 @@ if __name__ == "__main__":
         test_loader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
         criterion = cfg["criterion"]()
         optimizer = cfg["optimizer"](model.parameters())
-        acc, epoch = train_and_evaluate(
-            args, model, train_loader, test_loader, criterion, optimizer, 1000, device, all_labels,
+        save_path = os.path.join(args.output_dir, f"eegnet_s{args.subject}_1x_22.pth")
+        acc, epoch = train_classifier(
+            model, train_loader, test_loader, criterion, optimizer, 1000, device, label_map,
+            save_path=save_path,
         )
         with open(os.path.join(args.output_dir, "eegnet.txt"), "a", encoding="utf-8") as f:
             f.write(f"{epoch}: {acc}\n")
