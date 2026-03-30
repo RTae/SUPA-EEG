@@ -52,7 +52,7 @@ uv python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.p
 ```
 
 ## Development
-Activate the virtual environment:
+Activate the virtual environment every time you start a new terminal session:
 ```bash
 source .venv/bin/activate
 ```
