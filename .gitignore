@@ -8,5 +8,5 @@ __pycache__/
 .venv/
 
 EEG-ImageNet.pth
-/output
+/outputs
 **plot**
