@@ -18,5 +18,4 @@ dependencies = [
     "torch-scatter>=2.1.2",
     "torchvision>=0.24.1",
     "transformers>=5.4.0",
-    "typer>=0.24.1",
 ]
