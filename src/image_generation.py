@@ -11,7 +11,7 @@ from dataset import EEGImageNetDataset
 from preprocessing.de_feat_cal import de_feat_cal
 from model.mlp_sd import MLPMapper
 from trainer import train_generator
-from utilities import get_device, build_optimizer
+from utilities import get_device, build_optimizer, get_benchmark_split
 
 
 def model_init(model_name: str) -> torch.nn.Module:
@@ -26,13 +26,19 @@ def main(cfg: DictConfig) -> None:
 
     device = get_device()
 
-    dataset = EEGImageNetDataset.from_args(cfg)
+    # Load all subjects so benchmark splits can select across subjects/stages.
+    dataset = EEGImageNetDataset(
+        dataset_dir=cfg.dataset_dir,
+        subject=-1,
+        granularity=cfg.granularity,
+    )
     eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
-    de_feat = de_feat_cal(eeg_data, cfg.subject, cfg.granularity)
+    de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
     dataset.add_frequency_feat(de_feat)
 
-    train_idx = np.array([i for i in range(len(dataset)) if i % 50 < 30])
-    test_idx = np.array([i for i in range(len(dataset)) if i % 50 >= 30])
+    train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric, cfg.subject)
+    train_idx = np.array(train_idx)
+    test_idx = np.array(test_idx)
     train_subset = Subset(dataset, train_idx)
     test_subset = Subset(dataset, test_idx)
 

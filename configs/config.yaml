@@ -8,10 +8,11 @@ subject: 0
 batch_size: 40
 output_dir: outputs/
 pretrained_model: null
+metric: wt   # evaluation paradigm: wt (Within-Time), ct (Cross-Time), cp (Cross-Participant)
 
 hydra:
   run:
-    dir: ${output_dir}/${model.name}/s${subject}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${output_dir}/${model.name}/${metric}/s${subject}/${now:%Y-%m-%d_%H-%M-%S}
   job:
     chdir: false
 

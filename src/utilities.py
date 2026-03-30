@@ -76,6 +76,52 @@ def build_optimizer(params, opt_cfg):
     raise ValueError(f"Unknown optimizer type: {opt_cfg.type}")
 
 
+def get_benchmark_split(
+    data_list: list[dict],
+    metric_type: str,
+    target_subject: int,
+) -> tuple[list[int], list[int]]:
+    """Return (train_indices, test_indices) for the given evaluation paradigm.
+
+    Stage is inferred from the raw ``subject`` field:
+      - Stage 1: subject < 8   (first recording session)
+      - Stage 2: subject >= 8  (second session, ~7 days later)
+    RealID = subject % 8  (maps both sessions to the same person).
+
+    Supported *metric_type* values:
+      ``"wt"``  – Within-Time
+      ``"ct"``  – Cross-Time
+      ``"cp"``  – Cross-Participant
+    """
+    metric = metric_type.lower()
+
+    if metric == "ct":
+        train_idx = [i for i, s in enumerate(data_list)
+                     if s["subject"] % 8 == target_subject and s["subject"] < 8]
+        test_idx = [i for i, s in enumerate(data_list)
+                    if s["subject"] % 8 == target_subject and s["subject"] >= 8]
+
+    elif metric == "cp":
+        train_idx = [i for i, s in enumerate(data_list)
+                     if s["subject"] % 8 != target_subject and s["subject"] < 8]
+        test_idx = [i for i, s in enumerate(data_list)
+                    if s["subject"] % 8 == target_subject and s["subject"] < 8]
+
+    elif metric == "wt":
+        # Collect labels for this person's Stage-2 data, then split 30 / 20.
+        stage2 = [(i, s) for i, s in enumerate(data_list)
+                  if s["subject"] % 8 == target_subject and s["subject"] >= 8]
+        unique_labels = sorted(set(s["label"] for _, s in stage2))
+        seen_labels = set(unique_labels[:30])
+        train_idx = [i for i, s in stage2 if s["label"] in seen_labels]
+        test_idx  = [i for i, s in stage2 if s["label"] not in seen_labels]
+
+    else:
+        raise ValueError(f"Unknown metric_type '{metric_type}'. Expected 'wt', 'ct', or 'cp'.")
+
+    return train_idx, test_idx
+
+
 @dataclass
 class Args:
     """Container mirroring the old argparse namespace so downstream code stays compatible."""

@@ -16,7 +16,7 @@ from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
 from trainer import build_label_map, train_classifier
-from utilities import get_device, build_optimizer
+from utilities import get_device, build_optimizer, get_benchmark_split
 
 SIMPLE_MODELS = {"svm", "rf", "knn", "dt", "ridge"}
 
@@ -42,20 +42,33 @@ def main(cfg: DictConfig) -> None:
 
     device = get_device()
 
-    dataset = EEGImageNetDataset.from_args(cfg)
+    # Load all subjects so benchmark splits can select across subjects/stages.
+    dataset = EEGImageNetDataset(
+        dataset_dir=cfg.dataset_dir,
+        subject=-1,
+        granularity=cfg.granularity,
+    )
     eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
-    de_feat = de_feat_cal(eeg_data, cfg.subject, cfg.granularity)
+    de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
     dataset.add_frequency_feat(de_feat)
 
     all_labels = np.array([sample[1] for sample in dataset])
-    label_map = build_label_map(all_labels)
-    train_idx = np.array([i for i in range(len(dataset)) if i % 50 < 30])
-    test_idx = np.array([i for i in range(len(dataset)) if i % 50 >= 30])
+
+    train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric, cfg.subject)
+    train_idx = np.array(train_idx)
+    test_idx = np.array(test_idx)
+
+    # Build label map from the union of train+test labels so both loaders
+    # use a consistent mapping to contiguous indices.
+    combined_labels = np.concatenate([all_labels[train_idx], all_labels[test_idx]])
+    label_map = build_label_map(combined_labels)
+    num_classes = len(label_map)
+
     train_subset = Subset(dataset, train_idx)
     test_subset = Subset(dataset, test_idx)
 
     is_simple = cfg.model.type == "simple"
-    model_obj = model_init(cfg, len(dataset) // 50, device)
+    model_obj = model_init(cfg, num_classes, device)
 
     if cfg.pretrained_model:
         model_obj.load_state_dict(
