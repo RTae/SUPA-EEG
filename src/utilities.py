@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Optional
 
 import torch
-import typer
+import torch.optim as optim
 
 # -- EEG channel groups --
 PRE_FRONTAL = ["FP1", "FPZ", "FP2", "AF3", "AF4"]
@@ -62,14 +62,18 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-# -- Typer CLI option type aliases --
-DatasetDir = Annotated[str, typer.Option("-d", "--dataset-dir", help="EEG-ImageNet dataset directory")]
-Granularity = Annotated[str, typer.Option("-g", "--granularity", help="coarse | fine0-fine4 | all")]
-Model = Annotated[str, typer.Option("-m", "--model", help="model name")]
-BatchSize = Annotated[int, typer.Option("-b", "--batch-size", help="batch size")]
-Subject = Annotated[int, typer.Option("-s", "--subject", help="subject id (0-15)")]
-OutputDir = Annotated[str, typer.Option("-o", "--output-dir", help="directory to save results")]
-PretrainedModel = Annotated[Optional[str], typer.Option("-p", "--pretrained-model", help="pretrained model filename")]
+def build_optimizer(params, opt_cfg):
+    """Build a PyTorch optimizer from a Hydra model.optimizer config."""
+    if opt_cfg.type == "sgd":
+        return optim.SGD(
+            params,
+            lr=opt_cfg.lr,
+            weight_decay=opt_cfg.get("weight_decay", 0),
+            momentum=opt_cfg.get("momentum", 0),
+        )
+    if opt_cfg.type == "adam":
+        return optim.Adam(params, lr=opt_cfg.lr)
+    raise ValueError(f"Unknown optimizer type: {opt_cfg.type}")
 
 
 @dataclass
