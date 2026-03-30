@@ -88,8 +88,9 @@ All scripts use [Hydra](https://hydra.cc/) for configuration. Defaults live in `
 | `granularity` | `coarse`, `fine0`–`fine4`, or `all` | `coarse` |
 | `model` | Model config group (`eegnet`, `mlp`, `rgnn`, `svm`, `mlp_sd`, …) | `eegnet` |
 | `batch_size` | Batch size | `40` |
-| `subject` | Subject ID, 0–15 | `0` |
-| `output_dir` | Output directory | `output/` |
+| `subject` | Target subject (RealID), 0–7 | `0` |
+| `metric` | Evaluation paradigm: `wt`, `ct`, or `cp` | `wt` |
+| `output_dir` | Output directory | `outputs/` |
 | `pretrained_model` | Pretrained model filename | `null` |
 
 Training hyperparameters (lr, epochs, optimizer, …) are set per-model in `configs/model/<name>.yaml` and can also be overridden:
@@ -98,14 +99,31 @@ Training hyperparameters (lr, epochs, optimizer, …) are set per-model in `conf
 python src/object_classification.py model.optimizer.lr=0.005 model.epochs=500
 ```
 
-### 1. Object Classification (Baseline)
+### Evaluation Paradigms
+
+The dataset contains data from 16 raw subject IDs (0–15), which correspond to 8 real participants each recorded in two stages separated by ~7 days:
+
+| Raw subject | RealID (`subject % 8`) | Stage |
+|:-----------:|:----------------------:|:-----:|
+| 0–7         | 0–7                    | 1     |
+| 8–15        | 0–7                    | 2     |
+
+Three evaluation paradigms are supported via `metric=`:
+
+| Paradigm | `metric` | Train set | Test set |
+|----------|:--------:|-----------|----------|
+| **Within-Time** | `wt` | Target subject, Stage 2, first 30 labels | Target subject, Stage 2, remaining 20 labels |
+| **Cross-Time** | `ct` | Target subject, Stage 1 | Target subject, Stage 2 |
+| **Cross-Participant** | `cp` | All *other* subjects, Stage 1 | Target subject, Stage 1 |
+
+### Object Classification (Baseline)
 
 ```bash
-# Deep model (defaults to eegnet)
+# Deep model (defaults to eegnet, within-time)
 python src/object_classification.py
 
-# Specify model and subject
-python src/object_classification.py model=rgnn subject=3
+# Specify model, subject, and evaluation paradigm
+python src/object_classification.py model=rgnn subject=3 metric=ct
 
 # Change training hyperparameters
 python src/object_classification.py model.optimizer.lr=0.005 model.epochs=100
@@ -114,7 +132,7 @@ python src/object_classification.py model.optimizer.lr=0.005 model.epochs=100
 python src/object_classification.py model=svm
 ```
 
-### 2. Image Generation (Baseline)
+### Image Generation (Baseline)
 
 ```bash
 # Step 1: Generate CLIP embeddings (one-time)
@@ -127,6 +145,6 @@ python src/image_generation.py model=mlp_sd
 python src/gen_eval.py model=mlp_sd pretrained_model=mlpsd_s0_0.pth
 ```
 
-### 3. Visualization
+### Visualization
 
 Open `viz.ipynb` in Jupyter to explore the EEG data interactively.
