@@ -13,7 +13,7 @@ src/
 ├── dataset.py                # EEGImageNetDataset (PyTorch Dataset)
 ├── de_feat_cal.py            # Differential-entropy feature extraction
 ├── blip_clip.py              # Generate CLIP text embeddings from images via BLIP captions
-├── image_generation.py       # Train MLP mapper (EEG → CLIP embeddings)
+├── image_generation.py       # Train MLP mapper (EEG to CLIP embeddings)
 ├── gen_eval.py               # Generate images from EEG via Stable Diffusion
 ├── gen_img_list.py           # Export image filename / label reference lists
 ├── object_classification.py  # Train & evaluate EEG classifiers
