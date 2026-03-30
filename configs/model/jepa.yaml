@@ -1,0 +1,22 @@
+name: jepa
+type: deep
+use_freq: false
+epochs: 200
+
+# Architecture
+patch_len: 40
+embed_dim: 128
+enc_depth: 4
+pred_depth: 2
+num_heads: 4
+mlp_ratio: 4.0
+dropout: 0.1
+mask_ratio: 0.5
+ema_decay: 0.996
+
+# Pre-training
+pretrain_epochs: 100
+
+optimizer:
+  type: adam
+  lr: 0.001

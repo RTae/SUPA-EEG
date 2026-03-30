@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, Subset
 from dataset import EEGImageNetDataset
 from preprocessing.de_feat_cal import de_feat_cal
 from model.eegnet import EEGNet
+from model.jepa import EEGJEPA, jepa_loss
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
@@ -32,6 +33,21 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
     if name == "rgnn":
         edge_index, edge_weight = get_edge_weight()
         return RGNN(device, 62, edge_weight, edge_index, 5, 200, num_classes, 2)
+    if name == "jepa":
+        return EEGJEPA(
+            n_channels=62,
+            seq_len=400,
+            patch_len=cfg.model.patch_len,
+            embed_dim=cfg.model.embed_dim,
+            enc_depth=cfg.model.enc_depth,
+            pred_depth=cfg.model.pred_depth,
+            num_heads=cfg.model.num_heads,
+            mlp_ratio=cfg.model.mlp_ratio,
+            dropout=cfg.model.dropout,
+            mask_ratio=cfg.model.mask_ratio,
+            ema_decay=cfg.model.ema_decay,
+            num_classes=num_classes,
+        )
     raise ValueError(f"Unknown model: {name}")
 
 
@@ -75,6 +91,33 @@ def main(cfg: DictConfig) -> None:
         )
 
     run_dir = HydraConfig.get().runtime.output_dir
+
+    # ----- JEPA pre-training phase (self-supervised) -----
+    if cfg.model.name.lower() == "jepa" and cfg.model.get("pretrain_epochs", 0) > 0 and not cfg.pretrained_model:
+        print("=== JEPA pre-training ===")
+        model_obj.to(device)
+        dataset.use_frequency_feat = False
+        pretrain_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
+        pt_optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
+        for ep in range(cfg.model.pretrain_epochs):
+            model_obj.train()
+            total_loss = 0.0
+            for inputs, _ in pretrain_loader:
+                inputs = inputs.to(device)
+                pred, target = model_obj.pretrain_forward(inputs)
+                loss = jepa_loss(pred, target)
+                pt_optimizer.zero_grad()
+                loss.backward()
+                pt_optimizer.step()
+                model_obj.update_target_encoder()
+                total_loss += loss.item()
+            avg = total_loss / len(pretrain_loader)
+            if ep % 10 == 0:
+                print(f"  pretrain epoch {ep}: loss={avg:.4f}")
+        pt_path = os.path.join(run_dir, f"jepa_pretrained_s{cfg.subject}.pth")
+        os.makedirs(os.path.dirname(pt_path), exist_ok=True)
+        torch.save(model_obj.state_dict(), pt_path)
+        print(f"  saved pretrained model → {pt_path}")
 
     if is_simple:
         model_obj.fit(de_feat[train_idx], all_labels[train_idx])
