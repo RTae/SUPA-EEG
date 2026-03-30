@@ -1,7 +1,5 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.parameter import Parameter
-
 
 class EEGNet(nn.Module):
     def __init__(self, args, num_classes, chans=62, samples=400, dropout_rate=0.5, kern_length=200, F1=8, D=2, F2=16,

@@ -71,10 +71,12 @@ class EEGImageNetDataset(Dataset):
 
     @staticmethod
     def _load_checkpoint(path: str, map_location: str | torch.device = "cpu") -> dict[str, Any]:
+        # Always load to CPU to avoid dtype issues (e.g. MPS doesn't support float64).
+        # Device transfer is handled later by DataLoader / training loop.
         try:
-            return torch.load(path, map_location=map_location, weights_only=True)
+            return torch.load(path, map_location="cpu", weights_only=True)
         except pickle.UnpicklingError:
-            return torch.load(path, map_location=map_location, weights_only=False)
+            return torch.load(path, map_location="cpu", weights_only=False)
 
     def _filter_subject(self, dataset: list[dict[str, Any]], subject: int) -> list[dict[str, Any]]:
         if subject == -1:
