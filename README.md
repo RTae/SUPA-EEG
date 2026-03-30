@@ -1,9 +1,9 @@
-# EEG-Based Visual Decoding
+# Time-Series Project: Decoding Visual Perception from EEG
 
 Decoding visual perception from EEG signals recorded while subjects viewed ImageNet images. This project supports two tasks:
 
-- **Object Classification** — classify viewed object categories from EEG
-- **Image Generation** — reconstruct viewed images from EEG via Stable Diffusion
+- **Object Classification** : classify viewed object categories from EEG
+- **Image Generation** : reconstruct viewed images from EEG via Stable Diffusion
 
 ## Baseline: CROSSPT-EEG
 
