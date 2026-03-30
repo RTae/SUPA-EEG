@@ -22,12 +22,17 @@ The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/ar
 src/
 ├── utilities.py              # Shared constants, helpers, CLI parser, device detection
 ├── dataset.py                # EEGImageNetDataset (PyTorch Dataset)
-├── de_feat_cal.py            # Differential-entropy (DE) feature extraction
 ├── object_classification.py  # Train & evaluate EEG classifiers
-├── blip_clip.py              # BLIP captioning → CLIP text embeddings (one-time)
 ├── image_generation.py       # Train MLP mapper (EEG → CLIP embeddings)
 ├── gen_eval.py               # Generate images from EEG via Stable Diffusion
 ├── gen_img_list.py           # Export image filename / label reference lists
+├── preprocessing/
+│   ├── blip_clip.py          # BLIP captioning → CLIP text embeddings (one-time)
+│   └── de_feat_cal.py        # Differential-entropy (DE) feature extraction
+├── trainer/
+│   ├── train.py              # Reusable training loops (classification & generation)
+│   ├── inference.py          # Prediction-only loops
+│   └── metrics.py            # Label mapping & evaluation helpers
 └── model/
     ├── eegnet.py             # [Baseline] EEGNet
     ├── mlp.py                # [Baseline] MLP classifier
@@ -93,7 +98,7 @@ python src/object_classification.py -d data/ -g coarse -m svm -s 0 -o output/
 
 ```bash
 # Step 1: Generate CLIP embeddings (one-time)
-python src/blip_clip.py -d data/ -g all -m mlp_sd -o output/
+python src/preprocessing/blip_clip.py -d data/ -g all -m mlp_sd -o output/
 
 # Step 2: Train EEG → CLIP mapper
 python src/image_generation.py -d data/ -g coarse -m mlp_sd -s 0 -o output/
