@@ -6,18 +6,20 @@ from sklearn.linear_model import RidgeClassifier
 
 
 class SimpleModel:
-    def __init__(self, args):
-        if args.model.lower() == 'svm':
-            model = SVC(kernel='linear', C=1.0, probability=True)
-        elif args.model.lower() == 'rf':
-            model = RandomForestClassifier(n_estimators=200)
-        elif args.model.lower() == 'knn':
-            model = KNeighborsClassifier(n_neighbors=5)
-        elif args.model.lower() == 'dt':
-            model = DecisionTreeClassifier(criterion='entropy')
-        elif args.model.lower() == 'ridge':
-            model = RidgeClassifier()
-        self.model = model
+    def __init__(self, model_name, **kwargs):
+        name = model_name.lower()
+        if name == 'svm':
+            self.model = SVC(**kwargs)
+        elif name == 'rf':
+            self.model = RandomForestClassifier(**kwargs)
+        elif name == 'knn':
+            self.model = KNeighborsClassifier(**kwargs)
+        elif name == 'dt':
+            self.model = DecisionTreeClassifier(**kwargs)
+        elif name == 'ridge':
+            self.model = RidgeClassifier(**kwargs)
+        else:
+            raise ValueError(f"Unknown simple model: {name}")
 
     def fit(self, X_train, y_train):
         self.model.fit(X_train, y_train)
