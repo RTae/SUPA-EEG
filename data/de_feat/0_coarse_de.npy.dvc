@@ -1,5 +1,0 @@
-outs:
-- md5: 6a88c0fa19d5b821a712cf8379b4c275
-  size: 4960128
-  hash: md5
-  path: 0_coarse_de.npy
