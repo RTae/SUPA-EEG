@@ -1,0 +1,6 @@
+[core]
+    remote = myremote
+    autostage = true
+['remote "myremote"']
+    url = oss://thu-timeseries-project
+    oss_endpoint = oss-cn-beijing-internal.aliyuncs.com
