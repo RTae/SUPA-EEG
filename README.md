@@ -128,29 +128,32 @@ JEPA first pre-trains a Transformer encoder via masked-patch prediction in laten
 
 ### Object Classification
 
-#### Architecture Diagram
+#### Training Loop Diagram
 
 ```mermaid
-flowchart LR
-    A[EEG Input<br/>B x 62 x 400] --> B[Patch Embedding<br/>Conv1d patch_len=stride]
-    B --> C[Patch Tokens<br/>B x N x D]
+flowchart TD
+    A[Load dataset and split by metric wt or ct or cp] --> B[Build train and test loaders]
+    B --> D[JEPA with no pretrained_model]
 
-    C --> D{Random Masking}
-    D --> E[Visible Context Tokens]
-    D --> F[Masked Target Tokens]
+    D --> D1[For each pretrain epoch]
+    D1 --> D2[Forward pretrain path: pred and target repr]
+    D2 --> D3[Compute JEPA loss]
+    D3 --> D4[Backprop and optimizer step]
+    D4 --> D5[EMA update of target encoder]
+    D5 --> D1
+    D1 -->|done| D6[Save JEPA pretrained checkpoint]
 
-    E --> G[Context Encoder<br/>Transformer]
-    F --> H[Target Encoder<br/>EMA Transformer]
+    D6 --> I
 
-    G --> I[Predictor<br/>Transformer + Mask Tokens]
-    I --> J[Predicted Target Repr]
-    H --> K[Target Repr<br/>Stop-Grad]
-    J -. pretrain loss .-> L[SmoothL1 / MSE]
-    K -. pretrain loss .-> L
-
-    G --> M[CLS token]
-    M --> N[Linear Classifier]
-    N --> O[Class Logits]
+    I --> I1[For each supervised epoch]
+    I1 --> I2[Forward classifier logits]
+    I2 --> I3[CrossEntropy loss and optimizer step]
+    I3 --> I4[Evaluate on test loader]
+    I4 --> I5{Best accuracy}
+    I5 -->|yes| I6[Save best checkpoint]
+    I5 -->|no| I1
+    I6 --> I1
+    I1 -->|done| K[Write result.txt]
 ```
 
 ```bash
