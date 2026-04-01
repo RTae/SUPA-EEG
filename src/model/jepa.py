@@ -12,7 +12,6 @@ Fine-tuning: freeze encoders, train classifier head (or end-to-end).
 """
 
 import copy
-import math
 
 import torch
 import torch.nn as nn
@@ -33,7 +32,7 @@ class PatchEmbed(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, C, T)  →  (B, embed_dim, n_patches)  →  (B, n_patches, embed_dim)
-        return self.proj(x).transpose(1, 2)
+        return self.proj(x).transpose(1, 2).contiguous()
 
 
 class TransformerBlock(nn.Module):
@@ -130,6 +129,7 @@ class EEGJEPA(nn.Module):
         self.target_encoder = copy.deepcopy(self.context_encoder)
         for p in self.target_encoder.parameters():
             p.requires_grad = False
+        self.target_encoder.eval()
 
         # ---------- predictor ----------
         self.predictor = TransformerEncoder(embed_dim, pred_depth, num_heads, mlp_ratio, dropout)
@@ -139,6 +139,13 @@ class EEGJEPA(nn.Module):
         self.classifier = nn.Linear(embed_dim, num_classes)
 
         self._init_weights()
+        self._sync_target_encoder()
+
+    def train(self, mode: bool = True):
+        """Keep target encoder in eval mode while the rest of model may train."""
+        super().train(mode)
+        self.target_encoder.eval()
+        return self
 
     # ------------------------------------------------------------------
     def _init_weights(self):
@@ -153,21 +160,32 @@ class EEGJEPA(nn.Module):
             elif isinstance(m, nn.LayerNorm):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, nonlinearity="linear")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+    @torch.no_grad()
+    def _sync_target_encoder(self):
+        """Hard-sync target encoder with context encoder."""
+        self.target_encoder.load_state_dict(self.context_encoder.state_dict())
 
     # ------------------------------------------------------------------
     # EMA update
     # ------------------------------------------------------------------
     @torch.no_grad()
-    def update_target_encoder(self):
+    def update_target_encoder(self, ema_decay: float | None = None):
         """Momentum update: target_encoder ← ema_decay * target + (1-ema) * context."""
+        decay = self.ema_decay if ema_decay is None else ema_decay
         for tp, cp in zip(self.target_encoder.parameters(), self.context_encoder.parameters()):
-            tp.data.mul_(self.ema_decay).add_(cp.data, alpha=1.0 - self.ema_decay)
+            tp.mul_(decay).add_(cp, alpha=1.0 - decay)
 
     # ------------------------------------------------------------------
     # Masking helpers
     # ------------------------------------------------------------------
     def _random_mask(self, batch_size: int, device: torch.device):
         """Return (context_indices, target_indices) per sample — same mask across batch for simplicity."""
+        del batch_size
         n_mask = max(1, int(self.n_patches * self.mask_ratio))
         perm = torch.randperm(self.n_patches, device=device)
         target_idx = perm[:n_mask]
@@ -179,7 +197,7 @@ class EEGJEPA(nn.Module):
     # ------------------------------------------------------------------
     def _embed_patches(self, x: torch.Tensor) -> torch.Tensor:
         """x: (B, C, T) → patch tokens (B, n_patches, D)."""
-        return self.patch_embed(x)
+        return self.patch_embed(x).contiguous()
 
     def encode_context(self, tokens: torch.Tensor, context_idx: torch.Tensor) -> torch.Tensor:
         """Encode only the visible (context) patches + [CLS]."""
@@ -193,7 +211,8 @@ class EEGJEPA(nn.Module):
     @torch.no_grad()
     def encode_target(self, tokens: torch.Tensor, target_idx: torch.Tensor) -> torch.Tensor:
         """Encode the masked (target) patches with the EMA encoder — no grad."""
-        tgt = tokens[:, target_idx] + self.pos_embed[:, target_idx + 1]
+        self.target_encoder.eval()
+        tgt = tokens[:, target_idx].contiguous() + self.pos_embed[:, target_idx + 1]
         return self.target_encoder(tgt)
 
     def predict_targets(self, context_out: torch.Tensor, target_idx: torch.Tensor) -> torch.Tensor:
@@ -226,18 +245,38 @@ class EEGJEPA(nn.Module):
         return pred, tgt_out
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.classifier(self.extract_features(x))
+
+    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
         """Classification forward pass — encode all patches, classify from [CLS].
 
         Args:
             x: (B, C, T) raw EEG input.
         Returns:
-            logits: (B, num_classes).
+            cls_features: (B, embed_dim).
         """
         tokens = self._embed_patches(x)
         all_idx = torch.arange(self.n_patches, device=x.device)
         ctx_out = self.encode_context(tokens, all_idx)
-        cls_token = ctx_out[:, 0]
-        return self.classifier(cls_token)
+        cls_token = ctx_out[:, 0].contiguous()
+        return cls_token
+
+    def freeze_backbone(self):
+        """Freeze patch embed + context encoder for linear probing."""
+        for module in (self.patch_embed, self.context_encoder):
+            module.eval()
+            for p in module.parameters():
+                p.requires_grad = False
+        self.cls_token.requires_grad = False
+        self.pos_embed.requires_grad = False
+
+    def unfreeze_backbone(self):
+        """Unfreeze patch embed + context encoder for end-to-end fine-tuning."""
+        for module in (self.patch_embed, self.context_encoder):
+            for p in module.parameters():
+                p.requires_grad = True
+        self.cls_token.requires_grad = True
+        self.pos_embed.requires_grad = True
 
 
 # ---------------------------------------------------------------------------

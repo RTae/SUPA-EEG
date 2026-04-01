@@ -37,6 +37,7 @@ src/
 ├── image_generation.py       # Train MLP mapper (EEG → CLIP embeddings)
 ├── gen_eval.py               # Generate images from EEG via Stable Diffusion
 ├── gen_img_list.py           # Export image filename / label reference lists
+├── jepa_poc_train.py         # Synthetic CrossPT-style JEPA pretrain + linear-probe PoC
 ├── preprocessing/
 │   ├── blip_clip.py          # BLIP captioning → CLIP text embeddings (one-time)
 │   └── de_feat_cal.py        # Differential-entropy (DE) feature extraction
@@ -124,6 +125,20 @@ Three evaluation paradigms are supported via `metric=`:
 ### EEG-JEPA (Self-Supervised)
 
 JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation.
+
+Synthetic CrossPT-style PoC is integrated in the same codebase:
+
+```bash
+# End-to-end synthetic run (pretrain + linear probe + top1/top5 eval)
+python src/jepa_poc_train.py
+
+# Quick smoke test
+python src/jepa_poc_train.py --pretrain-epochs 1 --finetune-epochs 1 --samples-per-subject 80 --batch-size 32
+
+# Task variants
+python src/jepa_poc_train.py --task coarse
+python src/jepa_poc_train.py --task fine --fine-group 3
+```
 
 
 ### Object Classification

@@ -51,6 +51,34 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
     raise ValueError(f"Unknown model: {name}")
 
 
+def _set_jepa_linear_probe(model: EEGJEPA, enabled: bool) -> None:
+    """Freeze JEPA backbone for linear probe when enabled."""
+    backbone_modules = [model.patch_embed, model.context_encoder]
+    if enabled:
+        for module in backbone_modules:
+            module.eval()
+            for p in module.parameters():
+                p.requires_grad = False
+        model.cls_token.requires_grad = False
+        model.pos_embed.requires_grad = False
+    else:
+        for module in backbone_modules:
+            for p in module.parameters():
+                p.requires_grad = True
+        model.cls_token.requires_grad = True
+        model.pos_embed.requires_grad = True
+
+
+def _jepa_ema_decay(cfg: DictConfig, step: int, total_steps: int) -> float:
+    """Linear warmup of EMA decay from ema_decay to ema_decay_end."""
+    start = float(cfg.model.ema_decay)
+    end = float(cfg.model.get("ema_decay_end", start))
+    if total_steps <= 1:
+        return end
+    alpha = step / float(total_steps - 1)
+    return start + alpha * (end - start)
+
+
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
@@ -99,18 +127,25 @@ def main(cfg: DictConfig) -> None:
         dataset.use_frequency_feat = False
         pretrain_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
         pt_optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
+        total_steps = max(1, cfg.model.pretrain_epochs * len(pretrain_loader))
+        global_step = 0
+        log_interval = max(1, int(cfg.model.get("pretrain_log_interval", 10)))
         for ep in range(cfg.model.pretrain_epochs):
             model_obj.train()
             total_loss = 0.0
-            for inputs, _ in pretrain_loader:
+            for step, (inputs, _) in enumerate(pretrain_loader, start=1):
                 inputs = inputs.to(device)
                 pred, target = model_obj.pretrain_forward(inputs)
                 loss = jepa_loss(pred, target)
                 pt_optimizer.zero_grad()
                 loss.backward()
                 pt_optimizer.step()
-                model_obj.update_target_encoder()
+                decay = _jepa_ema_decay(cfg, global_step, total_steps)
+                model_obj.update_target_encoder(ema_decay=decay)
                 total_loss += loss.item()
+                global_step += 1
+                if step % log_interval == 0 or step == len(pretrain_loader):
+                    print(f"    step {step}/{len(pretrain_loader)} loss={loss.item():.4f} ema={decay:.6f}")
             avg = total_loss / len(pretrain_loader)
             if ep % 10 == 0:
                 print(f"  pretrain epoch {ep}: loss={avg:.4f}")
@@ -125,11 +160,23 @@ def main(cfg: DictConfig) -> None:
         with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"{acc}\n")
     else:
+        if cfg.model.name.lower() == "jepa":
+            linear_probe = bool(cfg.model.get("linear_probe", False))
+            _set_jepa_linear_probe(model_obj, linear_probe)
+            if linear_probe:
+                print("=== JEPA fine-tuning mode: linear probe ===")
+            else:
+                print("=== JEPA fine-tuning mode: end-to-end ===")
+
         dataset.use_frequency_feat = cfg.model.use_freq
         train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
         test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
         criterion = torch.nn.CrossEntropyLoss()
-        optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
+        if cfg.model.name.lower() == "jepa" and bool(cfg.model.get("linear_probe", False)):
+            cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
+            optimizer = build_optimizer(model_obj.classifier.parameters(), cls_opt_cfg)
+        else:
+            optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
         save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
         acc, epoch = train_classifier(
             model_obj, train_loader, test_loader, criterion, optimizer,
