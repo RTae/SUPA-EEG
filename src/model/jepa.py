@@ -246,4 +246,8 @@ class EEGJEPA(nn.Module):
 
 def jepa_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """Smooth-L1 loss between predicted and target representations."""
-    return F.smooth_l1_loss(pred, target)
+    # Some backends/operators may produce non-contiguous tensors after indexing.
+    # Flatten with reshape (safe for non-contiguous layouts) before loss.
+    pred_flat = pred.reshape(-1, pred.shape[-1]).contiguous()
+    target_flat = target.reshape(-1, target.shape[-1]).contiguous()
+    return F.smooth_l1_loss(pred_flat, target_flat)

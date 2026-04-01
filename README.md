@@ -120,7 +120,51 @@ Three evaluation paradigms are supported via `metric=`:
 | **Cross-Time** | `ct` | Target subject, Stage 1 | Target subject, Stage 2 |
 | **Cross-Participant** | `cp` | All *other* subjects, Stage 1 | Target subject, Stage 1 |
 
-### Object Classification (Baseline)
+
+### EEG-JEPA (Self-Supervised)
+
+JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation.
+
+
+### Object Classification
+
+#### Architecture Diagram
+
+```mermaid
+flowchart LR
+    A[EEG Input<br/>B x 62 x 400] --> B[Patch Embedding<br/>Conv1d patch_len=stride]
+    B --> C[Patch Tokens<br/>B x N x D]
+
+    C --> D{Random Masking}
+    D --> E[Visible Context Tokens]
+    D --> F[Masked Target Tokens]
+
+    E --> G[Context Encoder<br/>Transformer]
+    F --> H[Target Encoder<br/>EMA Transformer]
+
+    G --> I[Predictor<br/>Transformer + Mask Tokens]
+    I --> J[Predicted Target Repr]
+    H --> K[Target Repr<br/>Stop-Grad]
+    J -. pretrain loss .-> L[SmoothL1 / MSE]
+    K -. pretrain loss .-> L
+
+    G --> M[CLS token]
+    M --> N[Linear Classifier]
+    N --> O[Class Logits]
+```
+
+```bash
+# Pre-train + fine-tune (pre-training runs automatically before classification)
+python src/object_classification.py model=jepa subject=0 metric=ct
+
+# Skip pre-training with a saved checkpoint
+python src/object_classification.py model=jepa pretrained_model=jepa_pretrained_s0.pth
+
+# Tune JEPA hyperparameters
+python src/object_classification.py model=jepa model.pretrain_epochs=200 model.mask_ratio=0.6 model.embed_dim=256
+```
+
+#### Baseline for training and evaluating the baseline classification models:
 
 ```bash
 # Deep model (defaults to eegnet, within-time)
@@ -136,20 +180,6 @@ python src/object_classification.py model.optimizer.lr=0.005 model.epochs=100
 python src/object_classification.py model=svm
 ```
 
-### EEG-JEPA (Self-Supervised)
-
-JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation.
-
-```bash
-# Pre-train + fine-tune (pre-training runs automatically before classification)
-python src/object_classification.py model=jepa subject=0 metric=ct
-
-# Skip pre-training with a saved checkpoint
-python src/object_classification.py model=jepa pretrained_model=jepa_pretrained_s0.pth
-
-# Tune JEPA hyperparameters
-python src/object_classification.py model=jepa model.pretrain_epochs=200 model.mask_ratio=0.6 model.embed_dim=256
-```
 
 ### Image Generation (Baseline)
 
