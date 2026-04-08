@@ -1,0 +1,39 @@
+name: jepa
+type: deep
+use_freq: false
+epochs: 200
+
+# Architecture
+n_channels: 62
+seq_len: 400      # 400 for real EEG-ImageNet; use 1000 for synthetic CrossPT-EEG
+patch_len: 40
+embed_dim: 128
+enc_depth: 4
+pred_depth: 2
+num_heads: 4
+mlp_ratio: 4.0
+dropout: 0.1
+mask_ratio: 0.5
+ema_decay: 0.996
+ema_decay_end: 0.999
+pretrain_log_interval: 10
+
+# Pre-training
+pretrain_epochs: 100
+linear_probe: true
+
+# Downstream head (trained on JEPA latent features)
+# type: linear  → nn.Linear(embed_dim, num_classes)
+# type: mlp     → MLP with hidden_dims and dropout
+downstream:
+  type: linear
+
+classifier_optimizer:
+  type: adamw
+  lr: 0.001
+  weight_decay: 0.0
+
+optimizer:
+  type: adamw
+  lr: 0.0001
+  weight_decay: 0.05

@@ -10,6 +10,14 @@ output_dir: outputs/
 pretrained_model: null
 metric: wt   # evaluation paradigm: wt (Within-Time), ct (Cross-Time), cp (Cross-Participant)
 
+# Synthetic CrossPT-EEG dataset (JEPA only; skips EEG-ImageNet loading when true)
+synthetic: false
+fine_group: 0
+num_subjects: 16
+samples_per_subject: 480
+num_workers: 0
+seed: 42
+
 hydra:
   run:
     dir: ${output_dir}/${model.name}/${metric}/s${subject}/${now:%Y-%m-%d_%H-%M-%S}
