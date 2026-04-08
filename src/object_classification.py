@@ -186,6 +186,7 @@ def main(cfg: DictConfig) -> None:
             f.write(f"{acc}\n")
     elif is_jepa or is_transformer:
         # ----- Decoupled pipeline: encoder → latent space → downstream head -----
+        model_obj.to(device)
         linear_probe = bool(cfg.model.get("linear_probe", True))
         downstream_cfg = cfg.model.get("downstream", {"type": "linear"})
         downstream_head = build_jepa_downstream(downstream_cfg, model_obj.embed_dim, num_classes, device)
