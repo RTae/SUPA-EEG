@@ -25,6 +25,7 @@ from model.jepa import (
     extract_all_features,
     build_jepa_downstream,
 )
+from model.eeg_transformer import EEGTransformer
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
@@ -46,6 +47,8 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
     if name == "rgnn":
         edge_index, edge_weight = get_edge_weight()
         return RGNN(device, 62, edge_weight, edge_index, 5, 200, num_classes, 2)
+    if name == "eeg_transformer":
+        return EEGTransformer(cfg)
     if name == "jepa":
         return EEGJEPA(
             n_channels=int(cfg.model.get("n_channels", 62)),
@@ -71,6 +74,7 @@ def main(cfg: DictConfig) -> None:
     device = get_device()
 
     is_jepa = cfg.model.name.lower() == "jepa"
+    is_transformer = cfg.model.name.lower() == "eeg_transformer"
     use_synthetic = is_jepa and bool(cfg.get("synthetic", False))
 
     if use_synthetic:
@@ -127,7 +131,7 @@ def main(cfg: DictConfig) -> None:
         if is_jepa:
             load_jepa_checkpoint(model_obj, ckpt_path, device)
         else:
-            model_obj.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
+            model_obj.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
 
     run_dir = HydraConfig.get().runtime.output_dir
 
@@ -180,8 +184,9 @@ def main(cfg: DictConfig) -> None:
         acc = accuracy_score(all_labels[test_idx], model_obj.predict(de_feat[test_idx]))
         with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"{acc}\n")
-    elif is_jepa:
-        # ----- Decoupled pipeline: JEPA encoder → latent space → downstream head -----
+    elif is_jepa or is_transformer:
+        # ----- Decoupled pipeline: encoder → latent space → downstream head -----
+        model_obj.to(device)
         linear_probe = bool(cfg.model.get("linear_probe", True))
         downstream_cfg = cfg.model.get("downstream", {"type": "linear"})
         downstream_head = build_jepa_downstream(downstream_cfg, model_obj.embed_dim, num_classes, device)
@@ -199,7 +204,7 @@ def main(cfg: DictConfig) -> None:
 
         if linear_probe:
             # Pre-extract all features once; head trains on TensorDataset (fast)
-            print("=== JEPA fine-tuning: linear probe — extracting features... ===")
+            print(f"=== {cfg.model.name} fine-tuning: linear probe — extracting features... ===")
             model_obj.freeze_backbone()
             train_feats, train_labels = extract_all_features(model_obj, raw_train_loader, device, lmap)
             test_feats, test_labels = extract_all_features(model_obj, raw_test_loader, device, lmap)
@@ -214,7 +219,7 @@ def main(cfg: DictConfig) -> None:
             ft_params = downstream_head.parameters()
         else:
             # End-to-end: backbone stays in the training loop
-            print("=== JEPA fine-tuning: end-to-end ===")
+            print(f"=== {cfg.model.name} fine-tuning: end-to-end ===")
             model_obj.unfreeze_backbone()
             ft_train_loader = raw_train_loader
             ft_test_loader = raw_test_loader

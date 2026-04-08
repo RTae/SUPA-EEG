@@ -1,0 +1,25 @@
+name: eeg_transformer
+type: deep
+use_freq: false
+epochs: 200
+
+# Architecture
+n_channels: 62
+seq_len: 400
+patch_len: 40
+embed_dim: 128
+depth: 6
+num_heads: 4
+mlp_ratio: 4.0
+dropout: 0.1
+
+# Downstream head (linear probe or mlp)
+linear_probe: true
+downstream:
+  type: linear   # or mlp with hidden_dims
+
+# Optimizer for head (and backbone in end-to-end mode)
+optimizer:
+  type: adamw
+  lr: 0.0001
+  weight_decay: 0.05
