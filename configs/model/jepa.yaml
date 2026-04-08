@@ -22,6 +22,12 @@ pretrain_log_interval: 10
 pretrain_epochs: 100
 linear_probe: true
 
+# Downstream head (trained on JEPA latent features)
+# type: linear  → nn.Linear(embed_dim, num_classes)
+# type: mlp     → MLP with hidden_dims and dropout
+downstream:
+  type: linear
+
 classifier_optimizer:
   type: adamw
   lr: 0.001

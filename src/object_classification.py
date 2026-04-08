@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 
 from tqdm import tqdm
 
@@ -23,6 +23,8 @@ from model.jepa import (
     topk_correct,
     jepa_evaluate,
     load_jepa_checkpoint,
+    extract_all_features,
+    build_jepa_downstream,
 )
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
@@ -58,7 +60,6 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
             dropout=cfg.model.dropout,
             mask_ratio=cfg.model.mask_ratio,
             ema_decay=cfg.model.ema_decay,
-            num_classes=num_classes,
         )
     raise ValueError(f"Unknown model: {name}")
 
@@ -180,40 +181,75 @@ def main(cfg: DictConfig) -> None:
         acc = accuracy_score(all_labels[test_idx], model_obj.predict(de_feat[test_idx]))
         with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"{acc}\n")
-    elif use_synthetic:
-        # JEPA fine-tune on synthetic CrossPT-EEG with top-1 / top-5 eval
-        linear_probe = bool(cfg.model.get("linear_probe", False))
-        model_obj.freeze_backbone() if linear_probe else model_obj.unfreeze_backbone()
-        print(f"=== JEPA fine-tuning mode: {'linear probe' if linear_probe else 'end-to-end'} (synthetic) ===")
-        model_obj.to(device)
-        criterion = torch.nn.CrossEntropyLoss()
+    elif is_jepa:
+        # ----- Decoupled pipeline: JEPA encoder → latent space → downstream head -----
+        linear_probe = bool(cfg.model.get("linear_probe", True))
+        downstream_cfg = cfg.model.get("downstream", {"type": "linear"})
+        downstream_head = build_jepa_downstream(downstream_cfg, model_obj.embed_dim, num_classes, device)
+
+        # Build raw loaders (real or synthetic)
+        if use_synthetic:
+            raw_train_loader = train_loader_syn
+            raw_test_loader = test_loader_syn
+            lmap = None
+        else:
+            dataset.use_frequency_feat = cfg.model.use_freq
+            raw_train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
+            raw_test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
+            lmap = label_map
+
+        if linear_probe:
+            # Pre-extract all features once; head trains on TensorDataset (fast)
+            print("=== JEPA fine-tuning: linear probe — extracting features... ===")
+            model_obj.freeze_backbone()
+            train_feats, train_labels = extract_all_features(model_obj, raw_train_loader, device, lmap)
+            test_feats, test_labels = extract_all_features(model_obj, raw_test_loader, device, lmap)
+            ft_train_loader = DataLoader(
+                TensorDataset(train_feats, train_labels), batch_size=cfg.batch_size, shuffle=True
+            )
+            ft_test_loader = DataLoader(
+                TensorDataset(test_feats, test_labels), batch_size=cfg.batch_size, shuffle=False
+            )
+            eval_encoder = None   # inputs to jepa_evaluate are already features
+            eval_lmap = None      # labels already remapped during extraction
+            ft_params = downstream_head.parameters()
+        else:
+            # End-to-end: backbone stays in the training loop
+            print("=== JEPA fine-tuning: end-to-end ===")
+            model_obj.unfreeze_backbone()
+            ft_train_loader = raw_train_loader
+            ft_test_loader = raw_test_loader
+            eval_encoder = model_obj
+            eval_lmap = lmap
+            ft_params = list(downstream_head.parameters()) + list(model_obj.parameters())
+
         cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
-        cls_lr = float(cls_opt_cfg.lr)
-        cls_wd = float(cls_opt_cfg.get("weight_decay", 0.0))
-        ft_params = model_obj.classifier.parameters() if linear_probe else model_obj.parameters()
-        ft_optimizer = AdamW(ft_params, lr=cls_lr, weight_decay=cls_wd)
+        ft_optimizer = AdamW(
+            ft_params,
+            lr=float(cls_opt_cfg.lr),
+            weight_decay=float(cls_opt_cfg.get("weight_decay", 0.0)),
+        )
         ft_scheduler = CosineAnnealingLR(ft_optimizer, T_max=max(1, cfg.model.epochs))
+        criterion = torch.nn.CrossEntropyLoss()
         save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
         best_top1 = -math.inf
 
         epoch_bar = tqdm(range(1, cfg.model.epochs + 1), desc="finetune", unit="ep")
         for epoch in epoch_bar:
+            downstream_head.train()
             if linear_probe:
-                model_obj.classifier.train()
-                model_obj.patch_embed.eval()
-                model_obj.context_encoder.eval()
+                model_obj.eval()
             else:
                 model_obj.train()
             epoch_loss = epoch_top1 = epoch_top5 = epoch_n = 0
-            step_bar = tqdm(train_loader_syn, desc=f"ep {epoch}", leave=False, unit="step")
+            step_bar = tqdm(ft_train_loader, desc=f"ep {epoch}", leave=False, unit="step")
             for batch in step_bar:
                 inputs, labels = batch[0].to(device), batch[1].to(device)
-                if linear_probe:
-                    with torch.no_grad():
-                        feats = model_obj.extract_features(inputs)
-                    logits = model_obj.classifier(feats)
-                else:
-                    logits = model_obj(inputs)
+                if not linear_probe and lmap is not None:
+                    from trainer.metrics import remap_labels
+                    labels = remap_labels(labels.cpu(), lmap).to(device)
+                feats = model_obj(inputs) if not linear_probe else inputs
+                logits = downstream_head(feats)
                 loss = criterion(logits, labels)
                 ft_optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -223,41 +259,44 @@ def main(cfg: DictConfig) -> None:
                 epoch_top1 += batch_top1
                 epoch_top5 += topk_correct(logits.detach(), labels, 5)
                 epoch_n += labels.numel()
-                step_bar.set_postfix(loss=f"{loss.item():.4f}", top1=f"{batch_top1 / max(1, labels.numel()):.3f}")
+                step_bar.set_postfix(
+                    loss=f"{loss.item():.4f}",
+                    top1=f"{batch_top1 / max(1, labels.numel()):.3f}",
+                )
             ft_scheduler.step()
-            val_loss, val_top1, val_top5 = jepa_evaluate(model_obj, test_loader_syn, device)
+            val_loss, val_top1, val_top5 = jepa_evaluate(
+                eval_encoder, downstream_head, ft_test_loader, device, eval_lmap
+            )
             epoch_bar.set_postfix(
-                tr_loss=f"{epoch_loss / max(1, len(train_loader_syn)):.4f}",
+                tr_loss=f"{epoch_loss / max(1, len(ft_train_loader)):.4f}",
                 tr_top1=f"{epoch_top1 / max(1, epoch_n):.3f}",
                 val_top1=f"{val_top1:.3f}",
                 val_top5=f"{val_top5:.3f}",
             )
             if val_top1 > best_top1:
                 best_top1 = val_top1
-                torch.save({"stage": "linear_probe", "model_state": model_obj.state_dict()}, save_path)
+                torch.save(
+                    {
+                        "stage": "finetune",
+                        "encoder_state": model_obj.state_dict(),
+                        "head_state": downstream_head.state_dict(),
+                    },
+                    save_path,
+                )
 
-        test_loss, test_top1, test_top5 = jepa_evaluate(model_obj, test_loader_syn, device)
+        test_loss, test_top1, test_top5 = jepa_evaluate(
+            eval_encoder, downstream_head, ft_test_loader, device, eval_lmap
+        )
         print(f"[eval] test_loss={test_loss:.4f} top1={test_top1:.4f} top5={test_top5:.4f}")
         with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"top1={best_top1:.4f}\n")
     else:
-        if is_jepa:
-            linear_probe = bool(cfg.model.get("linear_probe", False))
-            model_obj.freeze_backbone() if linear_probe else model_obj.unfreeze_backbone()
-            if linear_probe:
-                print("=== JEPA fine-tuning mode: linear probe ===")
-            else:
-                print("=== JEPA fine-tuning mode: end-to-end ===")
-
+        # Other deep models (EEGNet, MLP, RGNN)
         dataset.use_frequency_feat = cfg.model.use_freq
         train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
         test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
         criterion = torch.nn.CrossEntropyLoss()
-        if is_jepa and bool(cfg.model.get("linear_probe", False)):
-            cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
-            optimizer = build_optimizer(model_obj.classifier.parameters(), cls_opt_cfg)
-        else:
-            optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
+        optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
         save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
         acc, epoch = train_classifier(
             model_obj, train_loader, test_loader, criterion, optimizer,

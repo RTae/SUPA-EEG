@@ -106,13 +106,13 @@ class EEGJEPA(nn.Module):
         dropout: float = 0.1,
         mask_ratio: float = 0.5,
         ema_decay: float = 0.996,
-        num_classes: int = 40,
     ):
         super().__init__()
         assert seq_len % patch_len == 0, "seq_len must be divisible by patch_len"
         self.n_patches = seq_len // patch_len
         self.mask_ratio = mask_ratio
         self.ema_decay = ema_decay
+        self.embed_dim = embed_dim
 
         # ---------- patch embedding (shared weights for context & target) ----------
         self.patch_embed = PatchEmbed(n_channels, patch_len, embed_dim)
@@ -134,9 +134,6 @@ class EEGJEPA(nn.Module):
         # ---------- predictor ----------
         self.predictor = TransformerEncoder(embed_dim, pred_depth, num_heads, mlp_ratio, dropout)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-
-        # ---------- classifier head ----------
-        self.classifier = nn.Linear(embed_dim, num_classes)
 
         self._init_weights()
         self._sync_target_encoder()
@@ -245,7 +242,8 @@ class EEGJEPA(nn.Module):
         return pred, tgt_out
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.classifier(self.extract_features(x))
+        """Return [CLS] feature vector (B, embed_dim) for downstream use."""
+        return self.extract_features(x)
 
     def extract_features(self, x: torch.Tensor) -> torch.Tensor:
         """Classification forward pass — encode all patches, classify from [CLS].
@@ -311,17 +309,31 @@ def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
 
 
 @torch.no_grad()
-def jepa_evaluate(model: EEGJEPA, loader, device: torch.device) -> tuple[float, float, float]:
-    """Evaluate JEPA classifier on a loader; returns (avg_loss, top1_acc, top5_acc).
+def jepa_evaluate(
+    encoder: "EEGJEPA | None",
+    head: nn.Module,
+    loader,
+    device: torch.device,
+    label_map: dict | None = None,
+) -> tuple[float, float, float]:
+    """Evaluate a JEPA encoder + downstream head; returns (avg_loss, top1_acc, top5_acc).
 
+    If *encoder* is None, batch inputs are treated as pre-extracted feature vectors.
+    If *label_map* is provided, labels are remapped inside the loop (end-to-end path).
     Accepts both 2-item (inputs, labels) and 3-item (inputs, labels, subjects) batches.
     """
-    model.eval()
+    if encoder is not None:
+        encoder.eval()
+    head.eval()
     criterion = nn.CrossEntropyLoss()
     total_loss = total_top1 = total_top5 = total_n = 0
     for batch in loader:
         inputs, labels = batch[0].to(device), batch[1].to(device)
-        logits = model(inputs)
+        if label_map is not None:
+            from trainer.metrics import remap_labels
+            labels = remap_labels(labels.cpu(), label_map).to(device)
+        feats = encoder(inputs) if encoder is not None else inputs
+        logits = head(feats)
         total_loss += criterion(logits, labels).item()
         total_top1 += topk_correct(logits, labels, 1)
         total_top5 += topk_correct(logits, labels, 5)
@@ -329,15 +341,72 @@ def jepa_evaluate(model: EEGJEPA, loader, device: torch.device) -> tuple[float, 
     return total_loss / max(len(loader), 1), total_top1 / max(total_n, 1), total_top5 / max(total_n, 1)
 
 
-def load_jepa_checkpoint(model: EEGJEPA, path: str, device: torch.device) -> None:
-    """Load a JEPA checkpoint; silently drops classifier head weights on shape mismatch."""
+def load_jepa_checkpoint(model: "EEGJEPA", path: str, device: torch.device) -> None:
+    """Load a JEPA encoder checkpoint; drops legacy classifier keys gracefully."""
     ckpt = torch.load(path, map_location=device)
     state = dict(ckpt.get("model_state", ckpt))
-    for key in ("classifier.weight", "classifier.bias"):
-        stored = state.get(key)
-        current = model.state_dict().get(key)
-        if stored is not None and current is not None and stored.shape != current.shape:
-            state.pop(key)
+    state.pop("classifier.weight", None)
+    state.pop("classifier.bias", None)
     model.load_state_dict(state, strict=False)
     model._sync_target_encoder()
     print(f"[load] JEPA checkpoint: {path}")
+
+
+@torch.no_grad()
+def extract_all_features(
+    encoder: "EEGJEPA",
+    loader,
+    device: torch.device,
+    label_map: dict | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Run the frozen encoder over a full loader; return (features, labels) as CPU tensors.
+
+    If *label_map* is provided, labels are remapped to contiguous indices.
+    Accepts both 2-item (inputs, labels) and 3-item (inputs, labels, subjects) batches.
+    """
+    from trainer.metrics import remap_labels  # local import avoids circular dependency
+    encoder.eval()
+    all_feats, all_labels = [], []
+    for batch in loader:
+        inputs, labels = batch[0].to(device), batch[1].cpu()
+        feats = encoder(inputs).cpu()
+        if label_map is not None:
+            labels = remap_labels(labels, label_map)
+        all_feats.append(feats)
+        all_labels.append(labels)
+    return torch.cat(all_feats), torch.cat(all_labels)
+
+
+def build_jepa_downstream(
+    downstream_cfg,
+    embed_dim: int,
+    num_classes: int,
+    device: torch.device,
+) -> nn.Module:
+    """Build a downstream classification head from config.
+
+    Supported ``type`` values:
+    - ``linear`` (default): single ``nn.Linear(embed_dim, num_classes)``
+    - ``mlp``: MLP with ``hidden_dims`` (list of int) and optional ``dropout``
+    """
+    t = str(downstream_cfg.get("type", "linear"))
+    if t == "linear":
+        head: nn.Module = nn.Linear(embed_dim, num_classes)
+    elif t == "mlp":
+        hidden_dims = list(downstream_cfg.get("hidden_dims", [256]))
+        dropout = float(downstream_cfg.get("dropout", 0.1))
+        layers: list[nn.Module] = []
+        in_dim = embed_dim
+        for h in hidden_dims:
+            layers += [nn.Linear(in_dim, h), nn.GELU(), nn.Dropout(dropout)]
+            in_dim = h
+        layers.append(nn.Linear(in_dim, num_classes))
+        head = nn.Sequential(*layers)
+    else:
+        raise ValueError(f"Unknown JEPA downstream type: {t!r}. Use 'linear' or 'mlp'.")
+    for m in head.modules():
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=0.02)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+    return head.to(device)
