@@ -28,6 +28,7 @@ configs/
     ├── mlp.yaml
     ├── rgnn.yaml
     ├── jepa.yaml
+    ├── eeg_transformer.yaml
     ├── mlp_sd.yaml
     ├── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
 src/
@@ -50,7 +51,8 @@ src/
     ├── mlp_sd.py             # [Baseline] MLP mapper to CLIP embedding space
     ├── rgnn.py               # [Baseline] Regularized Graph Neural Network
     ├── simple_model.py       # [Baseline] Sklearn (SVM, RF, KNN, DT, Ridge)
-    └── jepa.py               # EEG-JEPA (self-supervised + classifier, training utilities)
+    ├── jepa.py               # EEG-JEPA (self-supervised + training utilities)
+    └── eeg_transformer.py    # EEG Transformer encoder (decoupled supervised pipeline)
 scripts/
 └── merge_dataset.py          # Merge split .pth dataset files
 data/
@@ -165,6 +167,31 @@ python src/object_classification.py model=jepa synthetic=true model.seq_len=1000
 # Task variants
 python src/object_classification.py model=jepa synthetic=true model.seq_len=1000 granularity=coarse
 python src/object_classification.py model=jepa synthetic=true model.seq_len=1000 granularity=fine fine_group=3
+```
+
+#### EEG Transformer
+
+`EEGTransformer` follows the same two-stage decoupled pipeline as JEPA, but uses a **fully-supervised Transformer encoder** — no masked pre-training, no EMA target encoder. The encoder is trained directly from labels, and a separate downstream head (linear or MLP) is attached to the learned `[CLS]` representation.
+
+```mermaid
+flowchart LR
+    A[EEG input\nB × C × T] --> B[PatchEmbed\nConv1d]
+    B --> C[CLS token prepend\n+ positional embedding]
+    C --> D[TransformerEncoder\nViT blocks]
+    D --> E["[CLS] token\nB × embed_dim\nlatent space"]
+    E --> F[Downstream head\nLinear or MLP]
+    F --> G[Class prediction\ntop-1 / top-5]
+```
+
+```bash
+# Linear probe (freeze encoder, train head only)
+python src/object_classification.py model=eeg_transformer
+
+# End-to-end fine-tuning (train encoder + head jointly)
+python src/object_classification.py model=eeg_transformer model.linear_probe=false
+
+# Deeper head
+python src/object_classification.py model=eeg_transformer model.downstream.type=mlp model.downstream.hidden_dims=[256,128]
 ```
 
 #### Baseline for training and evaluating the baseline classification models:
