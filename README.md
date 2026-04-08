@@ -32,12 +32,11 @@ configs/
     ├── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
 src/
 ├── utilities.py              # Shared constants, helpers, device detection, benchmark splits
-├── dataset.py                # EEGImageNetDataset (PyTorch Dataset)
-├── object_classification.py  # Train & evaluate EEG classifiers
+├── dataset.py                # EEGImageNetDataset + CrossPTEEGSyntheticDataset (PyTorch Datasets)
+├── object_classification.py  # Train & evaluate EEG classifiers (single entrypoint)
 ├── image_generation.py       # Train MLP mapper (EEG → CLIP embeddings)
 ├── gen_eval.py               # Generate images from EEG via Stable Diffusion
 ├── gen_img_list.py           # Export image filename / label reference lists
-├── jepa_poc_train.py         # Synthetic CrossPT-style JEPA pretrain + linear-probe PoC
 ├── preprocessing/
 │   ├── blip_clip.py          # BLIP captioning → CLIP text embeddings (one-time)
 │   └── de_feat_cal.py        # Differential-entropy (DE) feature extraction
@@ -51,7 +50,7 @@ src/
     ├── mlp_sd.py             # [Baseline] MLP mapper to CLIP embedding space
     ├── rgnn.py               # [Baseline] Regularized Graph Neural Network
     ├── simple_model.py       # [Baseline] Sklearn (SVM, RF, KNN, DT, Ridge)
-    └── jepa.py               # EEG-JEPA (self-supervised + classifier)
+    └── jepa.py               # EEG-JEPA (self-supervised + classifier, training utilities)
 scripts/
 └── merge_dataset.py          # Merge split .pth dataset files
 data/
@@ -124,20 +123,21 @@ Three evaluation paradigms are supported via `metric=`:
 
 ### EEG-JEPA (Self-Supervised)
 
-JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation.
+JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation. Training utilities (`ema_decay_schedule`, `topk_correct`, `jepa_evaluate`, `load_jepa_checkpoint`) live alongside the model in `src/model/jepa.py`.
 
-Synthetic CrossPT-style PoC is integrated in the same codebase:
+`object_classification.py` is the single entrypoint for both real and synthetic data. Pass `synthetic=true` to use the built-in synthetic CrossPT-EEG dataset instead of loading `EEG-ImageNet.pth`:
 
 ```bash
-# End-to-end synthetic run (pretrain + linear probe + top1/top5 eval)
-python src/jepa_poc_train.py
+# Synthetic end-to-end run (pretrain + linear probe, top-1/top-5 eval)
+python src/object_classification.py model=jepa synthetic=true granularity=all
 
-# Quick smoke test
-python src/jepa_poc_train.py --pretrain-epochs 1 --finetune-epochs 1 --samples-per-subject 80 --batch-size 32
+# Quick smoke test on synthetic data
+python src/object_classification.py model=jepa synthetic=true \
+    model.pretrain_epochs=1 model.epochs=1 samples_per_subject=80 batch_size=32
 
 # Task variants
-python src/jepa_poc_train.py --task coarse
-python src/jepa_poc_train.py --task fine --fine-group 3
+python src/object_classification.py model=jepa synthetic=true granularity=coarse
+python src/object_classification.py model=jepa synthetic=true granularity=fine fine_group=3
 ```
 
 
