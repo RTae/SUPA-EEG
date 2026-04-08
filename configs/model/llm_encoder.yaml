@@ -1,4 +1,4 @@
-name: qwen_encoder
+name: llm_encoder
 type: deep
 use_freq: false
 epochs: 50
