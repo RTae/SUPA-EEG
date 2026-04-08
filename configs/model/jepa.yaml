@@ -21,9 +21,11 @@ pretrain_epochs: 100
 linear_probe: true
 
 classifier_optimizer:
-  type: adam
+  type: adamw
   lr: 0.001
+  weight_decay: 0.0
 
 optimizer:
-  type: adam
-  lr: 0.001
+  type: adamw
+  lr: 0.0001
+  weight_decay: 0.05

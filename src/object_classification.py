@@ -1,14 +1,17 @@
+import math
 import os
 
 import hydra
 import numpy as np
 import torch
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
 
-from dataset import EEGImageNetDataset
+from dataset import EEGImageNetDataset, build_synthetic_crosspt_loaders
 from preprocessing.de_feat_cal import de_feat_cal
 from model.eegnet import EEGNet
 from model.jepa import EEGJEPA, jepa_loss
@@ -79,79 +82,154 @@ def _jepa_ema_decay(cfg: DictConfig, step: int, total_steps: int) -> float:
     return start + alpha * (end - start)
 
 
+def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
+    """Return the count of samples whose true label is among the top-k predictions."""
+    k = min(k, logits.shape[-1])
+    return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
+
+
+@torch.no_grad()
+def jepa_evaluate(model: EEGJEPA, loader, device: torch.device) -> tuple[float, float, float]:
+    """Evaluate JEPA classifier; returns (avg_loss, top1_acc, top5_acc).
+
+    Handles variable-length batches: only the first two elements (inputs, labels)
+    are consumed so both 2-item and 3-item (inputs, labels, subjects) loaders work.
+    """
+    model.eval()
+    criterion = torch.nn.CrossEntropyLoss()
+    total_loss = total_top1 = total_top5 = total_n = 0
+    for batch in loader:
+        inputs, labels = batch[0].to(device), batch[1].to(device)
+        logits = model(inputs)
+        total_loss += criterion(logits, labels).item()
+        total_top1 += topk_correct(logits, labels, 1)
+        total_top5 += topk_correct(logits, labels, 5)
+        total_n += labels.numel()
+    return total_loss / max(len(loader), 1), total_top1 / max(total_n, 1), total_top5 / max(total_n, 1)
+
+
+def _load_jepa_checkpoint(model: EEGJEPA, path: str, device: torch.device) -> None:
+    """Load a JEPA checkpoint, silently dropping classifier head weights on shape mismatch."""
+    ckpt = torch.load(path, map_location=device)
+    state = dict(ckpt.get("model_state", ckpt))
+    for key in ("classifier.weight", "classifier.bias"):
+        stored = state.get(key)
+        current = model.state_dict().get(key)
+        if stored is not None and current is not None and stored.shape != current.shape:
+            state.pop(key)
+    model.load_state_dict(state, strict=False)
+    model._sync_target_encoder()
+    print(f"[load] JEPA checkpoint: {path}")
+
+
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     device = get_device()
 
-    # Load all subjects so benchmark splits can select across subjects/stages.
-    dataset = EEGImageNetDataset(
-        dataset_dir=cfg.dataset_dir,
-        subject=-1,
-        granularity=cfg.granularity,
-    )
-    eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
-    de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
-    dataset.add_frequency_feat(de_feat)
+    is_jepa = cfg.model.name.lower() == "jepa"
+    use_synthetic = is_jepa and bool(cfg.get("synthetic", False))
 
-    all_labels = np.array([sample[1] for sample in dataset])
+    if use_synthetic:
+        _task = str(cfg.granularity)
+        _fine_group = int(cfg.get("fine_group", 0))
+        num_classes = {"all": 80, "coarse": 40, "fine": 8}[_task]
+        _, pretrain_loader_syn, train_loader_syn, test_loader_syn = build_synthetic_crosspt_loaders(
+            seq_len=int(cfg.model.get("seq_len", 1000)),
+            n_channels=int(cfg.model.get("n_channels", 62)),
+            num_subjects=int(cfg.get("num_subjects", 16)),
+            samples_per_subject=int(cfg.get("samples_per_subject", 480)),
+            batch_size=cfg.batch_size,
+            task=_task,
+            fine_group=_fine_group,
+            num_workers=int(cfg.get("num_workers", 0)),
+            seed=int(cfg.get("seed", 42)),
+        )
+        label_map = None
+        train_subset = test_subset = None
+        all_labels = de_feat = train_idx = test_idx = None
+        is_simple = False
+    else:
+        # Load all subjects so benchmark splits can select across subjects/stages.
+        dataset = EEGImageNetDataset(
+            dataset_dir=cfg.dataset_dir,
+            subject=-1,
+            granularity=cfg.granularity,
+        )
+        eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
+        de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
+        dataset.add_frequency_feat(de_feat)
 
-    train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric, cfg.subject)
-    train_idx = np.array(train_idx)
-    test_idx = np.array(test_idx)
+        all_labels = np.array([sample[1] for sample in dataset])
 
-    # Build label map from the union of train+test labels so both loaders
-    # use a consistent mapping to contiguous indices.
-    combined_labels = np.concatenate([all_labels[train_idx], all_labels[test_idx]])
-    label_map = build_label_map(combined_labels)
-    num_classes = len(label_map)
+        train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric, cfg.subject)
+        train_idx = np.array(train_idx)
+        test_idx = np.array(test_idx)
 
-    train_subset = Subset(dataset, train_idx)
-    test_subset = Subset(dataset, test_idx)
+        # Build label map from the union of train+test labels so both loaders
+        # use a consistent mapping to contiguous indices.
+        combined_labels = np.concatenate([all_labels[train_idx], all_labels[test_idx]])
+        label_map = build_label_map(combined_labels)
+        num_classes = len(label_map)
 
-    is_simple = cfg.model.type == "simple"
+        train_subset = Subset(dataset, train_idx)
+        test_subset = Subset(dataset, test_idx)
+
+        is_simple = cfg.model.type == "simple"
+
     model_obj = model_init(cfg, num_classes, device)
 
     if cfg.pretrained_model:
-        model_obj.load_state_dict(
-            torch.load(os.path.join(cfg.output_dir, cfg.pretrained_model), map_location="cpu")
-        )
+        ckpt_path = os.path.join(cfg.output_dir, cfg.pretrained_model)
+        if is_jepa:
+            _load_jepa_checkpoint(model_obj, ckpt_path, device)
+        else:
+            model_obj.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
 
     run_dir = HydraConfig.get().runtime.output_dir
 
     # ----- JEPA pre-training phase (self-supervised) -----
-    if cfg.model.name.lower() == "jepa" and cfg.model.get("pretrain_epochs", 0) > 0 and not cfg.pretrained_model:
+    if is_jepa and cfg.model.get("pretrain_epochs", 0) > 0 and not cfg.pretrained_model:
         print("=== JEPA pre-training ===")
         model_obj.to(device)
-        dataset.use_frequency_feat = False
-        pretrain_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
-        pt_optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
+        if use_synthetic:
+            pretrain_loader = pretrain_loader_syn
+        else:
+            dataset.use_frequency_feat = False
+            pretrain_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True, drop_last=True)
+        weight_decay = float(cfg.model.get("weight_decay", 0.05))
+        pt_optimizer = AdamW(
+            model_obj.parameters(),
+            lr=float(cfg.model.optimizer.lr),
+            weight_decay=weight_decay,
+        )
+        pt_scheduler = CosineAnnealingLR(pt_optimizer, T_max=max(1, cfg.model.pretrain_epochs))
         total_steps = max(1, cfg.model.pretrain_epochs * len(pretrain_loader))
         global_step = 0
         log_interval = max(1, int(cfg.model.get("pretrain_log_interval", 10)))
-        for ep in range(cfg.model.pretrain_epochs):
+        for ep in range(1, cfg.model.pretrain_epochs + 1):
             model_obj.train()
-            total_loss = 0.0
-            for step, (inputs, _) in enumerate(pretrain_loader, start=1):
-                inputs = inputs.to(device)
+            epoch_loss = 0.0
+            for step, batch in enumerate(pretrain_loader, start=1):
+                inputs = batch[0].to(device)
                 pred, target = model_obj.pretrain_forward(inputs)
                 loss = jepa_loss(pred, target)
-                pt_optimizer.zero_grad()
+                pt_optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 pt_optimizer.step()
                 decay = _jepa_ema_decay(cfg, global_step, total_steps)
                 model_obj.update_target_encoder(ema_decay=decay)
-                total_loss += loss.item()
+                epoch_loss += loss.item()
                 global_step += 1
                 if step % log_interval == 0 or step == len(pretrain_loader):
                     print(f"    step {step}/{len(pretrain_loader)} loss={loss.item():.4f} ema={decay:.6f}")
-            avg = total_loss / len(pretrain_loader)
-            if ep % 10 == 0:
-                print(f"  pretrain epoch {ep}: loss={avg:.4f}")
+            pt_scheduler.step()
+            avg = epoch_loss / max(1, len(pretrain_loader))
+            if ep % 10 == 0 or ep == 1:
+                print(f"  pretrain epoch {ep}/{cfg.model.pretrain_epochs}: loss={avg:.4f}")
         pt_path = os.path.join(run_dir, f"jepa_pretrained_s{cfg.subject}.pth")
-        os.makedirs(os.path.dirname(pt_path), exist_ok=True)
-        torch.save(model_obj.state_dict(), pt_path)
+        torch.save({"stage": "pretrain", "model_state": model_obj.state_dict()}, pt_path)
         print(f"  saved pretrained model → {pt_path}")
 
     if is_simple:
@@ -159,8 +237,72 @@ def main(cfg: DictConfig) -> None:
         acc = accuracy_score(all_labels[test_idx], model_obj.predict(de_feat[test_idx]))
         with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"{acc}\n")
+    elif use_synthetic:
+        # JEPA fine-tune on synthetic CrossPT-EEG with top-1 / top-5 eval
+        linear_probe = bool(cfg.model.get("linear_probe", False))
+        _set_jepa_linear_probe(model_obj, linear_probe)
+        print(f"=== JEPA fine-tuning mode: {'linear probe' if linear_probe else 'end-to-end'} (synthetic) ===")
+        model_obj.to(device)
+        criterion = torch.nn.CrossEntropyLoss()
+        cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
+        cls_lr = float(cls_opt_cfg.lr)
+        cls_wd = float(cls_opt_cfg.get("weight_decay", 0.0))
+        ft_params = model_obj.classifier.parameters() if linear_probe else model_obj.parameters()
+        ft_optimizer = AdamW(ft_params, lr=cls_lr, weight_decay=cls_wd)
+        ft_scheduler = CosineAnnealingLR(ft_optimizer, T_max=max(1, cfg.model.epochs))
+        log_interval = max(1, int(cfg.model.get("pretrain_log_interval", 10)))
+        save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
+        best_top1 = -math.inf
+
+        for epoch in range(1, cfg.model.epochs + 1):
+            if linear_probe:
+                model_obj.classifier.train()
+                model_obj.patch_embed.eval()
+                model_obj.context_encoder.eval()
+            else:
+                model_obj.train()
+            epoch_loss = epoch_top1 = epoch_top5 = epoch_n = 0
+            for step, batch in enumerate(train_loader_syn, start=1):
+                inputs, labels = batch[0].to(device), batch[1].to(device)
+                if linear_probe:
+                    with torch.no_grad():
+                        feats = model_obj.extract_features(inputs)
+                    logits = model_obj.classifier(feats)
+                else:
+                    logits = model_obj(inputs)
+                loss = criterion(logits, labels)
+                ft_optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                ft_optimizer.step()
+                batch_top1 = topk_correct(logits.detach(), labels, 1)
+                epoch_loss += loss.item()
+                epoch_top1 += batch_top1
+                epoch_top5 += topk_correct(logits.detach(), labels, 5)
+                epoch_n += labels.numel()
+                if step % log_interval == 0 or step == len(train_loader_syn):
+                    print(
+                        f"    [finetune] step {step}/{len(train_loader_syn)} "
+                        f"loss={loss.item():.4f} top1={batch_top1 / max(1, labels.numel()):.4f}"
+                    )
+            ft_scheduler.step()
+            val_loss, val_top1, val_top5 = jepa_evaluate(model_obj, test_loader_syn, device)
+            print(
+                f"  epoch {epoch}/{cfg.model.epochs} "
+                f"train_loss={epoch_loss / max(1, len(train_loader_syn)):.4f} "
+                f"train_top1={epoch_top1 / max(1, epoch_n):.4f} "
+                f"train_top5={epoch_top5 / max(1, epoch_n):.4f} "
+                f"val_top1={val_top1:.4f} val_top5={val_top5:.4f}"
+            )
+            if val_top1 > best_top1:
+                best_top1 = val_top1
+                torch.save({"stage": "linear_probe", "model_state": model_obj.state_dict()}, save_path)
+
+        test_loss, test_top1, test_top5 = jepa_evaluate(model_obj, test_loader_syn, device)
+        print(f"[eval] test_loss={test_loss:.4f} top1={test_top1:.4f} top5={test_top5:.4f}")
+        with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
+            f.write(f"top1={best_top1:.4f}\n")
     else:
-        if cfg.model.name.lower() == "jepa":
+        if is_jepa:
             linear_probe = bool(cfg.model.get("linear_probe", False))
             _set_jepa_linear_probe(model_obj, linear_probe)
             if linear_probe:
@@ -172,7 +314,7 @@ def main(cfg: DictConfig) -> None:
         train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
         test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
         criterion = torch.nn.CrossEntropyLoss()
-        if cfg.model.name.lower() == "jepa" and bool(cfg.model.get("linear_probe", False)):
+        if is_jepa and bool(cfg.model.get("linear_probe", False)):
             cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
             optimizer = build_optimizer(model_obj.classifier.parameters(), cls_opt_cfg)
         else:
