@@ -1,24 +1,30 @@
-"""Qwen-based EEG encoder for the decoupled encoder → head pipeline.
+"""LLM-based EEG encoder for the decoupled encoder → head pipeline.
 
 Design
 ------
-Qwen2 is a causal (decoder-only) transformer.  To obtain a meaningful
-pooled representation we append a learnable aggregation token **at the end**
-of the sequence.  With causal attention the last token attends to every
-preceding patch token, acting as a full-context summary vector.
+A pre-trained causal LLM (e.g. Qwen2.5-0.5B, or any HuggingFace AutoModel)
+is used as a frozen (or fine-tunable) sequence encoder.  EEG time-series are
+split into temporal patches, projected into the LLM's hidden dimension, then
+passed through the transformer body.  To obtain a pooled representation we
+append a learnable aggregation token **at the end** of the sequence.  With
+causal attention the last token attends to every preceding patch token,
+acting as a full-context summary vector.
 
   (B, C, T)
     → PatchEmbed (Conv1d)           → (B, n_patches, patch_embed_dim)
-    → input_proj (Linear)           → (B, n_patches, qwen_hidden_dim)
-    → append AGG token              → (B, n_patches+1, qwen_hidden_dim)
-    → Qwen2 transformer body        → (B, n_patches+1, qwen_hidden_dim)
-    → AGG token [:, -1]             → (B, qwen_hidden_dim)   ← latent space
+    → input_proj (Linear)           → (B, n_patches, llm_hidden_dim)
+    → append AGG token              → (B, n_patches+1, llm_hidden_dim)
+    → LLM transformer body          → (B, n_patches+1, llm_hidden_dim)
+    → AGG token [:, -1]             → (B, llm_hidden_dim)   ← latent space
 
 A downstream head (linear or MLP) is built separately via
 ``build_jepa_downstream`` and trained on top, mirroring the JEPA / EEG
 Transformer decoupled pipeline.
 
-  data → QwenEEGEncoder → latent space → downstream head → predict
+  data → LLMEEGEncoder → latent space → downstream head → predict
+
+Swapping the backbone only requires changing ``model.pretrained_name`` in the
+Hydra config — no code changes needed.
 """
 
 import torch
@@ -28,7 +34,7 @@ from transformers import AutoModel, AutoConfig
 from model.jepa import PatchEmbed
 
 
-class QwenEEGEncoder(nn.Module):
+class LLMEEGEncoder(nn.Module):
     def __init__(self, cfg, n_channels: int = 62, seq_len: int = 400):
         super().__init__()
         pretrained_name = str(cfg.model.pretrained_name)
@@ -37,10 +43,10 @@ class QwenEEGEncoder(nn.Module):
         n_channels      = int(cfg.model.get("n_channels", n_channels))
         seq_len         = int(cfg.model.get("seq_len", seq_len))
 
-        # ── Qwen backbone (transformer body only, no LM head) ──────────────
-        qwen_cfg = AutoConfig.from_pretrained(pretrained_name)
+        # ── LLM backbone (transformer body only, no LM head) ───────────────
+        llm_cfg = AutoConfig.from_pretrained(pretrained_name)
         self.backbone = AutoModel.from_pretrained(pretrained_name)
-        hidden_dim = qwen_cfg.hidden_size
+        hidden_dim = llm_cfg.hidden_size
         self.embed_dim = hidden_dim  # downstream head reads this
 
         # ── EEG front-end ──────────────────────────────────────────────────
@@ -64,7 +70,7 @@ class QwenEEGEncoder(nn.Module):
         agg    = self.agg_token.expand(B, -1, -1)                 # (B, 1, hidden_dim)
         tokens = torch.cat([tokens, agg], dim=1)                  # (B, n_patches+1, hidden_dim)
 
-        # Pass as inputs_embeds to bypass Qwen's token embedding table.
+        # Pass as inputs_embeds to bypass the LLM's token embedding table.
         # attention_mask = all ones → no padding mask (causal mask applied internally).
         attn_mask = torch.ones(B, tokens.size(1), dtype=torch.long, device=x.device)
         out = self.backbone(inputs_embeds=tokens, attention_mask=attn_mask)
@@ -72,11 +78,11 @@ class QwenEEGEncoder(nn.Module):
 
     # ------------------------------------------------------------------
     def freeze_backbone(self):
-        """Freeze Qwen weights; keep patch_embed, input_proj, agg_token trainable."""
+        """Freeze LLM weights; keep patch_embed, input_proj, agg_token trainable."""
         for p in self.backbone.parameters():
             p.requires_grad = False
 
     def unfreeze_backbone(self):
-        """Unfreeze Qwen weights for end-to-end fine-tuning."""
+        """Unfreeze LLM weights for end-to-end fine-tuning."""
         for p in self.backbone.parameters():
             p.requires_grad = True
