@@ -129,15 +129,15 @@ JEPA first pre-trains a Transformer encoder via masked-patch prediction in laten
 
 ```bash
 # Synthetic end-to-end run (pretrain + linear probe, top-1/top-5 eval)
-python src/object_classification.py model=jepa synthetic=true granularity=all
+python src/object_classification.py model=jepa synthetic=true granularity=all model.seq_len=1000
 
 # Quick smoke test on synthetic data
-python src/object_classification.py model=jepa synthetic=true \
+python src/object_classification.py model=jepa synthetic=true model.seq_len=1000 \
     model.pretrain_epochs=1 model.epochs=1 samples_per_subject=80 batch_size=32
 
 # Task variants
-python src/object_classification.py model=jepa synthetic=true granularity=coarse
-python src/object_classification.py model=jepa synthetic=true granularity=fine fine_group=3
+python src/object_classification.py model=jepa synthetic=true model.seq_len=1000 granularity=coarse
+python src/object_classification.py model=jepa synthetic=true model.seq_len=1000 granularity=fine fine_group=3
 ```
 
 

@@ -11,6 +11,8 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
 
+from tqdm import tqdm
+
 from dataset import EEGImageNetDataset, build_synthetic_crosspt_loaders
 from preprocessing.de_feat_cal import de_feat_cal
 from model.eegnet import EEGNet
@@ -45,8 +47,8 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
         return RGNN(device, 62, edge_weight, edge_index, 5, 200, num_classes, 2)
     if name == "jepa":
         return EEGJEPA(
-            n_channels=62,
-            seq_len=400,
+            n_channels=int(cfg.model.get("n_channels", 62)),
+            seq_len=int(cfg.model.get("seq_len", 400)),
             patch_len=cfg.model.patch_len,
             embed_dim=cfg.model.embed_dim,
             enc_depth=cfg.model.enc_depth,
@@ -149,11 +151,12 @@ def main(cfg: DictConfig) -> None:
         global_step = 0
         ema_start = float(cfg.model.ema_decay)
         ema_end = float(cfg.model.get("ema_decay_end", ema_start))
-        log_interval = max(1, int(cfg.model.get("pretrain_log_interval", 10)))
-        for ep in range(1, cfg.model.pretrain_epochs + 1):
+        epoch_bar = tqdm(range(1, cfg.model.pretrain_epochs + 1), desc="pretrain", unit="ep")
+        for ep in epoch_bar:
             model_obj.train()
             epoch_loss = 0.0
-            for step, batch in enumerate(pretrain_loader, start=1):
+            step_bar = tqdm(pretrain_loader, desc=f"ep {ep}", leave=False, unit="step")
+            for batch in step_bar:
                 inputs = batch[0].to(device)
                 pred, target = model_obj.pretrain_forward(inputs)
                 loss = jepa_loss(pred, target)
@@ -164,12 +167,10 @@ def main(cfg: DictConfig) -> None:
                 model_obj.update_target_encoder(ema_decay=decay)
                 epoch_loss += loss.item()
                 global_step += 1
-                if step % log_interval == 0 or step == len(pretrain_loader):
-                    print(f"    step {step}/{len(pretrain_loader)} loss={loss.item():.4f} ema={decay:.6f}")
+                step_bar.set_postfix(loss=f"{loss.item():.4f}", ema=f"{decay:.6f}")
             pt_scheduler.step()
             avg = epoch_loss / max(1, len(pretrain_loader))
-            if ep % 10 == 0 or ep == 1:
-                print(f"  pretrain epoch {ep}/{cfg.model.pretrain_epochs}: loss={avg:.4f}")
+            epoch_bar.set_postfix(loss=f"{avg:.4f}")
         pt_path = os.path.join(run_dir, f"jepa_pretrained_s{cfg.subject}.pth")
         torch.save({"stage": "pretrain", "model_state": model_obj.state_dict()}, pt_path)
         print(f"  saved pretrained model → {pt_path}")
@@ -192,11 +193,11 @@ def main(cfg: DictConfig) -> None:
         ft_params = model_obj.classifier.parameters() if linear_probe else model_obj.parameters()
         ft_optimizer = AdamW(ft_params, lr=cls_lr, weight_decay=cls_wd)
         ft_scheduler = CosineAnnealingLR(ft_optimizer, T_max=max(1, cfg.model.epochs))
-        log_interval = max(1, int(cfg.model.get("pretrain_log_interval", 10)))
         save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
         best_top1 = -math.inf
 
-        for epoch in range(1, cfg.model.epochs + 1):
+        epoch_bar = tqdm(range(1, cfg.model.epochs + 1), desc="finetune", unit="ep")
+        for epoch in epoch_bar:
             if linear_probe:
                 model_obj.classifier.train()
                 model_obj.patch_embed.eval()
@@ -204,7 +205,8 @@ def main(cfg: DictConfig) -> None:
             else:
                 model_obj.train()
             epoch_loss = epoch_top1 = epoch_top5 = epoch_n = 0
-            for step, batch in enumerate(train_loader_syn, start=1):
+            step_bar = tqdm(train_loader_syn, desc=f"ep {epoch}", leave=False, unit="step")
+            for batch in step_bar:
                 inputs, labels = batch[0].to(device), batch[1].to(device)
                 if linear_probe:
                     with torch.no_grad():
@@ -221,19 +223,14 @@ def main(cfg: DictConfig) -> None:
                 epoch_top1 += batch_top1
                 epoch_top5 += topk_correct(logits.detach(), labels, 5)
                 epoch_n += labels.numel()
-                if step % log_interval == 0 or step == len(train_loader_syn):
-                    print(
-                        f"    [finetune] step {step}/{len(train_loader_syn)} "
-                        f"loss={loss.item():.4f} top1={batch_top1 / max(1, labels.numel()):.4f}"
-                    )
+                step_bar.set_postfix(loss=f"{loss.item():.4f}", top1=f"{batch_top1 / max(1, labels.numel()):.3f}")
             ft_scheduler.step()
             val_loss, val_top1, val_top5 = jepa_evaluate(model_obj, test_loader_syn, device)
-            print(
-                f"  epoch {epoch}/{cfg.model.epochs} "
-                f"train_loss={epoch_loss / max(1, len(train_loader_syn)):.4f} "
-                f"train_top1={epoch_top1 / max(1, epoch_n):.4f} "
-                f"train_top5={epoch_top5 / max(1, epoch_n):.4f} "
-                f"val_top1={val_top1:.4f} val_top5={val_top5:.4f}"
+            epoch_bar.set_postfix(
+                tr_loss=f"{epoch_loss / max(1, len(train_loader_syn)):.4f}",
+                tr_top1=f"{epoch_top1 / max(1, epoch_n):.3f}",
+                val_top1=f"{val_top1:.3f}",
+                val_top5=f"{val_top5:.3f}",
             )
             if val_top1 > best_top1:
                 best_top1 = val_top1

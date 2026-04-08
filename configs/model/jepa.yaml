@@ -4,6 +4,8 @@ use_freq: false
 epochs: 200
 
 # Architecture
+n_channels: 62
+seq_len: 400      # 400 for real EEG-ImageNet; use 1000 for synthetic CrossPT-EEG
 patch_len: 40
 embed_dim: 128
 enc_depth: 4
