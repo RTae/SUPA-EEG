@@ -14,7 +14,14 @@ from torch.utils.data import DataLoader, Subset
 from dataset import EEGImageNetDataset, build_synthetic_crosspt_loaders
 from preprocessing.de_feat_cal import de_feat_cal
 from model.eegnet import EEGNet
-from model.jepa import EEGJEPA, jepa_loss
+from model.jepa import (
+    EEGJEPA,
+    jepa_loss,
+    ema_decay_schedule,
+    topk_correct,
+    jepa_evaluate,
+    load_jepa_checkpoint,
+)
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
@@ -53,73 +60,6 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
         )
     raise ValueError(f"Unknown model: {name}")
 
-
-def _set_jepa_linear_probe(model: EEGJEPA, enabled: bool) -> None:
-    """Freeze JEPA backbone for linear probe when enabled."""
-    backbone_modules = [model.patch_embed, model.context_encoder]
-    if enabled:
-        for module in backbone_modules:
-            module.eval()
-            for p in module.parameters():
-                p.requires_grad = False
-        model.cls_token.requires_grad = False
-        model.pos_embed.requires_grad = False
-    else:
-        for module in backbone_modules:
-            for p in module.parameters():
-                p.requires_grad = True
-        model.cls_token.requires_grad = True
-        model.pos_embed.requires_grad = True
-
-
-def _jepa_ema_decay(cfg: DictConfig, step: int, total_steps: int) -> float:
-    """Linear warmup of EMA decay from ema_decay to ema_decay_end."""
-    start = float(cfg.model.ema_decay)
-    end = float(cfg.model.get("ema_decay_end", start))
-    if total_steps <= 1:
-        return end
-    alpha = step / float(total_steps - 1)
-    return start + alpha * (end - start)
-
-
-def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
-    """Return the count of samples whose true label is among the top-k predictions."""
-    k = min(k, logits.shape[-1])
-    return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
-
-
-@torch.no_grad()
-def jepa_evaluate(model: EEGJEPA, loader, device: torch.device) -> tuple[float, float, float]:
-    """Evaluate JEPA classifier; returns (avg_loss, top1_acc, top5_acc).
-
-    Handles variable-length batches: only the first two elements (inputs, labels)
-    are consumed so both 2-item and 3-item (inputs, labels, subjects) loaders work.
-    """
-    model.eval()
-    criterion = torch.nn.CrossEntropyLoss()
-    total_loss = total_top1 = total_top5 = total_n = 0
-    for batch in loader:
-        inputs, labels = batch[0].to(device), batch[1].to(device)
-        logits = model(inputs)
-        total_loss += criterion(logits, labels).item()
-        total_top1 += topk_correct(logits, labels, 1)
-        total_top5 += topk_correct(logits, labels, 5)
-        total_n += labels.numel()
-    return total_loss / max(len(loader), 1), total_top1 / max(total_n, 1), total_top5 / max(total_n, 1)
-
-
-def _load_jepa_checkpoint(model: EEGJEPA, path: str, device: torch.device) -> None:
-    """Load a JEPA checkpoint, silently dropping classifier head weights on shape mismatch."""
-    ckpt = torch.load(path, map_location=device)
-    state = dict(ckpt.get("model_state", ckpt))
-    for key in ("classifier.weight", "classifier.bias"):
-        stored = state.get(key)
-        current = model.state_dict().get(key)
-        if stored is not None and current is not None and stored.shape != current.shape:
-            state.pop(key)
-    model.load_state_dict(state, strict=False)
-    model._sync_target_encoder()
-    print(f"[load] JEPA checkpoint: {path}")
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
@@ -183,7 +123,7 @@ def main(cfg: DictConfig) -> None:
     if cfg.pretrained_model:
         ckpt_path = os.path.join(cfg.output_dir, cfg.pretrained_model)
         if is_jepa:
-            _load_jepa_checkpoint(model_obj, ckpt_path, device)
+            load_jepa_checkpoint(model_obj, ckpt_path, device)
         else:
             model_obj.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
 
@@ -207,6 +147,8 @@ def main(cfg: DictConfig) -> None:
         pt_scheduler = CosineAnnealingLR(pt_optimizer, T_max=max(1, cfg.model.pretrain_epochs))
         total_steps = max(1, cfg.model.pretrain_epochs * len(pretrain_loader))
         global_step = 0
+        ema_start = float(cfg.model.ema_decay)
+        ema_end = float(cfg.model.get("ema_decay_end", ema_start))
         log_interval = max(1, int(cfg.model.get("pretrain_log_interval", 10)))
         for ep in range(1, cfg.model.pretrain_epochs + 1):
             model_obj.train()
@@ -218,7 +160,7 @@ def main(cfg: DictConfig) -> None:
                 pt_optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 pt_optimizer.step()
-                decay = _jepa_ema_decay(cfg, global_step, total_steps)
+                decay = ema_decay_schedule(ema_start, ema_end, global_step, total_steps)
                 model_obj.update_target_encoder(ema_decay=decay)
                 epoch_loss += loss.item()
                 global_step += 1
@@ -240,7 +182,7 @@ def main(cfg: DictConfig) -> None:
     elif use_synthetic:
         # JEPA fine-tune on synthetic CrossPT-EEG with top-1 / top-5 eval
         linear_probe = bool(cfg.model.get("linear_probe", False))
-        _set_jepa_linear_probe(model_obj, linear_probe)
+        model_obj.freeze_backbone() if linear_probe else model_obj.unfreeze_backbone()
         print(f"=== JEPA fine-tuning mode: {'linear probe' if linear_probe else 'end-to-end'} (synthetic) ===")
         model_obj.to(device)
         criterion = torch.nn.CrossEntropyLoss()
@@ -304,7 +246,7 @@ def main(cfg: DictConfig) -> None:
     else:
         if is_jepa:
             linear_probe = bool(cfg.model.get("linear_probe", False))
-            _set_jepa_linear_probe(model_obj, linear_probe)
+            model_obj.freeze_backbone() if linear_probe else model_obj.unfreeze_backbone()
             if linear_probe:
                 print("=== JEPA fine-tuning mode: linear probe ===")
             else:

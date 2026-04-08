@@ -290,3 +290,54 @@ def jepa_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     pred_flat = pred.reshape(-1, pred.shape[-1]).contiguous()
     target_flat = target.reshape(-1, target.shape[-1]).contiguous()
     return F.smooth_l1_loss(pred_flat, target_flat)
+
+
+# ---------------------------------------------------------------------------
+# Training utilities
+# ---------------------------------------------------------------------------
+
+def ema_decay_schedule(start: float, end: float, step: int, total_steps: int) -> float:
+    """Linearly interpolate EMA decay from start → end over total_steps."""
+    if total_steps <= 1:
+        return end
+    alpha = step / float(total_steps - 1)
+    return start + alpha * (end - start)
+
+
+def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
+    """Return the count of samples whose true label is among the top-k predictions."""
+    k = min(k, logits.shape[-1])
+    return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
+
+
+@torch.no_grad()
+def jepa_evaluate(model: EEGJEPA, loader, device: torch.device) -> tuple[float, float, float]:
+    """Evaluate JEPA classifier on a loader; returns (avg_loss, top1_acc, top5_acc).
+
+    Accepts both 2-item (inputs, labels) and 3-item (inputs, labels, subjects) batches.
+    """
+    model.eval()
+    criterion = nn.CrossEntropyLoss()
+    total_loss = total_top1 = total_top5 = total_n = 0
+    for batch in loader:
+        inputs, labels = batch[0].to(device), batch[1].to(device)
+        logits = model(inputs)
+        total_loss += criterion(logits, labels).item()
+        total_top1 += topk_correct(logits, labels, 1)
+        total_top5 += topk_correct(logits, labels, 5)
+        total_n += labels.numel()
+    return total_loss / max(len(loader), 1), total_top1 / max(total_n, 1), total_top5 / max(total_n, 1)
+
+
+def load_jepa_checkpoint(model: EEGJEPA, path: str, device: torch.device) -> None:
+    """Load a JEPA checkpoint; silently drops classifier head weights on shape mismatch."""
+    ckpt = torch.load(path, map_location=device)
+    state = dict(ckpt.get("model_state", ckpt))
+    for key in ("classifier.weight", "classifier.bias"):
+        stored = state.get(key)
+        current = model.state_dict().get(key)
+        if stored is not None and current is not None and stored.shape != current.shape:
+            state.pop(key)
+    model.load_state_dict(state, strict=False)
+    model._sync_target_encoder()
+    print(f"[load] JEPA checkpoint: {path}")
