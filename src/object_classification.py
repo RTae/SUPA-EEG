@@ -26,6 +26,7 @@ from model.jepa import (
     build_jepa_downstream,
 )
 from model.eeg_transformer import EEGTransformer
+from model.llm_encoder import LLMEEGEncoder
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
@@ -49,6 +50,8 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
         return RGNN(device, 62, edge_weight, edge_index, 5, 200, num_classes, 2)
     if name == "eeg_transformer":
         return EEGTransformer(cfg)
+    if name == "llm_encoder":
+        return LLMEEGEncoder(cfg)
     if name == "jepa":
         return EEGJEPA(
             n_channels=int(cfg.model.get("n_channels", 62)),
@@ -74,7 +77,7 @@ def main(cfg: DictConfig) -> None:
     device = get_device()
 
     is_jepa = cfg.model.name.lower() == "jepa"
-    is_transformer = cfg.model.name.lower() == "eeg_transformer"
+    is_transformer = cfg.model.name.lower() in {"eeg_transformer", "llm_encoder"}
     use_synthetic = is_jepa and bool(cfg.get("synthetic", False))
 
     if use_synthetic:
@@ -219,13 +222,29 @@ def main(cfg: DictConfig) -> None:
             ft_params = downstream_head.parameters()
         else:
             # End-to-end: backbone stays in the training loop
-            print(f"=== {cfg.model.name} fine-tuning: end-to-end ===")
-            model_obj.unfreeze_backbone()
+            is_llm = cfg.model.name.lower() == "llm_encoder"
+            use_lora = is_llm and bool(cfg.model.get("lora", False))
+            fine_tune_llm = bool(cfg.model.get("fine_tune_llm", True))
+            if use_lora:
+                # LoRA: peft already froze non-LoRA params at init; only LoRA matrices + frontend train
+                print(f"=== {cfg.model.name} fine-tuning: LoRA (rank={cfg.model.get('lora_r', 8)}) + frontend ===")
+                model_obj.freeze_backbone()   # no-ops on LoRA matrices, freezes base weights
+                ft_params = list(downstream_head.parameters()) + model_obj.frontend_parameters()
+                # also include LoRA matrices explicitly
+                ft_params += [p for p in model_obj.backbone.parameters() if p.requires_grad]
+            elif is_llm and not fine_tune_llm:
+                # Frozen LLM backbone — only frontend (patch_embed, input_proj, agg_token) + head train
+                print(f"=== {cfg.model.name} fine-tuning: frozen LLM backbone, training frontend + head ===")
+                model_obj.freeze_backbone()
+                ft_params = list(downstream_head.parameters()) + model_obj.frontend_parameters()
+            else:
+                print(f"=== {cfg.model.name} fine-tuning: end-to-end ===")
+                model_obj.unfreeze_backbone()
+                ft_params = list(downstream_head.parameters()) + list(model_obj.parameters())
             ft_train_loader = raw_train_loader
             ft_test_loader = raw_test_loader
             eval_encoder = model_obj
             eval_lmap = lmap
-            ft_params = list(downstream_head.parameters()) + list(model_obj.parameters())
 
         cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
         ft_optimizer = AdamW(
