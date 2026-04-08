@@ -316,6 +316,7 @@ def jepa_evaluate(
     If *label_map* is provided, labels are remapped inside the loop (end-to-end path).
     Accepts both 2-item (inputs, labels) and 3-item (inputs, labels, subjects) batches.
     """
+    from trainer.metrics import remap_labels, topk_correct  # deferred to avoid circular import
     if encoder is not None:
         encoder.eval()
     head.eval()
@@ -323,10 +324,6 @@ def jepa_evaluate(
     total_loss = total_top1 = total_top5 = total_n = 0
     for batch in loader:
         inputs, labels = batch[0].to(device), batch[1].to(device)
-        if label_map is not None:
-            from trainer.metrics import remap_labels, topk_correct
-        else:
-            from trainer.metrics import topk_correct
         if label_map is not None:
             labels = remap_labels(labels.cpu(), label_map).to(device)
         feats = encoder(inputs) if encoder is not None else inputs
