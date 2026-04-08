@@ -5,32 +5,37 @@ Decoding visual perception from EEG signals recorded while subjects viewed Image
 - **Object Classification** : classify viewed object categories from EEG
 - **Image Generation** : reconstruct viewed images from EEG via Stable Diffusion
 
-## Baseline: CROSSPT-EEG
+## Models
 
-The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/arXiv.2406.07151) pipeline as a baseline:
+The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/arXiv.2406.07151) pipeline as a baseline and adds several encoder architectures for exploration:
 
-| Task | Pipeline | Models |
-|------|----------|--------|
-| Classification | EEG → DE features → classifier | EEGNet, MLP, RGNN, SVM, RF, KNN |
-| Generation | EEG → DE features → MLP → CLIP embedding → Stable Diffusion | MLPMapper (cross-modal projection) |
+| Model | Config | Pipeline | Notes |
+|-------|--------|----------|-------|
+| EEGNet | `eegnet` | EEG → Conv2D → logits | Baseline CNN |
+| MLP | `mlp` | DE features → FC layers → logits | Baseline, frequency-domain |
+| RGNN | `rgnn` | EEG → Graph NN → logits | Baseline, graph-based |
+| SVM / RF / KNN / DT / Ridge | `svm` … | DE features → sklearn | Baseline, classical ML |
+| EEG-JEPA | `jepa` | EEG → masked ViT pretrain → linear probe | Self-supervised |
+| EEG Transformer | `eeg_transformer` | EEG → ViT encoder → downstream head | Supervised, decoupled |
+| LLM Encoder | `llm_encoder` | EEG patches → LLM backbone → downstream head | Pre-trained LLM + LoRA |
+| MLPMapper | `mlp_sd` | DE features → MLP → CLIP → Stable Diffusion | Generation only |
 
-A self-supervised **EEG-JEPA** (Joint Embedding Predictive Architecture) model is also provided as a template for exploring representation learning on EEG.
-
-> **Adding your own model:** Create a file in `src/model/`, add a Hydra config in `configs/model/`, and register it in `object_classification.py` (classification) or `image_generation.py` / `gen_eval.py` (generation). The shared dataset, feature extraction, and evaluation infrastructure are reusable.
+> **Adding your own model:** Create a file in `src/model/`, add a Hydra config in `configs/model/`, and register it in `object_classification.py`. The shared dataset, feature extraction, and evaluation infrastructure are reusable.
 
 ## Project Structure
 
 ```
 configs/
 ├── config.yaml               # Shared defaults (dataset, output, diffusion, blip)
-└── model/                     # Per-model training hyperparameters
+└── model/                    # Per-model training hyperparameters
     ├── eegnet.yaml
     ├── mlp.yaml
     ├── rgnn.yaml
     ├── jepa.yaml
     ├── eeg_transformer.yaml
+    ├── llm_encoder.yaml
     ├── mlp_sd.yaml
-    ├── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
+    └── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
 src/
 ├── utilities.py              # Shared constants, helpers, device detection, benchmark splits
 ├── dataset.py                # EEGImageNetDataset + CrossPTEEGSyntheticDataset (PyTorch Datasets)
@@ -51,8 +56,9 @@ src/
     ├── mlp_sd.py             # [Baseline] MLP mapper to CLIP embedding space
     ├── rgnn.py               # [Baseline] Regularized Graph Neural Network
     ├── simple_model.py       # [Baseline] Sklearn (SVM, RF, KNN, DT, Ridge)
-    ├── jepa.py               # EEG-JEPA (self-supervised + training utilities)
-    └── eeg_transformer.py    # EEG Transformer encoder (decoupled supervised pipeline)
+    ├── jepa.py               # EEG-JEPA + shared building blocks (PatchEmbed, TransformerEncoder)
+    ├── eeg_transformer.py    # Supervised ViT encoder (decoupled pipeline)
+    └── llm_encoder.py        # Pre-trained LLM encoder with LoRA support (decoupled pipeline)
 scripts/
 └── merge_dataset.py          # Merge split .pth dataset files
 data/
@@ -171,7 +177,7 @@ python src/object_classification.py model=jepa synthetic=true model.seq_len=1000
 
 #### EEG Transformer
 
-`EEGTransformer` follows the same two-stage decoupled pipeline as JEPA, but uses a **fully-supervised Transformer encoder** — no masked pre-training, no EMA target encoder. The encoder is trained directly from labels, and a separate downstream head (linear or MLP) is attached to the learned `[CLS]` representation.
+`EEGTransformer` uses a **fully-supervised ViT-style encoder** — no masked pre-training. EEG patches are encoded by a Transformer, and a separate downstream head classifies from the `[CLS]` token. Shares the same decoupled pipeline as JEPA.
 
 ```mermaid
 flowchart LR
@@ -184,15 +190,58 @@ flowchart LR
 ```
 
 ```bash
-# Linear probe (freeze encoder, train head only)
+# Linear probe (default — freeze encoder, train head only)
 python src/object_classification.py model=eeg_transformer
 
-# End-to-end fine-tuning (train encoder + head jointly)
+# End-to-end fine-tuning
 python src/object_classification.py model=eeg_transformer model.linear_probe=false
 
-# Deeper head
+# MLP downstream head
 python src/object_classification.py model=eeg_transformer model.downstream.type=mlp model.downstream.hidden_dims=[256,128]
 ```
+
+#### LLM Encoder
+
+`LLMEEGEncoder` projects EEG patches into a pre-trained causal LLM's hidden space (default: `Qwen/Qwen2.5-0.5B`). A learnable aggregation token appended at the end summarises the full sequence under causal attention. The backbone can be swapped by changing one config line.
+
+```mermaid
+flowchart LR
+    A[EEG input\nB × C × T] --> B[PatchEmbed\nConv1d]
+    B --> C[input_proj\nLinear]
+    C --> D[append AGG token\nat end of seq]
+    D --> E[LLM backbone\ncausal transformer]
+    E --> F[AGG token\nB × hidden_dim\nlatent space]
+    F --> G[Downstream head\nLinear or MLP]
+    G --> H[Class prediction\ntop-1 / top-5]
+```
+
+Four training modes are available:
+
+| Mode | `linear_probe` | `lora` | `fine_tune_llm` | What trains | Typical params |
+|------|:-:|:-:|:-:|---|---|
+| Linear probe | `true` | — | — | head only (features pre-extracted) | ~0.1% |
+| Frozen LLM | `false` | `false` | `false` | frontend + head | ~1% |
+| **LoRA** | `false` | `true` | — | LoRA matrices + frontend + head | ~1–2% |
+| Full fine-tune | `false` | `false` | `true` | everything | 100% |
+
+```bash
+# Linear probe (default)
+python src/object_classification.py model=llm_encoder
+
+# Frozen LLM — only EEG frontend adapts
+python src/object_classification.py model=llm_encoder model.linear_probe=false
+
+# LoRA (recommended for backbone adaptation)
+python src/object_classification.py model=llm_encoder model.linear_probe=false model.lora=true
+
+# LoRA with larger rank
+python src/object_classification.py model=llm_encoder model.linear_probe=false model.lora=true model.lora_r=16 model.lora_alpha=32
+
+# Different backbone (any HuggingFace AutoModel)
+python src/object_classification.py model=llm_encoder model.pretrained_name=meta-llama/Llama-3.2-1B
+```
+
+> **Note:** LoRA requires `peft`. Install with `uv add peft`.
 
 #### Baseline for training and evaluating the baseline classification models:
 
