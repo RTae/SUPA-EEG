@@ -20,7 +20,6 @@ from model.jepa import (
     EEGJEPA,
     jepa_loss,
     ema_decay_schedule,
-    topk_correct,
     jepa_evaluate,
     load_jepa_checkpoint,
     extract_all_features,
@@ -29,7 +28,7 @@ from model.jepa import (
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
-from trainer import build_label_map, train_classifier
+from trainer import build_label_map, train_classifier, topk_correct
 from utilities import get_device, build_optimizer, get_benchmark_split
 
 SIMPLE_MODELS = {"svm", "rf", "knn", "dt", "ridge"}
