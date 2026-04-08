@@ -25,6 +25,14 @@ Transformer decoupled pipeline.
 
 Swapping the backbone only requires changing ``model.pretrained_name`` in the
 Hydra config — no code changes needed.
+
+LoRA mode
+---------
+When ``model.lora: true``, the backbone is wrapped with ``peft.get_peft_model``
+using a ``LoraConfig``.  Only the injected low-rank matrices (≈ 0.5–1 % of
+params) plus the EEG front-end train.  The rest of the backbone stays frozen.
+This gives better adaptation than a fully frozen backbone at a fraction of the
+cost of full fine-tuning.
 """
 
 import torch
@@ -32,6 +40,13 @@ import torch.nn as nn
 from transformers import AutoModel, AutoConfig
 
 from model.jepa import PatchEmbed
+
+_PEFT_AVAILABLE = False
+try:
+    from peft import LoraConfig, TaskType, get_peft_model
+    _PEFT_AVAILABLE = True
+except ImportError:
+    pass
 
 
 class LLMEEGEncoder(nn.Module):
@@ -45,9 +60,30 @@ class LLMEEGEncoder(nn.Module):
 
         # ── LLM backbone (transformer body only, no LM head) ───────────────
         llm_cfg = AutoConfig.from_pretrained(pretrained_name)
-        self.backbone = AutoModel.from_pretrained(pretrained_name)
+        backbone = AutoModel.from_pretrained(pretrained_name)
         hidden_dim = llm_cfg.hidden_size
         self.embed_dim = hidden_dim  # downstream head reads this
+
+        # ── Optional LoRA wrapping ──────────────────────────────────────────
+        self.lora_enabled = bool(cfg.model.get("lora", False))
+        if self.lora_enabled:
+            if not _PEFT_AVAILABLE:
+                raise ImportError("peft is required for LoRA mode: uv add peft")
+            lora_r       = int(cfg.model.get("lora_r", 8))
+            lora_alpha   = int(cfg.model.get("lora_alpha", 16))
+            lora_dropout = float(cfg.model.get("lora_dropout", 0.05))
+            target_modules = list(cfg.model.get("lora_target_modules", ["q_proj", "v_proj"]))
+            lora_cfg = LoraConfig(
+                task_type=TaskType.FEATURE_EXTRACTION,
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                target_modules=target_modules,
+                bias="none",
+            )
+            backbone = get_peft_model(backbone, lora_cfg)
+            backbone.print_trainable_parameters()
+        self.backbone = backbone
 
         # ── EEG front-end ──────────────────────────────────────────────────
         self.patch_embed = PatchEmbed(n_channels, patch_len, patch_embed_dim)
@@ -78,14 +114,29 @@ class LLMEEGEncoder(nn.Module):
 
     # ------------------------------------------------------------------
     def freeze_backbone(self):
-        """Freeze LLM weights; keep patch_embed, input_proj, agg_token trainable."""
-        for p in self.backbone.parameters():
+        """Freeze LLM weights; keep patch_embed, input_proj, agg_token trainable.
+
+        In LoRA mode peft already froze non-LoRA params at init — this is a no-op
+        for those weights so LoRA matrices stay trainable.
+        """
+        for name, p in self.backbone.named_parameters():
+            if self.lora_enabled and "lora_" in name:
+                continue  # keep LoRA matrices trainable
             p.requires_grad = False
 
     def unfreeze_backbone(self):
-        """Unfreeze LLM weights for end-to-end fine-tuning."""
-        for p in self.backbone.parameters():
-            p.requires_grad = True
+        """Unfreeze LLM weights for end-to-end fine-tuning.
+
+        In LoRA mode this unfreezes only LoRA matrices (peft keeps base weights frozen
+        unless you call ``merge_and_unload`` first).
+        """
+        if self.lora_enabled:
+            for name, p in self.backbone.named_parameters():
+                if "lora_" in name:
+                    p.requires_grad = True
+        else:
+            for p in self.backbone.parameters():
+                p.requires_grad = True
 
     def frontend_parameters(self):
         """Return only the trainable front-end parameters (patch_embed, input_proj, agg_token).
