@@ -204,7 +204,7 @@ def main(cfg: DictConfig) -> None:
 
         if linear_probe:
             # Pre-extract all features once; head trains on TensorDataset (fast)
-            print("=== JEPA fine-tuning: linear probe — extracting features... ===")
+            print(f"=== {cfg.model.name} fine-tuning: linear probe — extracting features... ===")
             model_obj.freeze_backbone()
             train_feats, train_labels = extract_all_features(model_obj, raw_train_loader, device, lmap)
             test_feats, test_labels = extract_all_features(model_obj, raw_test_loader, device, lmap)
@@ -219,7 +219,7 @@ def main(cfg: DictConfig) -> None:
             ft_params = downstream_head.parameters()
         else:
             # End-to-end: backbone stays in the training loop
-            print("=== JEPA fine-tuning: end-to-end ===")
+            print(f"=== {cfg.model.name} fine-tuning: end-to-end ===")
             model_obj.unfreeze_backbone()
             ft_train_loader = raw_train_loader
             ft_test_loader = raw_test_loader
