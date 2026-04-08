@@ -241,8 +241,6 @@ python src/object_classification.py model=llm_encoder model.linear_probe=false m
 python src/object_classification.py model=llm_encoder model.pretrained_name=meta-llama/Llama-3.2-1B
 ```
 
-> **Note:** LoRA requires `peft`. Install with `uv add peft`.
-
 #### Baseline for training and evaluating the baseline classification models:
 
 ```bash
