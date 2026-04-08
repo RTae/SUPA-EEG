@@ -120,10 +120,37 @@ Three evaluation paradigms are supported via `metric=`:
 | **Cross-Time** | `ct` | Target subject, Stage 1 | Target subject, Stage 2 |
 | **Cross-Participant** | `cp` | All *other* subjects, Stage 1 | Target subject, Stage 1 |
 
+### Object Classification
 
-### EEG-JEPA (Self-Supervised)
+#### EEG-JEPA
 
 JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation. Training utilities (`ema_decay_schedule`, `topk_correct`, `jepa_evaluate`, `load_jepa_checkpoint`) live alongside the model in `src/model/jepa.py`.
+
+```mermaid
+flowchart TD
+    subgraph PRE["Stage 1 — Self-Supervised Pre-training"]
+        direction TB
+        A[EEG input\nB × C × T] --> B[PatchEmbed\nConv1d]
+        B --> C[Random mask\ncontext / target split]
+        C --> E[Context encoder\nViT — visible patches]
+        C --> F[Target encoder\nEMA copy — masked patches]
+        E --> G[Predictor\nlightweight ViT]
+        G -->|predicted repr| H{JEPA loss\nSmooth-L1}
+        F -->|target repr stop-grad| H
+        H -->|backprop| E
+        H -->|EMA update| F
+    end
+
+    subgraph FT["Stage 2 — Downstream Fine-tuning"]
+        direction TB
+        I[EEG input\nB × C × T] --> J[Frozen JEPA encoder]
+        J --> K["[CLS] token\nB × embed_dim"]
+        K --> L[Downstream head\nLinear or MLP]
+        L --> M[Class prediction\ntop-1 / top-5]
+    end
+
+    PRE -->|"freeze backbone\nsave encoder checkpoint"| FT
+```
 
 `object_classification.py` is the single entrypoint for both real and synthetic data. Pass `synthetic=true` to use the built-in synthetic CrossPT-EEG dataset instead of loading `EEG-ImageNet.pth`:
 
@@ -138,48 +165,6 @@ python src/object_classification.py model=jepa synthetic=true model.seq_len=1000
 # Task variants
 python src/object_classification.py model=jepa synthetic=true model.seq_len=1000 granularity=coarse
 python src/object_classification.py model=jepa synthetic=true model.seq_len=1000 granularity=fine fine_group=3
-```
-
-
-### Object Classification
-
-#### Training Loop Diagram
-
-```mermaid
-flowchart TD
-    A[Load dataset and split by metric wt or ct or cp] --> B[Build train and test loaders]
-    B --> D[JEPA with no pretrained_model]
-
-    D --> D1[For each pretrain epoch]
-    D1 --> D2[Forward pretrain path: pred and target repr]
-    D2 --> D3[Compute JEPA loss]
-    D3 --> D4[Backprop and optimizer step]
-    D4 --> D5[EMA update of target encoder]
-    D5 --> D1
-    D1 -->|done| D6[Save JEPA pretrained checkpoint]
-
-    D6 --> I
-
-    I --> I1[For each supervised epoch]
-    I1 --> I2[Forward classifier logits]
-    I2 --> I3[CrossEntropy loss and optimizer step]
-    I3 --> I4[Evaluate on test loader]
-    I4 --> I5{Best accuracy}
-    I5 -->|yes| I6[Save best checkpoint]
-    I5 -->|no| I1
-    I6 --> I1
-    I1 -->|done| K[Write result.txt]
-```
-
-```bash
-# Pre-train + fine-tune (pre-training runs automatically before classification)
-python src/object_classification.py model=jepa subject=0 metric=ct
-
-# Skip pre-training with a saved checkpoint
-python src/object_classification.py model=jepa pretrained_model=jepa_pretrained_s0.pth
-
-# Tune JEPA hyperparameters
-python src/object_classification.py model=jepa model.pretrain_epochs=200 model.mask_ratio=0.6 model.embed_dim=256
 ```
 
 #### Baseline for training and evaluating the baseline classification models:
