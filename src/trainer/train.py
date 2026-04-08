@@ -42,10 +42,11 @@ def train_classifier(
             epoch_loss += loss.item()
             step_bar.set_postfix(loss=f"{loss.item():.4f}")
 
-        acc, test_loss = evaluate_classifier(model, test_loader, criterion, device, label_map)
+        acc, acc5, test_loss = evaluate_classifier(model, test_loader, criterion, device, label_map)
         epoch_bar.set_postfix(
             tr_loss=f"{epoch_loss / max(1, len(train_loader)):.4f}",
-            val_acc=f"{acc:.3f}",
+            val_top1=f"{acc:.3f}",
+            val_top5=f"{acc5:.3f}",
             val_loss=f"{test_loss:.4f}",
         )
         if acc > best_acc:

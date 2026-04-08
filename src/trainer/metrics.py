@@ -2,7 +2,6 @@
 
 import numpy as np
 import torch
-from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader
 
 
@@ -31,19 +30,23 @@ def evaluate_classifier(
     criterion: torch.nn.Module,
     device: torch.device,
     label_map: dict[int, int],
-) -> tuple[float, float]:
-    """Return (accuracy, avg_loss) on the given dataloader."""
+) -> tuple[float, float, float]:
+    """Return (top1_acc, top5_acc, avg_loss) on the given dataloader."""
     model.eval()
-    correct, total, total_loss = 0, 0, 0.0
+    top1_correct = top5_correct = total = 0
+    total_loss = 0.0
     for inputs, labels in dataloader:
         labels = remap_labels(labels, label_map)
         inputs, labels = inputs.to(device), labels.to(device)
         outputs = model(inputs)
         total_loss += criterion(outputs, labels).item()
-        predicted = outputs.argmax(dim=1)
         total += len(labels)
-        correct += accuracy_score(labels.cpu(), predicted.cpu(), normalize=False)
-    return correct / total, total_loss / len(dataloader)
+        k5 = min(5, outputs.shape[-1])
+        top5_idx = outputs.topk(k5, dim=1).indices          # (B, k5)
+        top1_correct += int(top5_idx[:, :1].eq(labels.unsqueeze(1)).any(dim=1).sum().item())
+        top5_correct += int(top5_idx.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
+    denom = max(total, 1)
+    return top1_correct / denom, top5_correct / denom, total_loss / max(len(dataloader), 1)
 
 
 @torch.no_grad()
