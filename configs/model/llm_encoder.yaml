@@ -17,6 +17,17 @@ linear_probe: true     # freeze backbone, train head only (recommended for large
 fine_tune_llm: false   # only applies when linear_probe=false:
                        #   false → frozen LLM, train frontend (patch_embed/proj/agg) + head
                        #   true  → full end-to-end (fine-tune entire LLM backbone)
+
+# LoRA — parameter-efficient fine-tuning of the LLM backbone
+# Requires: uv add peft  (or pip install peft)
+# When lora=true, set linear_probe=false to activate backbone training.
+# Only the low-rank matrices (~0.5-1% of params) + frontend will train.
+lora: false
+lora_r: 8                              # rank of LoRA matrices
+lora_alpha: 16                         # scaling factor (effective lr = lora_alpha / lora_r)
+lora_dropout: 0.05
+lora_target_modules: [q_proj, v_proj]  # attention projections to inject LoRA into
+
 downstream:
   type: linear         # or mlp with hidden_dims
 

@@ -222,8 +222,17 @@ def main(cfg: DictConfig) -> None:
             ft_params = downstream_head.parameters()
         else:
             # End-to-end: backbone stays in the training loop
+            is_llm = cfg.model.name.lower() == "llm_encoder"
+            use_lora = is_llm and bool(cfg.model.get("lora", False))
             fine_tune_llm = bool(cfg.model.get("fine_tune_llm", True))
-            if cfg.model.name.lower() == "llm_encoder" and not fine_tune_llm:
+            if use_lora:
+                # LoRA: peft already froze non-LoRA params at init; only LoRA matrices + frontend train
+                print(f"=== {cfg.model.name} fine-tuning: LoRA (rank={cfg.model.get('lora_r', 8)}) + frontend ===")
+                model_obj.freeze_backbone()   # no-ops on LoRA matrices, freezes base weights
+                ft_params = list(downstream_head.parameters()) + model_obj.frontend_parameters()
+                # also include LoRA matrices explicitly
+                ft_params += [p for p in model_obj.backbone.parameters() if p.requires_grad]
+            elif is_llm and not fine_tune_llm:
                 # Frozen LLM backbone — only frontend (patch_embed, input_proj, agg_token) + head train
                 print(f"=== {cfg.model.name} fine-tuning: frozen LLM backbone, training frontend + head ===")
                 model_obj.freeze_backbone()
