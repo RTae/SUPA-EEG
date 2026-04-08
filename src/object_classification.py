@@ -26,6 +26,7 @@ from model.jepa import (
     build_jepa_downstream,
 )
 from model.eeg_transformer import EEGTransformer
+from model.qwen_encoder import QwenEEGEncoder
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.simple_model import SimpleModel
@@ -49,6 +50,8 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
         return RGNN(device, 62, edge_weight, edge_index, 5, 200, num_classes, 2)
     if name == "eeg_transformer":
         return EEGTransformer(cfg)
+    if name == "qwen_encoder":
+        return QwenEEGEncoder(cfg)
     if name == "jepa":
         return EEGJEPA(
             n_channels=int(cfg.model.get("n_channels", 62)),
@@ -74,7 +77,7 @@ def main(cfg: DictConfig) -> None:
     device = get_device()
 
     is_jepa = cfg.model.name.lower() == "jepa"
-    is_transformer = cfg.model.name.lower() == "eeg_transformer"
+    is_transformer = cfg.model.name.lower() in {"eeg_transformer", "qwen_encoder"}
     use_synthetic = is_jepa and bool(cfg.get("synthetic", False))
 
     if use_synthetic:
