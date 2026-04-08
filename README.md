@@ -1,4 +1,4 @@
-# Time-Series Project: Decoding Visual Perception from EEG
+# Time-Series Project
 
 Decoding visual perception from EEG signals recorded while subjects viewed ImageNet images. This project supports two tasks:
 
