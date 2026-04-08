@@ -222,13 +222,20 @@ def main(cfg: DictConfig) -> None:
             ft_params = downstream_head.parameters()
         else:
             # End-to-end: backbone stays in the training loop
-            print(f"=== {cfg.model.name} fine-tuning: end-to-end ===")
-            model_obj.unfreeze_backbone()
+            fine_tune_llm = bool(cfg.model.get("fine_tune_llm", True))
+            if cfg.model.name.lower() == "llm_encoder" and not fine_tune_llm:
+                # Frozen LLM backbone — only frontend (patch_embed, input_proj, agg_token) + head train
+                print(f"=== {cfg.model.name} fine-tuning: frozen LLM backbone, training frontend + head ===")
+                model_obj.freeze_backbone()
+                ft_params = list(downstream_head.parameters()) + model_obj.frontend_parameters()
+            else:
+                print(f"=== {cfg.model.name} fine-tuning: end-to-end ===")
+                model_obj.unfreeze_backbone()
+                ft_params = list(downstream_head.parameters()) + list(model_obj.parameters())
             ft_train_loader = raw_train_loader
             ft_test_loader = raw_test_loader
             eval_encoder = model_obj
             eval_lmap = lmap
-            ft_params = list(downstream_head.parameters()) + list(model_obj.parameters())
 
         cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
         ft_optimizer = AdamW(

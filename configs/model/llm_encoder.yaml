@@ -14,6 +14,9 @@ patch_embed_dim: 128   # intermediate patch embedding dim before input_proj
 
 # Downstream head
 linear_probe: true     # freeze backbone, train head only (recommended for large LLM)
+fine_tune_llm: false   # only applies when linear_probe=false:
+                       #   false → frozen LLM, train frontend (patch_embed/proj/agg) + head
+                       #   true  → full end-to-end (fine-tune entire LLM backbone)
 downstream:
   type: linear         # or mlp with hidden_dims
 

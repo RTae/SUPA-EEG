@@ -86,3 +86,15 @@ class LLMEEGEncoder(nn.Module):
         """Unfreeze LLM weights for end-to-end fine-tuning."""
         for p in self.backbone.parameters():
             p.requires_grad = True
+
+    def frontend_parameters(self):
+        """Return only the trainable front-end parameters (patch_embed, input_proj, agg_token).
+
+        Used when the LLM backbone is frozen but the EEG adapter should still
+        receive gradients (fine_tune_llm=false, linear_probe=false).
+        """
+        return (
+            list(self.patch_embed.parameters())
+            + list(self.input_proj.parameters())
+            + [self.agg_token]
+        )
