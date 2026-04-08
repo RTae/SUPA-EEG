@@ -135,9 +135,9 @@ Three evaluation paradigms are supported via `metric=`:
 JEPA first pre-trains a Transformer encoder via masked-patch prediction in latent space, then fine-tunes a linear classifier on the learned `[CLS]` representation. Training utilities (`ema_decay_schedule`, `topk_correct`, `jepa_evaluate`, `load_jepa_checkpoint`) live alongside the model in `src/model/jepa.py`.
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph PRE["Stage 1 — Self-Supervised Pre-training"]
-        direction TB
+        direction LR
         A[EEG input\nB × C × T] --> B[PatchEmbed\nConv1d]
         B --> C[Random mask\ncontext / target split]
         C --> E[Context encoder\nViT — visible patches]
@@ -150,7 +150,7 @@ flowchart TD
     end
 
     subgraph FT["Stage 2 — Downstream Fine-tuning"]
-        direction TB
+        direction LR
         I[EEG input\nB × C × T] --> J[Frozen JEPA encoder]
         J --> K["[CLS] token\nB × embed_dim"]
         K --> L[Downstream head\nLinear or MLP]
