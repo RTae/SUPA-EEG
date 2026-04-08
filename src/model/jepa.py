@@ -302,12 +302,6 @@ def ema_decay_schedule(start: float, end: float, step: int, total_steps: int) ->
     return start + alpha * (end - start)
 
 
-def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
-    """Return the count of samples whose true label is among the top-k predictions."""
-    k = min(k, logits.shape[-1])
-    return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
-
-
 @torch.no_grad()
 def jepa_evaluate(
     encoder: "EEGJEPA | None",

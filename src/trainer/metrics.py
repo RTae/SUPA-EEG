@@ -15,6 +15,12 @@ def remap_labels(labels: torch.Tensor, label_map: dict[int, int]) -> torch.Tenso
     return torch.tensor([label_map[l.item()] for l in labels])
 
 
+def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
+    """Return the count of samples whose true label is among the top-k predictions."""
+    k = min(k, logits.shape[-1])
+    return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
+
+
 def resolve_clip_targets(
     labels: tuple[str, ...] | list[str],
     embeddings: dict[str, torch.Tensor],
@@ -41,10 +47,8 @@ def evaluate_classifier(
         outputs = model(inputs)
         total_loss += criterion(outputs, labels).item()
         total += len(labels)
-        k5 = min(5, outputs.shape[-1])
-        top5_idx = outputs.topk(k5, dim=1).indices          # (B, k5)
-        top1_correct += int(top5_idx[:, :1].eq(labels.unsqueeze(1)).any(dim=1).sum().item())
-        top5_correct += int(top5_idx.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
+        top1_correct += topk_correct(outputs, labels, 1)
+        top5_correct += topk_correct(outputs, labels, 5)
     denom = max(total, 1)
     return top1_correct / denom, top5_correct / denom, total_loss / max(len(dataloader), 1)
 
