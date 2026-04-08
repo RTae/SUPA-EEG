@@ -60,7 +60,9 @@ class LLMEEGEncoder(nn.Module):
 
         # ── LLM backbone (transformer body only, no LM head) ───────────────
         llm_cfg = AutoConfig.from_pretrained(pretrained_name)
-        backbone = AutoModel.from_pretrained(pretrained_name)
+        # Force float32: Qwen (and many HF models) default to bfloat16 which
+        # causes dtype-mismatch crashes on Apple MPS during matmul accumulation.
+        backbone = AutoModel.from_pretrained(pretrained_name, torch_dtype=torch.float32)
         hidden_dim = llm_cfg.hidden_size
         self.embed_dim = hidden_dim  # downstream head reads this
 
