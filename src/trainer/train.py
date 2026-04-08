@@ -25,26 +25,29 @@ def train_classifier(
     If *save_path* is given the best checkpoint is saved there.
     """
     model = model.to(device)
-    report_interval = max(len(train_loader) // 2, 1)
     best_acc, best_epoch = 0.0, -1
 
-    for epoch in tqdm(range(num_epochs), desc="Training"):
+    epoch_bar = tqdm(range(num_epochs), desc="train", unit="ep")
+    for epoch in epoch_bar:
         model.train()
-        running_loss = 0.0
-        for batch_idx, (inputs, labels) in enumerate(train_loader):
+        epoch_loss = 0.0
+        step_bar = tqdm(train_loader, desc=f"ep {epoch}", leave=False, unit="step")
+        for inputs, labels in step_bar:
             labels = remap_labels(labels, label_map)
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             loss = criterion(model(inputs), labels)
             loss.backward()
             optimizer.step()
-            running_loss += loss.item()
-            if batch_idx % report_interval == report_interval - 1:
-                print(f"[epoch {epoch}, batch {batch_idx}] loss: {running_loss / report_interval:.4f}")
-                running_loss = 0.0
+            epoch_loss += loss.item()
+            step_bar.set_postfix(loss=f"{loss.item():.4f}")
 
         acc, test_loss = evaluate_classifier(model, test_loader, criterion, device, label_map)
-        print(f"Accuracy: {acc:.4f}  |  Test loss: {test_loss:.4f}")
+        epoch_bar.set_postfix(
+            tr_loss=f"{epoch_loss / max(1, len(train_loader)):.4f}",
+            val_acc=f"{acc:.3f}",
+            val_loss=f"{test_loss:.4f}",
+        )
         if acc > best_acc:
             best_acc = acc
             best_epoch = epoch
