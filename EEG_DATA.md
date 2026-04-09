@@ -64,3 +64,21 @@ The raw EEG data can be transformed into various features that capture different
   - Give insight into the spatial patterns of neural activity associated with processing different visual features.
 - **Source localization**: Estimating the underlying brain sources generating the observed EEG signals, providing insights into which cortical areas are involved in processing specific visual features
   - Give insight into the specific brain regions that are most engaged when processing different image categories, beyond what scalp-level analysis can reveal.
+
+
+## Clinical / Neuroscience EEG Indicators as Model Features
+
+Several established EEG biomarkers from clinical and cognitive neuroscience literature can serve as hand-crafted features or guide architecture design:
+
+| Indicator | Description | Relevance to Visual Decoding |
+|-----------|-------------|------------------------------|
+| **Differential Entropy (DE)** | Information content per frequency band: $h(X) = \frac{1}{2}\ln(2\pi e \sigma^2)$ | Already used in MLP/SVM baselines. Captures band-specific energy. |
+| **Hjorth Parameters** | **Activity** (variance), **Mobility** (mean freq), **Complexity** (freq spread) — 3 values per channel | Compact time-domain descriptors; no frequency decomposition needed. |
+| **Global Field Power (GFP)** | RMS voltage across all channels at each time point: $\text{GFP}(t) = \sqrt{\frac{1}{K}\sum_k V_k(t)^2}$ | Identifies moments of strongest brain response (peaks = ERP components). |
+| **Inter-Trial Coherence (ITC)** | Phase consistency across trials per frequency: $\text{ITC}(f) = \left\|\frac{1}{N}\sum_n e^{i\phi_n(f)}\right\|$ | High ITC = consistent phase-locked response. Low ITC = noisy/variable. |
+| **Spectral Edge Frequency (SEF95)** | Frequency below which 95% of total power lies | Summarises spectral shape in one number; shifts with cognitive state. |
+| **Alpha Suppression Index** | Alpha power decrease from baseline: $\text{ASI} = \frac{P_\alpha^{\text{baseline}} - P_\alpha^{\text{stimulus}}}{P_\alpha^{\text{baseline}}}$ | Visual stimulation suppresses alpha — degree varies by category. |
+| **Phase-Amplitude Coupling (PAC)** | Low-freq phase modulates high-freq amplitude (e.g. theta-gamma coupling) | Cross-frequency interaction; linked to memory encoding and perception. |
+| **Lateralization Index** | Hemisphere asymmetry: $\text{LI} = \frac{P_{\text{right}} - P_{\text{left}}}{P_{\text{right}} + P_{\text{left}}}$ | Objects processed differently in left vs right visual cortex. |
+
+Below we compute and compare several of these indicators across categories to see which carry class-discriminative information.
