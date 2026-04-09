@@ -41,16 +41,26 @@ In our dataset's default window `(40, 440)`, we capture **40–440 ms** post-sti
 The raw EEG data can be transformed into various features that capture different aspects of the brain's response to visual stimuli:
 ### 1. Time-domain features
 - **Event-Related Potentials (ERPs)**: Average voltage across trials for each channel, capturing characteristic peaks (e.g., P1, N1) associated with visual processing stages.
+  - Give insight into the timing and strength of neural responses to different image categories.
 - **Peak amplitudes and latencies**: The height and timing of ERP components can indicate the strength and speed of neural responses to different image categories.
+  - Give insight into how quickly and strongly the brain processes certain visual features.
 ### 2. Frequency-domain features
 - **Power spectral density (PSD)**: Measures the power of different frequency bands (e.g., alpha, beta, gamma) which can reflect cognitive states and processing demands.
+  - Give insight into the oscillatory activity associated with attention, memory, and visual processing for different image categories.
 - **Band-specific power**: Changes in specific frequency bands (e.g., increased gamma power) can indicate enhanced visual processing or attention to certain image features.
+  - Give insight into how the brain allocates resources to process different types of visual information.
 ### 3. Time-frequency features
 - **Wavelet transforms**: Capture how frequency content changes over time, revealing dynamic neural responses to visual stimuli.
+  - Give insight into how the brain's oscillatory activity evolves during the processing of different image categories.
 - **Event-related spectral perturbations (ERSP)**: Measure changes in power across frequencies and time, indicating how the brain's oscillatory activity is modulated by different image categories.
+  - Give insight into how the brain's rhythmic activity is influenced by different visual features and categories.
 ### 4. Connectivity features
 - **Functional connectivity**: Measures the correlation or coherence between channels, indicating how different brain regions interact during visual processing.
+  - Give insight into how different brain areas coordinate to process different image categories.
 - **Effective connectivity**: Captures directional influences between channels, revealing how information flows through the brain in response to visual stimuli.
+  - Give insight into the causal relationships between brain regions during the processing of different image categories.
 ### 5. Spatial features
 - **Topographical maps**: Visual representations of voltage distributions across the scalp, highlighting which regions are most active for different image categories.
+  - Give insight into the spatial patterns of neural activity associated with processing different visual features.
 - **Source localization**: Estimating the underlying brain sources generating the observed EEG signals, providing insights into which cortical areas are involved in processing specific visual features
+  - Give insight into the specific brain regions that are most engaged when processing different image categories, beyond what scalp-level analysis can reveal.
