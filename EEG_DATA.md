@@ -36,3 +36,21 @@ Each timestep is a **single voltage sample** at a given electrode. With fs = 100
 | ~300–500 | **P3 / P300** | Stimulus evaluation, decision-making, memory updating |
 
 In our dataset's default window `(40, 440)`, we capture **40–440 ms** post-stimulus, covering the key visual processing components from C1 through P300. The models learn to distinguish image categories based on **both** where (channels) and **when** (timesteps) discriminative neural activity occurs. 
+
+## EEG Features
+The raw EEG data can be transformed into various features that capture different aspects of the brain's response to visual stimuli:
+### 1. Time-domain features
+- **Event-Related Potentials (ERPs)**: Average voltage across trials for each channel, capturing characteristic peaks (e.g., P1, N1) associated with visual processing stages.
+- **Peak amplitudes and latencies**: The height and timing of ERP components can indicate the strength and speed of neural responses to different image categories.
+### 2. Frequency-domain features
+- **Power spectral density (PSD)**: Measures the power of different frequency bands (e.g., alpha, beta, gamma) which can reflect cognitive states and processing demands.
+- **Band-specific power**: Changes in specific frequency bands (e.g., increased gamma power) can indicate enhanced visual processing or attention to certain image features.
+### 3. Time-frequency features
+- **Wavelet transforms**: Capture how frequency content changes over time, revealing dynamic neural responses to visual stimuli.
+- **Event-related spectral perturbations (ERSP)**: Measure changes in power across frequencies and time, indicating how the brain's oscillatory activity is modulated by different image categories.
+### 4. Connectivity features
+- **Functional connectivity**: Measures the correlation or coherence between channels, indicating how different brain regions interact during visual processing.
+- **Effective connectivity**: Captures directional influences between channels, revealing how information flows through the brain in response to visual stimuli.
+### 5. Spatial features
+- **Topographical maps**: Visual representations of voltage distributions across the scalp, highlighting which regions are most active for different image categories.
+- **Source localization**: Estimating the underlying brain sources generating the observed EEG signals, providing insights into which cortical areas are involved in processing specific visual features
