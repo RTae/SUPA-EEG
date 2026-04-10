@@ -11,8 +11,9 @@
 
 The electrode channels correspond to specific locations on the scalp where the EEG signals are recorded. Each channel represents the electrical activity of the brain at that particular location. 
 
-- Positive voltage deflections (upward) mean increased neural activity in that region
-- Negative voltage deflections (downward) mean decreased activity. 
+- Positive voltage deflections (upward) mean increased neural activity in that region such as excitation or enhanced processing
+- No deflection (flat) means there is no significant change in activity compared to baseline such as rest or pre-stimulus period
+- Negative voltage deflections (downward) mean decreased activity from baseline such as inhibition or reduced processing
 
 The spatial patterns across channels can reveal which brain areas are most engaged in processing the visual stimuli.
 
