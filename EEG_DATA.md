@@ -11,8 +11,8 @@
 
 The electrode channels correspond to specific locations on the scalp where the EEG signals are recorded. Each channel represents the electrical activity of the brain at that particular location. The naming convention follows the **10-20 system**: the letter indicates the brain region, odd numbers = left hemisphere, even numbers = right hemisphere, and Z = midline.
 
-Positive voltage deflections (upward) mean increased neural activity in that region
-negative deflections (downward) mean decreased activity. 
+- Positive voltage deflections (upward) mean increased neural activity in that region
+- Negative voltage deflections (downward) mean decreased activity. 
 
 The spatial patterns across channels can reveal which brain areas are most engaged in processing the visual stimuli.
 
