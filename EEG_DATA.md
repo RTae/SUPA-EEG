@@ -9,12 +9,14 @@
 
 ## What do electrode channels tell us?
 
-The electrode channels correspond to specific locations on the scalp where the EEG signals are recorded. Each channel represents the electrical activity of the brain at that particular location. The naming convention follows the **10-20 system**: the letter indicates the brain region, odd numbers = left hemisphere, even numbers = right hemisphere, and Z = midline.
+The electrode channels correspond to specific locations on the scalp where the EEG signals are recorded. Each channel represents the electrical activity of the brain at that particular location. 
 
 - Positive voltage deflections (upward) mean increased neural activity in that region
 - Negative voltage deflections (downward) mean decreased activity. 
 
 The spatial patterns across channels can reveal which brain areas are most engaged in processing the visual stimuli.
+
+Also, the naming convention follows the **10-20 system**: the letter indicates the brain region, odd numbers = left hemisphere, even numbers = right hemisphere, and Z = midline.
 
 | Region prefix | Electrodes (examples) | Brain area | Associated with |
 |---|---|---|---|
