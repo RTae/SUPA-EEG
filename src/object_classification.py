@@ -71,15 +71,11 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
-def main(cfg: DictConfig) -> None:
-    print(OmegaConf.to_yaml(cfg))
-
-    device = get_device()
-
+def load_data(cfg, device):
     is_jepa = cfg.model.name.lower() == "jepa"
     is_transformer = cfg.model.name.lower() in {"eeg_transformer", "llm_encoder"}
     use_synthetic = is_jepa and bool(cfg.get("synthetic", False))
-
+    data = {}
     if use_synthetic:
         _task = str(cfg.granularity)
         _fine_group = int(cfg.get("fine_group", 0))
@@ -95,12 +91,22 @@ def main(cfg: DictConfig) -> None:
             num_workers=int(cfg.get("num_workers", 0)),
             seed=int(cfg.get("seed", 42)),
         )
-        label_map = None
-        train_subset = test_subset = None
-        all_labels = de_feat = train_idx = test_idx = None
-        is_simple = False
+        data.update(dict(
+            use_synthetic=True,
+            num_classes=num_classes,
+            pretrain_loader=pretrain_loader_syn,
+            train_loader=train_loader_syn,
+            test_loader=test_loader_syn,
+            label_map=None,
+            train_subset=None,
+            test_subset=None,
+            all_labels=None,
+            de_feat=None,
+            train_idx=None,
+            test_idx=None,
+            is_simple=False,
+        ))
     else:
-        # Load all subjects so benchmark splits can select across subjects/stages.
         dataset = EEGImageNetDataset(
             dataset_dir=cfg.dataset_dir,
             subject=-1,
@@ -109,44 +115,45 @@ def main(cfg: DictConfig) -> None:
         eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
         de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
         dataset.add_frequency_feat(de_feat)
-
         all_labels = np.array([sample[1] for sample in dataset])
-
         train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric, cfg.subject)
         train_idx = np.array(train_idx)
         test_idx = np.array(test_idx)
-
-        # Build label map from the union of train+test labels so both loaders
-        # use a consistent mapping to contiguous indices.
         combined_labels = np.concatenate([all_labels[train_idx], all_labels[test_idx]])
         label_map = build_label_map(combined_labels)
         num_classes = len(label_map)
-
         train_subset = Subset(dataset, train_idx)
         test_subset = Subset(dataset, test_idx)
-
         is_simple = cfg.model.type == "simple"
+        data.update(dict(
+            use_synthetic=False,
+            num_classes=num_classes,
+            pretrain_loader=None,
+            train_loader=None,
+            test_loader=None,
+            label_map=label_map,
+            train_subset=train_subset,
+            test_subset=test_subset,
+            all_labels=all_labels,
+            de_feat=de_feat,
+            train_idx=train_idx,
+            test_idx=test_idx,
+            is_simple=is_simple,
+            dataset=dataset,
+        ))
+    return data
 
-    model_obj = model_init(cfg, num_classes, device)
-
-    if cfg.pretrained_model:
-        ckpt_path = os.path.join(cfg.output_dir, cfg.pretrained_model)
-        if is_jepa:
-            load_jepa_checkpoint(model_obj, ckpt_path, device)
-        else:
-            model_obj.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
-
-    run_dir = HydraConfig.get().runtime.output_dir
-
-    # ----- JEPA pre-training phase (self-supervised) -----
+def train_model(cfg, device, model_obj, data, run_dir):
+    is_jepa = cfg.model.name.lower() == "jepa"
+    is_transformer = cfg.model.name.lower() in {"eeg_transformer", "llm_encoder"}
+    is_simple = data.get("is_simple", False)
+    results = {}
+    # JEPA pre-training
     if is_jepa and cfg.model.get("pretrain_epochs", 0) > 0 and not cfg.pretrained_model:
         print("=== JEPA pre-training ===")
         model_obj.to(device)
-        if use_synthetic:
-            pretrain_loader = pretrain_loader_syn
-        else:
-            dataset.use_frequency_feat = False
-            pretrain_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True, drop_last=True)
+        pretrain_loader = data["pretrain_loader"] if data["use_synthetic"] else DataLoader(
+            data["train_subset"], batch_size=cfg.batch_size, shuffle=True, drop_last=True)
         weight_decay = float(cfg.model.get("weight_decay", 0.05))
         pt_optimizer = AdamW(
             model_obj.parameters(),
@@ -181,59 +188,49 @@ def main(cfg: DictConfig) -> None:
         pt_path = os.path.join(run_dir, f"jepa_pretrained_s{cfg.subject}.pth")
         torch.save({"stage": "pretrain", "model_state": model_obj.state_dict()}, pt_path)
         print(f"  saved pretrained model → {pt_path}")
-
+        results["pretrain_model_path"] = pt_path
+    # Main training
     if is_simple:
-        model_obj.fit(de_feat[train_idx], all_labels[train_idx])
-        acc = accuracy_score(all_labels[test_idx], model_obj.predict(de_feat[test_idx]))
+        model_obj.fit(data["de_feat"][data["train_idx"]], data["all_labels"][data["train_idx"]])
+        acc = accuracy_score(data["all_labels"][data["test_idx"]], model_obj.predict(data["de_feat"][data["test_idx"]]))
+        results["simple_acc"] = acc
         with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
             f.write(f"{acc}\n")
     elif is_jepa or is_transformer:
-        # ----- Decoupled pipeline: encoder → latent space → downstream head -----
         model_obj.to(device)
         linear_probe = bool(cfg.model.get("linear_probe", True))
         downstream_cfg = cfg.model.get("downstream", {"type": "linear"})
-        downstream_head = build_jepa_downstream(downstream_cfg, model_obj.embed_dim, num_classes, device)
-
+        downstream_head = build_jepa_downstream(downstream_cfg, model_obj.embed_dim, data["num_classes"], device)
         # Build raw loaders (real or synthetic)
-        if use_synthetic:
-            raw_train_loader = train_loader_syn
-            raw_test_loader = test_loader_syn
+        if data["use_synthetic"]:
+            raw_train_loader = data["train_loader"]
+            raw_test_loader = data["test_loader"]
             lmap = None
         else:
-            dataset.use_frequency_feat = cfg.model.use_freq
-            raw_train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
-            raw_test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
-            lmap = label_map
-
+            data["dataset"].use_frequency_feat = cfg.model.use_freq
+            raw_train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True)
+            raw_test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False)
+            lmap = data["label_map"]
         if linear_probe:
-            # Pre-extract all features once; head trains on TensorDataset (fast)
             print(f"=== {cfg.model.name} fine-tuning: linear probe — extracting features... ===")
             model_obj.freeze_backbone()
             train_feats, train_labels = extract_all_features(model_obj, raw_train_loader, device, lmap)
             test_feats, test_labels = extract_all_features(model_obj, raw_test_loader, device, lmap)
-            ft_train_loader = DataLoader(
-                TensorDataset(train_feats, train_labels), batch_size=cfg.batch_size, shuffle=True
-            )
-            ft_test_loader = DataLoader(
-                TensorDataset(test_feats, test_labels), batch_size=cfg.batch_size, shuffle=False
-            )
-            eval_encoder = None   # inputs to jepa_evaluate are already features
-            eval_lmap = None      # labels already remapped during extraction
+            ft_train_loader = DataLoader(TensorDataset(train_feats, train_labels), batch_size=cfg.batch_size, shuffle=True)
+            ft_test_loader = DataLoader(TensorDataset(test_feats, test_labels), batch_size=cfg.batch_size, shuffle=False)
+            eval_encoder = None
+            eval_lmap = None
             ft_params = downstream_head.parameters()
         else:
-            # End-to-end: backbone stays in the training loop
             is_llm = cfg.model.name.lower() == "llm_encoder"
             use_lora = is_llm and bool(cfg.model.get("lora", False))
             fine_tune_llm = bool(cfg.model.get("fine_tune_llm", True))
             if use_lora:
-                # LoRA: peft already froze non-LoRA params at init; only LoRA matrices + frontend train
                 print(f"=== {cfg.model.name} fine-tuning: LoRA (rank={cfg.model.get('lora_r', 8)}) + frontend ===")
-                model_obj.freeze_backbone()   # no-ops on LoRA matrices, freezes base weights
+                model_obj.freeze_backbone()
                 ft_params = list(downstream_head.parameters()) + model_obj.frontend_parameters()
-                # also include LoRA matrices explicitly
                 ft_params += [p for p in model_obj.backbone.parameters() if p.requires_grad]
             elif is_llm and not fine_tune_llm:
-                # Frozen LLM backbone — only frontend (patch_embed, input_proj, agg_token) + head train
                 print(f"=== {cfg.model.name} fine-tuning: frozen LLM backbone, training frontend + head ===")
                 model_obj.freeze_backbone()
                 ft_params = list(downstream_head.parameters()) + model_obj.frontend_parameters()
@@ -245,7 +242,6 @@ def main(cfg: DictConfig) -> None:
             ft_test_loader = raw_test_loader
             eval_encoder = model_obj
             eval_lmap = lmap
-
         cls_opt_cfg = cfg.model.get("classifier_optimizer", cfg.model.optimizer)
         ft_optimizer = AdamW(
             ft_params,
@@ -256,7 +252,6 @@ def main(cfg: DictConfig) -> None:
         criterion = torch.nn.CrossEntropyLoss()
         save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
         best_top1 = -math.inf
-
         epoch_bar = tqdm(range(1, cfg.model.epochs + 1), desc="finetune", unit="ep")
         for epoch in epoch_bar:
             downstream_head.train()
@@ -306,27 +301,65 @@ def main(cfg: DictConfig) -> None:
                     },
                     save_path,
                 )
-
-        test_loss, test_top1, test_top5 = jepa_evaluate(
-            eval_encoder, downstream_head, ft_test_loader, device, eval_lmap
-        )
-        print(f"[eval] test_loss={test_loss:.4f} top1={test_top1:.4f} top5={test_top5:.4f}")
-        with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
-            f.write(f"top1={best_top1:.4f}\n")
+        results["finetune_model_path"] = save_path
+        results["best_top1"] = best_top1
+        results["downstream_head"] = downstream_head
+        results["ft_test_loader"] = ft_test_loader
+        results["eval_encoder"] = eval_encoder
+        results["eval_lmap"] = eval_lmap
     else:
         # Other deep models (EEGNet, MLP, RGNN)
-        dataset.use_frequency_feat = cfg.model.use_freq
-        train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=True)
-        test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
+        data["dataset"].use_frequency_feat = cfg.model.use_freq
+        train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True)
+        test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
         save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
         acc, epoch = train_classifier(
             model_obj, train_loader, test_loader, criterion, optimizer,
-            cfg.model.epochs, device, label_map, save_path=save_path,
+            cfg.model.epochs, device, data["label_map"], save_path=save_path,
         )
+        results["deep_acc"] = acc
+        results["deep_epoch"] = epoch
+    return results
+
+def evaluate_model(cfg, device, model_obj, data, run_dir, train_results):
+    is_jepa = cfg.model.name.lower() == "jepa"
+    is_transformer = cfg.model.name.lower() in {"eeg_transformer", "llm_encoder"}
+    is_simple = data.get("is_simple", False)
+    if is_simple:
+        # Already evaluated in train_model
+        return
+    elif is_jepa or is_transformer:
+        downstream_head = train_results["downstream_head"]
+        ft_test_loader = train_results["ft_test_loader"]
+        eval_encoder = train_results["eval_encoder"]
+        eval_lmap = train_results["eval_lmap"]
+        test_loss, test_top1, test_top5 = jepa_evaluate(
+            eval_encoder, downstream_head, ft_test_loader, device, eval_lmap
+        )
+        print(f"[eval] test_loss={test_loss:.4f} top1={test_top1:.4f} top5={test_top5:.4f}")
         with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
-            f.write(f"{epoch}: {acc}\n")
+            f.write(f"top1={train_results['best_top1']:.4f}\n")
+    else:
+        # Already evaluated in train_model
+        return
+
+def main(cfg: DictConfig) -> None:
+    print(OmegaConf.to_yaml(cfg))
+    device = get_device()
+    data = load_data(cfg, device)
+    model_obj = model_init(cfg, data["num_classes"], device)
+    if cfg.pretrained_model:
+        ckpt_path = os.path.join(cfg.output_dir, cfg.pretrained_model)
+        is_jepa = cfg.model.name.lower() == "jepa"
+        if is_jepa:
+            load_jepa_checkpoint(model_obj, ckpt_path, device)
+        else:
+            model_obj.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
+    run_dir = HydraConfig.get().runtime.output_dir
+    train_results = train_model(cfg, device, model_obj, data, run_dir)
+    evaluate_model(cfg, device, model_obj, data, run_dir, train_results)
 
 
 if __name__ == "__main__":
