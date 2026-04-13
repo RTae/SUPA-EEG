@@ -18,7 +18,7 @@ The current implementation follows the [CROSSPT-EEG](https://doi.org/10.48550/ar
 | EEG-JEPA | `jepa` | EEG → masked ViT pretrain → linear probe | Self-supervised |
 | EEG Transformer | `eeg_transformer` | EEG → ViT encoder → downstream head | Supervised, decoupled |
 | LLM Encoder | `llm_encoder` | EEG patches → LLM backbone → downstream head | Pre-trained LLM + LoRA |
-| Semantic | `semantic` | EEG backbone → Transformer → JEPA EMA target + triplet | Metric + representation learning |
+| Semantic | `semantic` | EEG backbone (NN / Transformer / JEPA) → embedding | Triplet metric learning |
 | MLPMapper | `mlp_sd` | DE features → MLP → CLIP → Stable Diffusion | Generation only |
 
 > **Adding your own model:** Create a file in `src/model/`, add a Hydra config in `configs/model/`, and register it in `object_classification.py`. The shared dataset, feature extraction, and evaluation infrastructure are reusable.
@@ -251,11 +251,16 @@ python src/object_classification.py model.optimizer.lr=0.005 model.epochs=100
 # Sklearn baseline
 python src/object_classification.py model=svm
 
-# Semantic backbone + Transformer + JEPA + triplet loss
+# Semantic model with triplet loss only
 python src/object_classification.py model=semantic
 
-# Tune semantic objective weights
-python src/object_classification.py model=semantic model.triplet_weight=0.7 model.jepa_weight=0.3 model.triplet_margin=0.25
+# Switch the semantic backbone
+python src/object_classification.py model=semantic model.backbone=transformer
+python src/object_classification.py model=semantic model.backbone=jepa
+python src/object_classification.py model=semantic model.backbone=nn
+
+# Tune the triplet margin
+python src/object_classification.py model=semantic model.triplet_margin=0.25
 
 # Build CLIP-KNN semantic neighbors (positive/negative class relations)
 python src/preprocessing/semantic_knn.py model=semantic model.semantic_knn_k=4 model.semantic_neg_k=4

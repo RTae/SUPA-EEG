@@ -3,7 +3,6 @@
 import os
 
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -11,7 +10,7 @@ from .metrics import (
     batch_hard_triplet_loss,
     evaluate_classifier,
     evaluate_generator,
-    evaluate_semantic_classifier,
+    evaluate_semantic_embeddings,
     remap_labels,
     resolve_clip_targets,
 )
@@ -125,16 +124,12 @@ def train_semantic_classifier(
     label_map: dict[int, int],
     *,
     triplet_margin: float,
-    ce_weight: float,
-    triplet_weight: float,
-    jepa_weight: float,
     ema_decay: float,
     semantic_neighbors: dict[int, set[int]] | None = None,
     save_path: str | None = None,
 ) -> tuple[float, float, int]:
-    """Train semantic classifier with CE + triplet + JEPA consistency losses."""
+    """Train semantic model with triplet loss only."""
     model = model.to(device)
-    criterion = torch.nn.CrossEntropyLoss()
 
     best_top1 = 0.0
     best_top5 = 0.0
@@ -143,10 +138,7 @@ def train_semantic_classifier(
     epoch_bar = tqdm(range(num_epochs), desc="semantic-train", unit="ep")
     for epoch in epoch_bar:
         model.train()
-        running_total = 0.0
-        running_ce = 0.0
         running_triplet = 0.0
-        running_jepa = 0.0
 
         for inputs, labels in train_loader:
             labels = remap_labels(labels, label_map)
@@ -155,31 +147,29 @@ def train_semantic_classifier(
             optimizer.zero_grad()
             outputs = model(inputs)
 
-            ce_loss = criterion(outputs["logits"], labels)
             triplet_loss = batch_hard_triplet_loss(
                 outputs["embedding"],
                 labels,
                 margin=triplet_margin,
                 semantic_neighbors=semantic_neighbors,
             )
-            jepa_loss = F.smooth_l1_loss(outputs["jepa_pred"], outputs["jepa_target"].detach())
-
-            total_loss = ce_weight * ce_loss + triplet_weight * triplet_loss + jepa_weight * jepa_loss
-            total_loss.backward()
+            triplet_loss.backward()
             optimizer.step()
             model.update_target_encoder(ema_decay)
 
-            running_total += total_loss.item()
-            running_ce += ce_loss.item()
             running_triplet += triplet_loss.item()
-            running_jepa += jepa_loss.item()
 
-        top1, top5, val_loss = evaluate_semantic_classifier(model, test_loader, criterion, device, label_map)
+        top1, top5, val_loss = evaluate_semantic_embeddings(
+            model,
+            train_loader,
+            test_loader,
+            device,
+            label_map,
+            triplet_margin,
+            semantic_neighbors,
+        )
         epoch_bar.set_postfix(
-            tr_total=f"{running_total / max(1, len(train_loader)):.4f}",
-            tr_ce=f"{running_ce / max(1, len(train_loader)):.4f}",
             tr_tri=f"{running_triplet / max(1, len(train_loader)):.4f}",
-            tr_jepa=f"{running_jepa / max(1, len(train_loader)):.4f}",
             val_top1=f"{top1:.3f}",
             val_top5=f"{top5:.3f}",
             val_loss=f"{val_loss:.4f}",

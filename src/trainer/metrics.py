@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 
@@ -97,30 +98,70 @@ def evaluate_classifier(
 
 
 @torch.no_grad()
-def evaluate_semantic_classifier(
+def _collect_semantic_embeddings(
     model: torch.nn.Module,
     dataloader: DataLoader,
-    criterion: torch.nn.Module,
     device: torch.device,
     label_map: dict[int, int],
-) -> tuple[float, float, float]:
-    """Evaluate models that return dict outputs containing a logits tensor."""
+) -> tuple[torch.Tensor, torch.Tensor]:
     model.eval()
-    top1_correct = top5_correct = total = 0
-    total_loss = 0.0
+    all_embeddings: list[torch.Tensor] = []
+    all_labels: list[torch.Tensor] = []
 
     for inputs, labels in dataloader:
         labels = remap_labels(labels, label_map)
-        inputs, labels = inputs.to(device), labels.to(device)
+        inputs = inputs.to(device)
         outputs = model(inputs)
-        logits = outputs["logits"]
-        total_loss += criterion(logits, labels).item()
-        total += len(labels)
-        top1_correct += topk_correct(logits, labels, 1)
-        top5_correct += topk_correct(logits, labels, 5)
+        all_embeddings.append(F.normalize(outputs["embedding"], dim=1).cpu())
+        all_labels.append(labels.cpu())
 
-    denom = max(total, 1)
-    return top1_correct / denom, top5_correct / denom, total_loss / max(len(dataloader), 1)
+    if not all_embeddings:
+        return torch.empty(0), torch.empty(0, dtype=torch.long)
+    return torch.cat(all_embeddings, dim=0), torch.cat(all_labels, dim=0)
+
+
+@torch.no_grad()
+def evaluate_semantic_embeddings(
+    model: torch.nn.Module,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
+    device: torch.device,
+    label_map: dict[int, int],
+    triplet_margin: float,
+    semantic_neighbors: dict[int, set[int]] | None = None,
+) -> tuple[float, float, float]:
+    """Evaluate semantic embeddings using train-set class prototypes and triplet loss."""
+    train_embeddings, train_labels = _collect_semantic_embeddings(model, train_loader, device, label_map)
+    test_embeddings, test_labels = _collect_semantic_embeddings(model, test_loader, device, label_map)
+
+    if train_embeddings.numel() == 0 or test_embeddings.numel() == 0:
+        return 0.0, 0.0, 0.0
+
+    prototype_labels = torch.unique(train_labels, sorted=True)
+    prototypes = []
+    for class_id in prototype_labels.tolist():
+        class_embeddings = train_embeddings[train_labels == class_id]
+        prototype = F.normalize(class_embeddings.mean(dim=0, keepdim=True), dim=1)
+        prototypes.append(prototype.squeeze(0))
+    prototype_matrix = torch.stack(prototypes, dim=0)
+
+    similarities = test_embeddings @ prototype_matrix.t()
+    label_to_proto = {int(class_id): idx for idx, class_id in enumerate(prototype_labels.tolist())}
+    valid_mask = torch.tensor([int(label.item()) in label_to_proto for label in test_labels], dtype=torch.bool)
+    if not valid_mask.any():
+        val_loss = float(batch_hard_triplet_loss(test_embeddings, test_labels, triplet_margin, semantic_neighbors).item())
+        return 0.0, 0.0, val_loss
+
+    filtered_similarities = similarities[valid_mask]
+    filtered_labels = test_labels[valid_mask]
+    mapped_labels = torch.tensor([label_to_proto[int(label.item())] for label in filtered_labels], dtype=torch.long)
+
+    total = len(mapped_labels)
+    top1 = topk_correct(filtered_similarities, mapped_labels, 1) / max(total, 1)
+    top5 = topk_correct(filtered_similarities, mapped_labels, 5) / max(total, 1)
+    val_loss = float(batch_hard_triplet_loss(test_embeddings, test_labels, triplet_margin, semantic_neighbors).item())
+
+    return top1, top5, val_loss
 
 
 @torch.no_grad()
