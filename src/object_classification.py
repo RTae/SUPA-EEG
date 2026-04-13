@@ -49,8 +49,11 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         map_location=device,
     )
     eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
-    de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
-    dataset.add_frequency_feat(de_feat)
+    
+    if cfg.feature_type == "freq":
+        dataset.use_frequency_feat = True
+        de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
+        dataset.add_frequency_feat(de_feat)
 
     all_labels = np.array([sample[1] for sample in dataset])
     train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric)
