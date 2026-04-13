@@ -138,11 +138,13 @@ python src/object_classification.py model=svm
 
 #### Semantic Model
 
-`SemanticModel` trains an EEG encoder with a batch-hard **triplet loss** — no cross-entropy. The backbone is switchable via `model.backbone`.
+`SemanticModel` learns EEG representations via batch-hard **triplet loss** — no cross-entropy classifier. The backbone is switchable via `model.backbone` (`transformer`, `jepa`, or `nn`).
 
-##### Architecture
+All backbones feed into the same projection head and produce an L2-normalised embedding used for retrieval-based evaluation (cosine similarity to class prototypes).
 
-**transformer**
+##### Backbones
+
+**transformer** — patch-based ViT encoder, [CLS] token as the output feature
 
 ```mermaid
 flowchart LR
@@ -154,7 +156,7 @@ flowchart LR
     F --> G["L2-norm embedding"]
 ```
 
-**jepa**
+**jepa** — same as transformer, plus a momentum target encoder updated via EMA each step
 
 ```mermaid
 flowchart LR
@@ -170,7 +172,7 @@ flowchart LR
     D -->|"EMA update\nper step"| TE
 ```
 
-**nn**
+**nn** — lightweight two-layer Conv1d network, faster to train
 
 ```mermaid
 flowchart LR
@@ -181,14 +183,13 @@ flowchart LR
     E --> F["L2-norm embedding"]
 ```
 
-##### Usage
+##### Training
 
 ```bash
 # Default backbone (transformer)
 python src/object_classification.py model=semantic
 
 # Switch backbone
-python src/object_classification.py model=semantic model.backbone=transformer
 python src/object_classification.py model=semantic model.backbone=jepa
 python src/object_classification.py model=semantic model.backbone=nn
 
@@ -196,18 +197,23 @@ python src/object_classification.py model=semantic model.backbone=nn
 python src/object_classification.py model=semantic model.triplet_margin=0.25
 ```
 
-##### CLIP-KNN Semantic Neighbors
+##### Semantic Neighbors (CLIP-KNN)
 
-Optionally expand triplet positives/negatives using CLIP-space class similarity. The neighbor graph is built once and cached as JSON.
+By default, triplet pairs are formed by label identity. Optionally, you can expand positives/negatives using CLIP-space class similarity — classes that look semantically similar in the image domain are treated as soft positives in embedding space.
+
+The neighbor graph is computed once using CLIP text embeddings and cached as JSON at `data/semantic_knn_{granularity}.json`. **It is built automatically on the first training run** — no manual step needed.
 
 ```bash
-# Build and cache the class neighbor graph
-python src/preprocessing/semantic_knn.py model=semantic model.semantic_knn_k=4 model.semantic_neg_k=4
+# Run training; cache is auto-built if missing
+python src/object_classification.py model=semantic
 
-# Train with semantic neighbors
+# Use a specific cache path
 python src/object_classification.py model=semantic model.semantic_knn_path=data/semantic_knn_coarse.json
 
-# Force rebuild if needed
+# Pre-build manually with custom k values
+python src/preprocessing/semantic_knn.py model=semantic model.semantic_knn_k=4 model.semantic_neg_k=4
+
+# Force a rebuild of an existing cache
 python src/preprocessing/semantic_knn.py model=semantic model.semantic_knn_overwrite=true
 ```
 
