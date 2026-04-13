@@ -13,7 +13,7 @@ from dataset import EEGImageNetDataset
 from model.eegnet import EEGNet
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
-from model.semantic_triplet import SemanticJEPATripletModel
+from model.semantic import SemanticModel
 from model.simple_model import SimpleModel
 from preprocessing.de_feat_cal import de_feat_cal
 from trainer import build_label_map, train_classifier, train_semantic_classifier
@@ -86,7 +86,7 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
         edge_index, edge_weight = get_edge_weight()
         return RGNN(device, 62, edge_weight, edge_index, 5, 200, num_classes, 2)
     if _is_semantic_model(name):
-        return SemanticJEPATripletModel(cfg, num_classes)
+        return SemanticModel(cfg, num_classes)
     raise ValueError(f"Unknown model: {name}")
 
 
@@ -131,7 +131,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
 def _train_semantic_model(
     cfg: DictConfig,
     device: torch.device,
-    model_obj: SemanticJEPATripletModel,
+    model_obj: SemanticModel,
     data: dict,
     run_dir: str,
 ) -> dict:

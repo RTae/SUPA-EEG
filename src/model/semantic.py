@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 
 
-class SemanticJEPATripletModel(nn.Module):
-    """EEG backbone + Transformer encoder with JEPA-style target branch.
-
+class SemanticModel(nn.Module):
+    """
+    
     The online branch is optimized with supervised objectives (cross-entropy +
     triplet), while the target branch is updated by EMA for JEPA consistency.
     """
