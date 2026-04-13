@@ -1,9 +1,11 @@
 """Training loops for classification and generation tasks."""
 
 import os
+import random
+from collections import defaultdict
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 from tqdm import tqdm
 
 from .metrics import (
@@ -14,6 +16,45 @@ from .metrics import (
     remap_labels,
     resolve_clip_targets,
 )
+
+
+class BalancedBatchSampler(Sampler):
+    """Yields batches with exactly `samples_per_class` samples per class.
+
+    Each batch contains `num_classes_per_batch * samples_per_class` indices,
+    guaranteeing that every anchor has at least one valid positive and one
+    valid negative for batch-hard triplet mining.
+    """
+
+    def __init__(self, dataset, label_map: dict[int, int], num_classes_per_batch: int, samples_per_class: int) -> None:
+        super().__init__()
+        self.samples_per_class = samples_per_class
+        self.num_classes_per_batch = num_classes_per_batch
+
+        # Group dataset indices by remapped class label.
+        groups: dict[int, list[int]] = defaultdict(list)
+        for idx in range(len(dataset)):
+            _, raw_label = dataset[idx]
+            remapped = label_map.get(int(raw_label))
+            if remapped is not None:
+                groups[remapped].append(idx)
+        self.groups = {k: v for k, v in groups.items() if len(v) >= samples_per_class}
+        self.classes = list(self.groups.keys())
+        self.num_batches = max(1, len(self.classes) // num_classes_per_batch)
+
+    def __iter__(self):
+        classes = self.classes.copy()
+        random.shuffle(classes)
+        for i in range(0, len(classes) - self.num_classes_per_batch + 1, self.num_classes_per_batch):
+            batch_classes = classes[i : i + self.num_classes_per_batch]
+            batch = []
+            for cls in batch_classes:
+                batch.extend(random.choices(self.groups[cls], k=self.samples_per_class))
+            random.shuffle(batch)
+            yield from batch
+
+    def __len__(self) -> int:
+        return self.num_batches * self.num_classes_per_batch * self.samples_per_class
 
 
 def train_classifier(
@@ -125,6 +166,7 @@ def train_semantic_classifier(
     *,
     triplet_margin: float,
     ema_decay: float,
+    balanced_sampler: BalancedBatchSampler | None = None,
     save_path: str | None = None,
 ) -> tuple[float, float, int]:
     """Train semantic model with triplet loss only."""
@@ -134,12 +176,22 @@ def train_semantic_classifier(
     best_top5 = 0.0
     best_epoch = -1
 
+    # Replace the train loader with one using the balanced sampler if provided.
+    if balanced_sampler is not None:
+        effective_train_loader = DataLoader(
+            train_loader.dataset,
+            batch_sampler=balanced_sampler,
+            num_workers=train_loader.num_workers,
+        )
+    else:
+        effective_train_loader = train_loader
+
     epoch_bar = tqdm(range(num_epochs), desc="semantic-train", unit="ep")
     for epoch in epoch_bar:
         model.train()
         running_triplet = 0.0
 
-        for inputs, labels in train_loader:
+        for inputs, labels in effective_train_loader:
             labels = remap_labels(labels, label_map)
             inputs, labels = inputs.to(device), labels.to(device)
 

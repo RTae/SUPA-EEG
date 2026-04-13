@@ -16,7 +16,7 @@ from model.rgnn import RGNN, get_edge_weight
 from model.semantic import SemanticModel
 from model.simple_model import SimpleModel
 from preprocessing.de_feat_cal import de_feat_cal
-from trainer import build_label_map, train_classifier, train_semantic_classifier
+from trainer import build_label_map, train_classifier, train_semantic_classifier, BalancedBatchSampler
 from utilities import build_optimizer, get_benchmark_split, get_device
 
 
@@ -84,6 +84,15 @@ def _train_semantic_model(
     train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True)
     test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False)
 
+    samples_per_class = int(cfg.model.get("samples_per_class", 4))
+    num_classes_per_batch = max(2, cfg.batch_size // samples_per_class)
+    balanced_sampler = BalancedBatchSampler(
+        data["train_subset"],
+        label_map=data["label_map"],
+        num_classes_per_batch=num_classes_per_batch,
+        samples_per_class=samples_per_class,
+    )
+
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
     save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
     best_top1, best_top5, best_epoch = train_semantic_classifier(
@@ -96,6 +105,7 @@ def _train_semantic_model(
         data["label_map"],
         triplet_margin=float(cfg.model.get("triplet_margin", 0.2)),
         ema_decay=float(cfg.model.get("ema_decay", 0.996)),
+        balanced_sampler=balanced_sampler,
         save_path=save_path,
     )
 
