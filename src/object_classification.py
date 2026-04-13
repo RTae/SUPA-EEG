@@ -53,7 +53,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     dataset.add_frequency_feat(de_feat)
 
     all_labels = np.array([sample[1] for sample in dataset])
-    train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric, cfg.subject)
+    train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric)
     train_idx = np.array(train_idx)
     test_idx = np.array(test_idx)
 

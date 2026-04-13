@@ -79,7 +79,6 @@ def build_optimizer(params, opt_cfg):
 def get_benchmark_split(
     data_list: list[dict],
     metric_type: str,
-    target_subject: int,
 ) -> tuple[list[int], list[int]]:
     """Return (train_indices, test_indices) for the given evaluation paradigm.
 
@@ -97,27 +96,24 @@ def get_benchmark_split(
 
     # CT : Train on one session, test on the other for the same person.
     if metric == "ct":
-        train_idx = [i for i, s in enumerate(data_list)
-                     if s["subject"] % 8 == target_subject and s["subject"] < 8]
-        test_idx = [i for i, s in enumerate(data_list)
-                    if s["subject"] % 8 == target_subject and s["subject"] >= 8]
-
+        raise NotImplementedError("CT split is not implemented yet.")
+    
     # CP : Train on all other people, test on the target person (using their first session).
     elif metric == "cp":
-        train_idx = [i for i, s in enumerate(data_list)
-                     if s["subject"] % 8 != target_subject and s["subject"] < 8]
-        test_idx = [i for i, s in enumerate(data_list)
-                    if s["subject"] % 8 == target_subject and s["subject"] < 8]
+        raise NotImplementedError("CP split is not implemented yet.")
 
-    # WT : Train on part of the target person's data, test on the rest (random 30/20 split of their second session).
+    # WT : 60% of samples per category for training, 40% for testing (30:20 ratio).
     elif metric == "wt":
-        # Collect labels for this person's Stage-2 data, then split 30 / 20.
-        stage2 = [(i, s) for i, s in enumerate(data_list)
-                  if s["subject"] % 8 == target_subject and s["subject"] >= 8]
-        unique_labels = sorted(set(s["label"] for _, s in stage2))
-        seen_labels = set(unique_labels[:30])
-        train_idx = [i for i, s in stage2 if s["label"] in seen_labels]
-        test_idx  = [i for i, s in stage2 if s["label"] not in seen_labels]
+        from collections import defaultdict
+        stage2 = [(i, s) for i, s in enumerate(data_list) if s["subject"] >= 8]
+        per_label: dict[int, list[int]] = defaultdict(list)
+        for i, s in stage2:
+            per_label[s["label"]].append(i)
+        train_idx, test_idx = [], []
+        for indices in per_label.values():
+            split = round(len(indices) * 0.6)
+            train_idx.extend(indices[:split])
+            test_idx.extend(indices[split:])
 
     else:
         raise ValueError(f"Unknown metric_type '{metric_type}'. Expected 'wt', 'ct', or 'cp'.")
@@ -129,9 +125,9 @@ def get_benchmark_split(
 class Args:
     """Container mirroring the old argparse namespace so downstream code stays compatible."""
     dataset_dir: str = "data/"
-    granularity: str = "coarse"
+    granularity: str = "fine"
     model: str = "eegnet"
     batch_size: int = 40
-    subject: int = 0
+    subject: int = -1
     output_dir: str = "output/"
     pretrained_model: Optional[str] = None

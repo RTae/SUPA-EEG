@@ -10,7 +10,6 @@ hydra:
 
 dataset_dir: data/
 granularity: fine
-subject: 0
 batch_size: 40
 output_dir: outputs/
 pretrained_model: null
