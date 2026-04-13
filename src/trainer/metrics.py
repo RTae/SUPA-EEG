@@ -21,13 +21,32 @@ def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
     return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
 
 
-def batch_hard_triplet_loss(embeddings: torch.Tensor, labels: torch.Tensor, margin: float) -> torch.Tensor:
+def batch_hard_triplet_loss(
+    embeddings: torch.Tensor,
+    labels: torch.Tensor,
+    margin: float,
+    semantic_neighbors: dict[int, set[int]] | None = None,
+) -> torch.Tensor:
     """Compute batch-hard triplet loss with hardest positive/negative mining."""
     if embeddings.shape[0] < 2:
         return embeddings.new_tensor(0.0)
 
     dist_mat = torch.cdist(embeddings, embeddings, p=2)
     same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
+
+    # Optional semantic neighbors can broaden positive pairs beyond exact label matches.
+    if semantic_neighbors:
+        semantic_mask = torch.zeros_like(same_label)
+        label_list = labels.detach().cpu().tolist()
+        for i, li in enumerate(label_list):
+            neigh_i = semantic_neighbors.get(li, set())
+            for j, lj in enumerate(label_list):
+                if i == j:
+                    continue
+                neigh_j = semantic_neighbors.get(lj, set())
+                if lj in neigh_i or li in neigh_j:
+                    semantic_mask[i, j] = True
+        same_label = same_label | semantic_mask
     eye = torch.eye(labels.shape[0], device=labels.device, dtype=torch.bool)
 
     pos_mask = same_label & ~eye

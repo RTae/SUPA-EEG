@@ -129,6 +129,7 @@ def train_semantic_classifier(
     triplet_weight: float,
     jepa_weight: float,
     ema_decay: float,
+    semantic_neighbors: dict[int, set[int]] | None = None,
     save_path: str | None = None,
 ) -> tuple[float, float, int]:
     """Train semantic classifier with CE + triplet + JEPA consistency losses."""
@@ -155,7 +156,12 @@ def train_semantic_classifier(
             outputs = model(inputs)
 
             ce_loss = criterion(outputs["logits"], labels)
-            triplet_loss = batch_hard_triplet_loss(outputs["embedding"], labels, margin=triplet_margin)
+            triplet_loss = batch_hard_triplet_loss(
+                outputs["embedding"],
+                labels,
+                margin=triplet_margin,
+                semantic_neighbors=semantic_neighbors,
+            )
             jepa_loss = F.smooth_l1_loss(outputs["jepa_pred"], outputs["jepa_target"].detach())
 
             total_loss = ce_weight * ce_loss + triplet_weight * triplet_loss + jepa_weight * jepa_loss
