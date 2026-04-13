@@ -158,6 +158,7 @@ def train_generator(
 def train_semantic_classifier(
     model: torch.nn.Module,
     train_loader: DataLoader,
+    eval_train_loader: DataLoader,
     test_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     num_epochs: int,
@@ -166,7 +167,6 @@ def train_semantic_classifier(
     *,
     triplet_margin: float,
     ema_decay: float,
-    balanced_sampler: BalancedBatchSampler | None = None,
     save_path: str | None = None,
 ) -> tuple[float, float, int]:
     """Train semantic model with triplet loss only."""
@@ -176,22 +176,12 @@ def train_semantic_classifier(
     best_top5 = 0.0
     best_epoch = -1
 
-    # Replace the train loader with one using the balanced sampler if provided.
-    if balanced_sampler is not None:
-        effective_train_loader = DataLoader(
-            train_loader.dataset,
-            batch_sampler=balanced_sampler,
-            num_workers=train_loader.num_workers,
-        )
-    else:
-        effective_train_loader = train_loader
-
     epoch_bar = tqdm(range(num_epochs), desc="semantic-train", unit="ep")
     for epoch in epoch_bar:
         model.train()
         running_triplet = 0.0
 
-        for inputs, labels in effective_train_loader:
+        for inputs, labels in train_loader:
             labels = remap_labels(labels, label_map)
             inputs, labels = inputs.to(device), labels.to(device)
 
@@ -211,7 +201,7 @@ def train_semantic_classifier(
 
         top1, top5, val_loss = evaluate_semantic_embeddings(
             model,
-            train_loader,
+            eval_train_loader,
             test_loader,
             device,
             label_map,

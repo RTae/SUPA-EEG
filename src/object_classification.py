@@ -60,16 +60,39 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     combined_labels = np.concatenate([all_labels[train_idx], all_labels[test_idx]])
     label_map = build_label_map(combined_labels)
 
+    train_subset = Subset(dataset, train_idx)
+    test_subset = Subset(dataset, test_idx)
+
+    train_loader = None
+    eval_train_loader = None
+    test_loader = None
+    if _is_semantic_model(cfg.model.name):
+        dataset.use_frequency_feat = False
+        samples_per_class = int(cfg.model.get("samples_per_class", 4))
+        num_classes_per_batch = max(2, cfg.batch_size // samples_per_class)
+        balanced_sampler = BalancedBatchSampler(
+            train_subset,
+            label_map=label_map,
+            num_classes_per_batch=num_classes_per_batch,
+            samples_per_class=samples_per_class,
+        )
+        train_loader = DataLoader(train_subset, batch_sampler=balanced_sampler)
+        eval_train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=False)
+        test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
+
     return {
         "num_classes": len(label_map),
         "label_map": label_map,
-        "train_subset": Subset(dataset, train_idx),
-        "test_subset": Subset(dataset, test_idx),
+        "train_subset": train_subset,
+        "test_subset": test_subset,
         "all_labels": all_labels,
         "train_idx": train_idx,
         "test_idx": test_idx,
         "is_simple": cfg.model.type == "simple",
         "dataset": dataset,
+        "train_loader": train_loader,
+        "eval_train_loader": eval_train_loader,
+        "test_loader": test_loader,
     }
 
 
@@ -80,32 +103,19 @@ def _train_semantic_model(
     data: dict,
     run_dir: str,
 ) -> dict:
-    data["dataset"].use_frequency_feat = False
-    train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True)
-    test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False)
-
-    samples_per_class = int(cfg.model.get("samples_per_class", 4))
-    num_classes_per_batch = max(2, cfg.batch_size // samples_per_class)
-    balanced_sampler = BalancedBatchSampler(
-        data["train_subset"],
-        label_map=data["label_map"],
-        num_classes_per_batch=num_classes_per_batch,
-        samples_per_class=samples_per_class,
-    )
-
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
     save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
     best_top1, best_top5, best_epoch = train_semantic_classifier(
         model_obj,
-        train_loader,
-        test_loader,
+        data["train_loader"],
+        data["eval_train_loader"],
+        data["test_loader"],
         optimizer,
         cfg.model.epochs,
         device,
         data["label_map"],
         triplet_margin=float(cfg.model.get("triplet_margin", 0.2)),
         ema_decay=float(cfg.model.get("ema_decay", 0.996)),
-        balanced_sampler=balanced_sampler,
         save_path=save_path,
     )
 
