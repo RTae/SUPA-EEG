@@ -78,7 +78,6 @@ class SemanticModel(nn.Module):
             raise ValueError("model.backbone must be one of: 'jepa', 'transformer', 'nn'")
 
         self.projection_head = nn.Sequential(
-            nn.LayerNorm(self.embed_dim),
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.GELU(),
             nn.Linear(self.embed_dim, proj_dim),

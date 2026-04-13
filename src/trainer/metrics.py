@@ -31,6 +31,12 @@ def batch_hard_triplet_loss(
     if embeddings.shape[0] < 2:
         return embeddings.new_tensor(0.0)
 
+    if not embeddings.isfinite().all():
+        n_nan = (~embeddings.isfinite()).any(dim=1).sum().item()
+        import logging
+        logging.warning(f"[triplet] {n_nan}/{embeddings.shape[0]} embeddings contain NaN/Inf — returning 0")
+        return embeddings.new_tensor(0.0)
+
     # Use matmul-based distance (MPS-compatible). Embeddings are L2-normalised,
     # so ||a - b||^2 = 2 - 2*(a·b^T), clamped to avoid sqrt of negatives.
     sim = embeddings @ embeddings.t()
@@ -45,6 +51,8 @@ def batch_hard_triplet_loss(
     has_neg = neg_mask.any(dim=1)
     valid = has_pos & has_neg
     if not valid.any():
+        import logging
+        logging.warning(f"[triplet] no valid triplets in batch — labels={labels.tolist()}")
         return embeddings.new_tensor(0.0)
 
     hardest_pos = (dist_mat * pos_mask.float()).max(dim=1).values

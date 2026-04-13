@@ -1,5 +1,6 @@
 """Training loops for classification and generation tasks."""
 
+import logging
 import os
 import random
 from collections import defaultdict
@@ -138,13 +139,20 @@ def train_semantic_classifier(
 
             optimizer.zero_grad()
             outputs = model(inputs)
+            emb = outputs["embedding"]
+
+            if not emb.isfinite().all():
+                n_nan = (~emb.isfinite()).any(dim=1).sum().item()
+                logging.warning(f"[train] epoch={epoch} — {n_nan}/{emb.shape[0]} embeddings NaN/Inf; skipping batch")
+                continue
 
             triplet_loss = batch_hard_triplet_loss(
-                outputs["embedding"],
+                emb,
                 labels,
                 margin=triplet_margin,
             )
             triplet_loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             model.update_target_encoder(ema_decay)
 
