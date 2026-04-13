@@ -1,5 +1,4 @@
 import os
-import json
 
 import hydra
 import numpy as np
@@ -24,53 +23,6 @@ from utilities import build_optimizer, get_benchmark_split, get_device
 def _is_semantic_model(model_name: str) -> bool:
     return model_name.lower() == "semantic"
 
-
-def _load_semantic_neighbors(
-    cfg: DictConfig,
-    dataset: EEGImageNetDataset,
-    label_map: dict[int, int],
-    device: torch.device,
-) -> dict[int, set[int]] | None:
-    default_knn_path = os.path.join(cfg.dataset_dir, f"label_emb_{cfg.granularity}.json")
-    semantic_knn_path = cfg.model.get("label_emb_path", default_knn_path)
-
-    if not semantic_knn_path:
-        return None
-
-    if not os.path.exists(semantic_knn_path):
-        logger.info(f"[semantic] cache not found at {semantic_knn_path}, building it now...")
-        try:
-            from preprocessing.label_embedding import build_label_embeddings
-
-            build_label_embeddings(
-                dataset=dataset,
-                output_path=semantic_knn_path,
-                sd_model=cfg.diffusion.sd_model,
-                k_pos=int(cfg.model.get("label_emb_k", 4)),
-                k_neg=int(cfg.model.get("label_neg_k", 4)),
-                device=device,
-            )
-        except Exception as exc:
-            logger.error(f"[semantic] failed to build label embedding cache: {exc}")
-            return None
-
-    with open(semantic_knn_path, encoding="utf-8") as f:
-        knn_obj = json.load(f)
-    records = knn_obj.get("records", {})
-    semantic_neighbors: dict[int, set[int]] = {}
-    for orig_str, rec in records.items():
-        orig_id = int(orig_str)
-        if orig_id not in label_map:
-            continue
-        remapped = label_map[orig_id]
-        neigh = set()
-        for n in rec.get("positives", []):
-            n = int(n)
-            if n in label_map:
-                neigh.add(label_map[n])
-        if neigh:
-            semantic_neighbors[remapped] = neigh
-    return semantic_neighbors or None
 
 def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> object:
     name = cfg.model.name.lower()
@@ -108,10 +60,6 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     combined_labels = np.concatenate([all_labels[train_idx], all_labels[test_idx]])
     label_map = build_label_map(combined_labels)
 
-    semantic_neighbors = None
-    if _is_semantic_model(cfg.model.name):
-        semantic_neighbors = _load_semantic_neighbors(cfg, dataset, label_map, device)
-
     return {
         "num_classes": len(label_map),
         "label_map": label_map,
@@ -123,7 +71,6 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         "test_idx": test_idx,
         "is_simple": cfg.model.type == "simple",
         "dataset": dataset,
-        "semantic_neighbors": semantic_neighbors,
     }
 
 
@@ -150,7 +97,6 @@ def _train_semantic_model(
         data["label_map"],
         triplet_margin=float(cfg.model.get("triplet_margin", 0.2)),
         ema_decay=float(cfg.model.get("ema_decay", 0.996)),
-        semantic_neighbors=data.get("semantic_neighbors"),
         save_path=save_path,
     )
 

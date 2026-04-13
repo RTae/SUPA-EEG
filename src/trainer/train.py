@@ -125,7 +125,6 @@ def train_semantic_classifier(
     *,
     triplet_margin: float,
     ema_decay: float,
-    semantic_neighbors: dict[int, set[int]] | None = None,
     save_path: str | None = None,
 ) -> tuple[float, float, int]:
     """Train semantic model with triplet loss only."""
@@ -151,7 +150,6 @@ def train_semantic_classifier(
                 outputs["embedding"],
                 labels,
                 margin=triplet_margin,
-                semantic_neighbors=semantic_neighbors,
             )
             triplet_loss.backward()
             optimizer.step()
@@ -166,7 +164,6 @@ def train_semantic_classifier(
             device,
             label_map,
             triplet_margin,
-            semantic_neighbors,
         )
         epoch_bar.set_postfix(
             tr_tri=f"{running_triplet / max(1, len(train_loader)):.4f}",

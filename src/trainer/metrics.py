@@ -26,7 +26,6 @@ def batch_hard_triplet_loss(
     embeddings: torch.Tensor,
     labels: torch.Tensor,
     margin: float,
-    semantic_neighbors: dict[int, set[int]] | None = None,
 ) -> torch.Tensor:
     """Compute batch-hard triplet loss with hardest positive/negative mining."""
     if embeddings.shape[0] < 2:
@@ -34,20 +33,6 @@ def batch_hard_triplet_loss(
 
     dist_mat = torch.cdist(embeddings, embeddings, p=2)
     same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
-
-    # Optional semantic neighbors can broaden positive pairs beyond exact label matches.
-    if semantic_neighbors:
-        semantic_mask = torch.zeros_like(same_label)
-        label_list = labels.detach().cpu().tolist()
-        for i, li in enumerate(label_list):
-            neigh_i = semantic_neighbors.get(li, set())
-            for j, lj in enumerate(label_list):
-                if i == j:
-                    continue
-                neigh_j = semantic_neighbors.get(lj, set())
-                if lj in neigh_i or li in neigh_j:
-                    semantic_mask[i, j] = True
-        same_label = same_label | semantic_mask
     eye = torch.eye(labels.shape[0], device=labels.device, dtype=torch.bool)
 
     pos_mask = same_label & ~eye
@@ -128,7 +113,6 @@ def evaluate_semantic_embeddings(
     device: torch.device,
     label_map: dict[int, int],
     triplet_margin: float,
-    semantic_neighbors: dict[int, set[int]] | None = None,
 ) -> tuple[float, float, float]:
     """Evaluate semantic embeddings using train-set class prototypes and triplet loss."""
     train_embeddings, train_labels = _collect_semantic_embeddings(model, train_loader, device, label_map)
@@ -149,7 +133,7 @@ def evaluate_semantic_embeddings(
     label_to_proto = {int(class_id): idx for idx, class_id in enumerate(prototype_labels.tolist())}
     valid_mask = torch.tensor([int(label.item()) in label_to_proto for label in test_labels], dtype=torch.bool)
     if not valid_mask.any():
-        val_loss = float(batch_hard_triplet_loss(test_embeddings, test_labels, triplet_margin, semantic_neighbors).item())
+        val_loss = float(batch_hard_triplet_loss(test_embeddings, test_labels, triplet_margin).item())
         return 0.0, 0.0, val_loss
 
     filtered_similarities = similarities[valid_mask]
@@ -159,7 +143,7 @@ def evaluate_semantic_embeddings(
     total = len(mapped_labels)
     top1 = topk_correct(filtered_similarities, mapped_labels, 1) / max(total, 1)
     top5 = topk_correct(filtered_similarities, mapped_labels, 5) / max(total, 1)
-    val_loss = float(batch_hard_triplet_loss(test_embeddings, test_labels, triplet_margin, semantic_neighbors).item())
+    val_loss = float(batch_hard_triplet_loss(test_embeddings, test_labels, triplet_margin).item())
 
     return top1, top5, val_loss
 
