@@ -31,8 +31,8 @@ def _load_semantic_neighbors(
     label_map: dict[int, int],
     device: torch.device,
 ) -> dict[int, set[int]] | None:
-    default_knn_path = os.path.join(cfg.dataset_dir, f"semantic_knn_{cfg.granularity}.json")
-    semantic_knn_path = cfg.model.get("semantic_knn_path", default_knn_path)
+    default_knn_path = os.path.join(cfg.dataset_dir, f"label_emb_{cfg.granularity}.json")
+    semantic_knn_path = cfg.model.get("label_emb_path", default_knn_path)
 
     if not semantic_knn_path:
         return None
@@ -40,18 +40,18 @@ def _load_semantic_neighbors(
     if not os.path.exists(semantic_knn_path):
         logger.info(f"[semantic] cache not found at {semantic_knn_path}, building it now...")
         try:
-            from preprocessing.semantic_knn import build_semantic_knn
+            from preprocessing.label_embedding import build_label_embeddings
 
-            build_semantic_knn(
+            build_label_embeddings(
                 dataset=dataset,
                 output_path=semantic_knn_path,
                 sd_model=cfg.diffusion.sd_model,
-                k_pos=int(cfg.model.get("semantic_knn_k", 4)),
-                k_neg=int(cfg.model.get("semantic_neg_k", 4)),
+                k_pos=int(cfg.model.get("label_emb_k", 4)),
+                k_neg=int(cfg.model.get("label_neg_k", 4)),
                 device=device,
             )
         except Exception as exc:
-            logger.error(f"[semantic] failed to build semantic cache: {exc}")
+            logger.error(f"[semantic] failed to build label embedding cache: {exc}")
             return None
 
     with open(semantic_knn_path, encoding="utf-8") as f:

@@ -14,11 +14,11 @@ depth: 4
 dropout: 0.1
 projection_dim: 128
 
-semantic_knn_path: null
-semantic_knn_k: 4
-semantic_neg_k: 4
-auto_build_semantic_knn: true
-semantic_knn_overwrite: false
+label_emb_path: null
+label_emb_k: 4
+label_neg_k: 4
+auto_build_label_emb: true
+label_emb_overwrite: false
 
 triplet_margin: 0.2
 ema_decay: 0.996

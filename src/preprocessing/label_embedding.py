@@ -46,7 +46,7 @@ def _encode_label_texts(texts: list[str], sd_model: str, device: torch.device) -
     return pooled.cpu()
 
 
-def build_semantic_knn(
+def build_label_embeddings(
     dataset: EEGImageNetDataset,
     output_path: str,
     sd_model: str,
@@ -56,7 +56,7 @@ def build_semantic_knn(
     overwrite: bool = False,
 ) -> None:
     if os.path.exists(output_path) and not overwrite:
-        print(f"Semantic KNN cache already exists, skip: {output_path}")
+        print(f"Label embedding cache already exists, skip: {output_path}")
         return
 
     label_names = list(dataset.labels)
@@ -97,7 +97,7 @@ def build_semantic_knn(
             ensure_ascii=True,
         )
 
-    print(f"Saved semantic KNN file to: {output_path}")
+    print(f"Saved label embedding file to: {output_path}")
 
 
 @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
@@ -111,19 +111,19 @@ def main(cfg: DictConfig) -> None:
         map_location=device,
     )
 
-    default_path = os.path.join(cfg.dataset_dir, f"semantic_knn_{cfg.granularity}.json")
-    output_path = cfg.model.get("semantic_knn_path", default_path)
-    k_pos = int(cfg.model.get("semantic_knn_k", 4))
-    k_neg = int(cfg.model.get("semantic_neg_k", 4))
+    default_path = os.path.join(cfg.dataset_dir, f"label_emb_{cfg.granularity}.json")
+    output_path = cfg.model.get("label_emb_path", default_path)
+    k_pos = int(cfg.model.get("label_emb_k", 4))
+    k_neg = int(cfg.model.get("label_neg_k", 4))
 
-    build_semantic_knn(
+    build_label_embeddings(
         dataset=dataset,
         output_path=output_path,
         sd_model=cfg.diffusion.sd_model,
         k_pos=k_pos,
         k_neg=k_neg,
         device=device,
-        overwrite=bool(cfg.model.get("semantic_knn_overwrite", False)),
+        overwrite=bool(cfg.model.get("label_emb_overwrite", False)),
     )
 
 

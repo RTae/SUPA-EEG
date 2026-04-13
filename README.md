@@ -39,7 +39,7 @@ src/
 ├── preprocessing/
 │   ├── blip_clip.py          # BLIP captioning → CLIP text embeddings (one-time)
 │   ├── de_feat_cal.py        # Differential-entropy (DE) feature extraction
-│   └── semantic_knn.py       # CLIP+KNN class neighbor graph (one-time, cached)
+│   └── label_embedding.py    # CLIP label embeddings + KNN neighbor graph (one-time, cached)
 ├── trainer/
 │   ├── train.py              # Training loops (classification, semantic, generation)
 │   ├── inference.py          # Prediction-only loops
@@ -201,20 +201,20 @@ python src/object_classification.py model=semantic model.triplet_margin=0.25
 
 By default, triplet pairs are formed by label identity. Optionally, you can expand positives/negatives using CLIP-space class similarity — classes that look semantically similar in the image domain are treated as soft positives in embedding space.
 
-The neighbor graph is computed once using CLIP text embeddings and cached as JSON at `data/semantic_knn_{granularity}.json`. **It is built automatically on the first training run** — no manual step needed.
+The neighbor graph is computed once using CLIP text embeddings and cached as JSON at `data/label_emb_{granularity}.json`. **It is built automatically on the first training run** — no manual step needed.
 
 ```bash
 # Run training; cache is auto-built if missing
 python src/object_classification.py model=semantic
 
 # Use a specific cache path
-python src/object_classification.py model=semantic model.semantic_knn_path=data/semantic_knn_coarse.json
+python src/object_classification.py model=semantic model.label_emb_path=data/label_emb_coarse.json
 
 # Pre-build manually with custom k values
-python src/preprocessing/semantic_knn.py model=semantic model.semantic_knn_k=4 model.semantic_neg_k=4
+python src/preprocessing/label_embedding.py model=semantic model.label_emb_k=4 model.label_neg_k=4
 
 # Force a rebuild of an existing cache
-python src/preprocessing/semantic_knn.py model=semantic model.semantic_knn_overwrite=true
+python src/preprocessing/label_embedding.py model=semantic model.label_emb_overwrite=true
 ```
 
 
