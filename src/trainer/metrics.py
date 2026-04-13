@@ -31,7 +31,10 @@ def batch_hard_triplet_loss(
     if embeddings.shape[0] < 2:
         return embeddings.new_tensor(0.0)
 
-    dist_mat = torch.cdist(embeddings, embeddings, p=2)
+    # Use matmul-based distance (MPS-compatible). Embeddings are L2-normalised,
+    # so ||a - b||^2 = 2 - 2*(a·b^T), clamped to avoid sqrt of negatives.
+    sim = embeddings @ embeddings.t()
+    dist_mat = (2.0 - 2.0 * sim).clamp(min=0.0).sqrt()
     same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
     eye = torch.eye(labels.shape[0], device=labels.device, dtype=torch.bool)
 
