@@ -104,7 +104,7 @@ def _train_semantic_model(
     run_dir: str,
 ) -> dict:
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
-    save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
+    save_path = os.path.join(run_dir, f"{cfg.model.name}.pth")
     best_top1, best_top5, best_epoch = train_semantic_classifier(
         model_obj,
         data["train_loader"],
@@ -157,7 +157,7 @@ def _train_nn_model(
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
-    save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
+    save_path = os.path.join(run_dir, f"{cfg.model.name}.pth")
     best_top1, best_top5, best_epoch = train_classifier(
         model_obj,
         train_loader,
