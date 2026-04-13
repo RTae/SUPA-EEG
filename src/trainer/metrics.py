@@ -21,6 +21,30 @@ def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
     return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
 
 
+def batch_hard_triplet_loss(embeddings: torch.Tensor, labels: torch.Tensor, margin: float) -> torch.Tensor:
+    """Compute batch-hard triplet loss with hardest positive/negative mining."""
+    if embeddings.shape[0] < 2:
+        return embeddings.new_tensor(0.0)
+
+    dist_mat = torch.cdist(embeddings, embeddings, p=2)
+    same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
+    eye = torch.eye(labels.shape[0], device=labels.device, dtype=torch.bool)
+
+    pos_mask = same_label & ~eye
+    neg_mask = ~same_label
+
+    has_pos = pos_mask.any(dim=1)
+    has_neg = neg_mask.any(dim=1)
+    valid = has_pos & has_neg
+    if not valid.any():
+        return embeddings.new_tensor(0.0)
+
+    hardest_pos = (dist_mat * pos_mask.float()).max(dim=1).values
+    max_dist = dist_mat.max().detach() + 1.0
+    hardest_neg = dist_mat.masked_fill(~neg_mask, max_dist).min(dim=1).values
+    return torch.relu(hardest_pos - hardest_neg + margin)[valid].mean()
+
+
 def resolve_clip_targets(
     labels: tuple[str, ...] | list[str],
     embeddings: dict[str, torch.Tensor],
@@ -49,6 +73,33 @@ def evaluate_classifier(
         total += len(labels)
         top1_correct += topk_correct(outputs, labels, 1)
         top5_correct += topk_correct(outputs, labels, 5)
+    denom = max(total, 1)
+    return top1_correct / denom, top5_correct / denom, total_loss / max(len(dataloader), 1)
+
+
+@torch.no_grad()
+def evaluate_semantic_classifier(
+    model: torch.nn.Module,
+    dataloader: DataLoader,
+    criterion: torch.nn.Module,
+    device: torch.device,
+    label_map: dict[int, int],
+) -> tuple[float, float, float]:
+    """Evaluate models that return dict outputs containing a logits tensor."""
+    model.eval()
+    top1_correct = top5_correct = total = 0
+    total_loss = 0.0
+
+    for inputs, labels in dataloader:
+        labels = remap_labels(labels, label_map)
+        inputs, labels = inputs.to(device), labels.to(device)
+        outputs = model(inputs)
+        logits = outputs["logits"]
+        total_loss += criterion(logits, labels).item()
+        total += len(labels)
+        top1_correct += topk_correct(logits, labels, 1)
+        top5_correct += topk_correct(logits, labels, 5)
+
     denom = max(total, 1)
     return top1_correct / denom, top5_correct / denom, total_loss / max(len(dataloader), 1)
 
