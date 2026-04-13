@@ -51,7 +51,7 @@ class BalancedBatchSampler(Sampler):
             for cls in batch_classes:
                 batch.extend(random.choices(self.groups[cls], k=self.samples_per_class))
             random.shuffle(batch)
-            yield from batch
+            yield batch
 
     def __len__(self) -> int:
         return self.num_batches * self.num_classes_per_batch * self.samples_per_class
