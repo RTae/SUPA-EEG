@@ -66,7 +66,6 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         "train_subset": Subset(dataset, train_idx),
         "test_subset": Subset(dataset, test_idx),
         "all_labels": all_labels,
-        "de_feat": de_feat,
         "train_idx": train_idx,
         "test_idx": test_idx,
         "is_simple": cfg.model.type == "simple",
@@ -110,8 +109,9 @@ def _train_semantic_model(
 
 def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dict:
     data["dataset"].use_frequency_feat = True
-    x_train = data["de_feat"][data["train_idx"]].reshape(len(data["train_idx"]), -1)
-    x_test = data["de_feat"][data["test_idx"]].reshape(len(data["test_idx"]), -1)
+    freq_feat = data["dataset"].frequency_feat
+    x_train = freq_feat[data["train_idx"]].reshape(len(data["train_idx"]), -1)
+    x_test = freq_feat[data["test_idx"]].reshape(len(data["test_idx"]), -1)
 
     y_train = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["train_idx"]]])
     y_test = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["test_idx"]]])
