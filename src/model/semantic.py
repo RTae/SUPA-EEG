@@ -4,7 +4,11 @@ import torch.nn.functional as F
 
 
 class SemanticModel(nn.Module):
-    """Semantic EEG encoder with a switchable backbone for metric learning."""
+    """Semantic EEG encoder with a switchable backbone for metric learning.
+
+    Supports three backbones via ``model.backbone``: ``transformer``, ``jepa``,
+    and ``nn``. See README for architecture diagrams.
+    """
 
     def __init__(self, cfg, num_classes: int) -> None:
         _ = num_classes

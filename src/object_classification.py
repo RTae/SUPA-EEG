@@ -109,7 +109,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     label_map = build_label_map(combined_labels)
 
     semantic_neighbors = None
-    if x(cfg.model.name):
+    if _is_semantic_model(cfg.model.name):
         semantic_neighbors = _load_semantic_neighbors(cfg, dataset, label_map, device)
 
     return {
