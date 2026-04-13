@@ -1,12 +1,11 @@
 import os
 import pickle
-from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 import torch
-import torch.nn.functional as F
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import Dataset
+from loguru import logger
 
 
 class EEGImageNetDataset(Dataset):
@@ -73,9 +72,11 @@ class EEGImageNetDataset(Dataset):
 
     @staticmethod
     def _load_checkpoint(path: str, map_location: str | torch.device = "cpu") -> dict[str, Any]:
-        # Always load to CPU to avoid dtype issues (e.g. MPS doesn't support float64).
-        if map_location == "mps":
-            map_location = "cpu"
+        # Our data is float64, but some environments (like MPS) don't support it. Load to CPU first and convert to float32 if needed.
+        if map_location == torch.device("mps"):
+            map_location = torch.device("cpu")
+            
+        logger.info(f"Loading dataset checkpoint from: {path}" f" (map_location={map_location})")
         try:
             return torch.load(path, map_location=map_location, weights_only=True)
         except pickle.UnpicklingError:
