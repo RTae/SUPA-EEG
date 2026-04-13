@@ -95,18 +95,21 @@ def get_benchmark_split(
     """
     metric = metric_type.lower()
 
+    # CT : Train on one session, test on the other for the same person.
     if metric == "ct":
         train_idx = [i for i, s in enumerate(data_list)
                      if s["subject"] % 8 == target_subject and s["subject"] < 8]
         test_idx = [i for i, s in enumerate(data_list)
                     if s["subject"] % 8 == target_subject and s["subject"] >= 8]
 
+    # CP : Train on all other people, test on the target person (using their first session).
     elif metric == "cp":
         train_idx = [i for i, s in enumerate(data_list)
                      if s["subject"] % 8 != target_subject and s["subject"] < 8]
         test_idx = [i for i, s in enumerate(data_list)
                     if s["subject"] % 8 == target_subject and s["subject"] < 8]
 
+    # WT : Train on part of the target person's data, test on the rest (random 30/20 split of their second session).
     elif metric == "wt":
         # Collect labels for this person's Stage-2 data, then split 30 / 20.
         stage2 = [(i, s) for i, s in enumerate(data_list)
