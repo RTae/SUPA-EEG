@@ -258,6 +258,51 @@ python src/object_classification.py model=semantic
 python src/object_classification.py model=semantic model.backbone=transformer
 python src/object_classification.py model=semantic model.backbone=jepa
 python src/object_classification.py model=semantic model.backbone=nn
+```
+
+#### SemanticModel Architecture
+
+```
+── transformer ────────────────────────────────────────────────────────────
+ (B,C,T) ──Conv1d──► patch tokens ──cat([CLS])──► +pos_embed
+                                                        │
+                                               TransformerEncoder × depth
+                                                        │
+                                                    [CLS] token
+                                                        │
+                                                projection_head
+                                                        │
+                                                L2-norm embedding
+
+── jepa ───────────────────────────────────────────────────────────────────
+ (B,C,T) ──Conv1d──► patch tokens ──cat([CLS])──► +pos_embed
+          │                                             │
+          │                                  online TransformerEncoder × depth
+          │                                             │         ▲
+          │                                         [CLS] token  │ EMA update
+          └──Conv1d──► patch tokens ──cat([CLS])──► +pos_embed   │
+                                                target encoder ──┘
+                                                        │
+                                                projection_head
+                                                        │
+                                                L2-norm embedding
+
+── nn ─────────────────────────────────────────────────────────────────────
+ (B,C,T) ──Conv1d──► BN ──► GELU
+                              │
+                           Conv1d ──► BN ──► GELU
+                                               │
+                                      AdaptiveAvgPool1d(1)
+                                               │
+                                         squeeze(-1)
+                                               │
+                                       projection_head
+                                               │
+                                       L2-norm embedding
+───────────────────────────────────────────────────────────────────────────
+```
+
+```bash
 
 # Tune the triplet margin
 python src/object_classification.py model=semantic model.triplet_margin=0.25

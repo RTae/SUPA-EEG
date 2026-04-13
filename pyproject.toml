@@ -29,4 +29,5 @@ dependencies = [
     "trame>=3.12.0",
     "trame-vtk>=2.11.6",
     "trame-vuetify>=3.2.1",
+    "loguru>=0.7.3",
 ]

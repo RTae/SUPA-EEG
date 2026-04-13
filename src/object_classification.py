@@ -8,6 +8,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
+from loguru import logger
 
 from dataset import EEGImageNetDataset
 from model.eegnet import EEGNet
@@ -37,9 +38,7 @@ def _load_semantic_neighbors(
         return None
 
     if not os.path.exists(semantic_knn_path):
-        if not bool(cfg.model.get("auto_build_semantic_knn", True)):
-            return None
-        print(f"[semantic] cache not found at {semantic_knn_path}, building it now...")
+        logger.info(f"[semantic] cache not found at {semantic_knn_path}, building it now...")
         try:
             from preprocessing.semantic_knn import build_semantic_knn
 
@@ -52,7 +51,7 @@ def _load_semantic_neighbors(
                 device=device,
             )
         except Exception as exc:
-            print(f"[semantic] failed to build semantic cache: {exc}")
+            logger.error(f"[semantic] failed to build semantic cache: {exc}")
             return None
 
     with open(semantic_knn_path, encoding="utf-8") as f:
@@ -110,7 +109,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     label_map = build_label_map(combined_labels)
 
     semantic_neighbors = None
-    if _is_semantic_model(cfg.model.name):
+    if x(cfg.model.name):
         semantic_neighbors = _load_semantic_neighbors(cfg, dataset, label_map, device)
 
     return {
@@ -177,7 +176,7 @@ def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dic
 
     with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
         f.write(f"top1={top1:.4f}\n")
-    print(f"[simple] test_top1={top1:.4f}")
+    logger.info(f"[simple] test_top1={top1:.4f}")
     return {"simple_top1": top1}
 
 def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: dict, run_dir: str) -> dict:
@@ -210,20 +209,20 @@ def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: 
 def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     model_name = cfg.model.name.lower()
     if _is_semantic_model(model_name):
-        print(
+        logger.info(
             f"[semantic] best_top1={train_results['semantic_top1']:.4f} "
             f"best_top5={train_results['semantic_top5']:.4f} epoch={train_results['semantic_epoch']}"
         )
         return
     if cfg.model.type == "simple":
-        print(f"[simple] best_top1={train_results['simple_top1']:.4f}")
+        logger.info(f"[simple] best_top1={train_results['simple_top1']:.4f}")
         return
-    print(f"[deep] best_top1={train_results['deep_top1']:.4f} epoch={train_results['deep_epoch']}")
+    logger.info(f"[deep] best_top1={train_results['deep_top1']:.4f} epoch={train_results['deep_epoch']}")
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
-    print(OmegaConf.to_yaml(cfg))
+    logger.info(OmegaConf.to_yaml(cfg))
     device = get_device()
 
     data = load_data(cfg, device)
