@@ -31,9 +31,6 @@ configs/
     ├── eegnet.yaml
     ├── mlp.yaml
     ├── rgnn.yaml
-    ├── jepa.yaml
-    ├── eeg_transformer.yaml
-    ├── llm_encoder.yaml
     ├── mlp_sd.yaml
     └── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
 src/
@@ -56,9 +53,6 @@ src/
     ├── mlp_sd.py             # [Baseline] MLP mapper to CLIP embedding space
     ├── rgnn.py               # [Baseline] Regularized Graph Neural Network
     ├── simple_model.py       # [Baseline] Sklearn (SVM, RF, KNN, DT, Ridge)
-    ├── jepa.py               # EEG-JEPA + shared building blocks (PatchEmbed, TransformerEncoder)
-    ├── eeg_transformer.py    # Supervised ViT encoder (decoupled pipeline)
-    └── llm_encoder.py        # Pre-trained LLM encoder with LoRA support (decoupled pipeline)
 scripts/
 └── merge_dataset.py          # Merge split .pth dataset files
 data/
