@@ -4,7 +4,7 @@ defaults:
 
 hydra:
   run:
-    dir: ${output_dir}/${model.name}/${metric}/s${subject}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${output_dir}/${model.name}/${metric}/${now:%Y-%m-%d_%H-%M-%S}
   job:
     chdir: false
 
