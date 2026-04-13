@@ -200,7 +200,6 @@ def train_semantic_classifier(
 
         top1, top5, val_loss = evaluate_semantic_embeddings(
             model,
-            train_loader,
             eval_loader,
             device,
             label_map,
