@@ -64,8 +64,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     test_subset = Subset(dataset, test_idx)
 
     train_loader = None
-    eval_train_loader = None
-    test_loader = None
+    eval_loader = None
     if _is_semantic_model(cfg.model.name):
         dataset.use_frequency_feat = False
         samples_per_class = int(cfg.model.get("samples_per_class", 4))
@@ -77,8 +76,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
             samples_per_class=samples_per_class,
         )
         train_loader = DataLoader(train_subset, batch_sampler=balanced_sampler)
-        eval_train_loader = DataLoader(train_subset, batch_size=cfg.batch_size, shuffle=False)
-        test_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
+        eval_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
 
     return {
         "num_classes": len(label_map),
@@ -91,8 +89,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         "is_simple": cfg.model.type == "simple",
         "dataset": dataset,
         "train_loader": train_loader,
-        "eval_train_loader": eval_train_loader,
-        "test_loader": test_loader,
+        "eval_loader": eval_loader,
     }
 
 
@@ -108,8 +105,7 @@ def _train_semantic_model(
     best_top1, best_top5, best_epoch = train_semantic_classifier(
         model_obj,
         data["train_loader"],
-        data["eval_train_loader"],
-        data["test_loader"],
+        data["eval_loader"],
         optimizer,
         cfg.model.epochs,
         device,

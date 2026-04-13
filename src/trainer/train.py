@@ -60,7 +60,7 @@ class BalancedBatchSampler(Sampler):
 def train_classifier(
     model: torch.nn.Module,
     train_loader: DataLoader,
-    test_loader: DataLoader,
+    eval_loader: DataLoader,
     criterion: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     num_epochs: int,
@@ -90,12 +90,12 @@ def train_classifier(
             epoch_loss += loss.item()
             step_bar.set_postfix(loss=f"{loss.item():.4f}")
 
-        acc, acc5, test_loss = evaluate_classifier(model, test_loader, criterion, device, label_map)
+        acc, acc5, test_loss = evaluate_classifier(model, eval_loader, criterion, device, label_map)
         epoch_bar.set_postfix(
             tr_loss=f"{epoch_loss / max(1, len(train_loader)):.4f}",
-            val_top1=f"{acc:.3f}",
-            val_top5=f"{acc5:.3f}",
-            val_loss=f"{test_loss:.4f}",
+            eval_top1=f"{acc:.3f}",
+            eval_top5=f"{acc5:.3f}",
+            eval_loss=f"{test_loss:.4f}",
         )
         if acc > best_acc:
             best_acc = acc
@@ -158,8 +158,7 @@ def train_generator(
 def train_semantic_classifier(
     model: torch.nn.Module,
     train_loader: DataLoader,
-    eval_train_loader: DataLoader,
-    test_loader: DataLoader,
+    eval_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     num_epochs: int,
     device: torch.device,
@@ -201,17 +200,17 @@ def train_semantic_classifier(
 
         top1, top5, val_loss = evaluate_semantic_embeddings(
             model,
-            eval_train_loader,
-            test_loader,
+            train_loader,
+            eval_loader,
             device,
             label_map,
             triplet_margin,
         )
         epoch_bar.set_postfix(
-            tr_tri=f"{running_triplet / max(1, len(train_loader)):.4f}",
-            val_top1=f"{top1:.3f}",
-            val_top5=f"{top5:.3f}",
-            val_loss=f"{val_loss:.4f}",
+            train_loss=f"{running_triplet / max(1, len(train_loader)):.4f}",
+            eval_top1=f"{top1:.3f}",
+            eval_top5=f"{top5:.3f}",
+            eval_loss=f"{val_loss:.4f}",
         )
 
         if top1 > best_top1:

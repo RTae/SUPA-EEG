@@ -112,14 +112,14 @@ def _collect_semantic_embeddings(
 def evaluate_semantic_embeddings(
     model: torch.nn.Module,
     train_loader: DataLoader,
-    test_loader: DataLoader,
+    eval_loader: DataLoader,
     device: torch.device,
     label_map: dict[int, int],
     triplet_margin: float,
 ) -> tuple[float, float, float]:
     """Evaluate semantic embeddings using train-set class prototypes and triplet loss."""
     train_embeddings, train_labels = _collect_semantic_embeddings(model, train_loader, device, label_map)
-    test_embeddings, test_labels = _collect_semantic_embeddings(model, test_loader, device, label_map)
+    test_embeddings, test_labels = _collect_semantic_embeddings(model, eval_loader, device, label_map)
 
     if train_embeddings.numel() == 0 or test_embeddings.numel() == 0:
         return 0.0, 0.0, 0.0
