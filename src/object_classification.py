@@ -120,7 +120,7 @@ def _train_semantic_model(
         f.write(f"top5={best_top5:.4f}\n")
         f.write(f"best_epoch={best_epoch}\n")
 
-    return {"semantic_top1": best_top1, "semantic_top5": best_top5, "semantic_epoch": best_epoch}
+    return {"top1": best_top1, "top5": best_top5, "epoch": best_epoch}
 
 
 def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dict:
@@ -138,15 +138,16 @@ def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dic
 
     with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
         f.write(f"top1={top1:.4f}\n")
-    logger.info(f"[simple] test_top1={top1:.4f}")
-    return {"simple_top1": top1}
+        
+    return {"top1": top1}
 
-def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: dict, run_dir: str) -> dict:
-    if _is_semantic_model(cfg.model.name):
-        return _train_semantic_model(cfg, device, model_obj, data, run_dir)
-    if data.get("is_simple", False):
-        return _train_simple_model(model_obj, data, run_dir)
-
+def _train_nn_model(
+    cfg: DictConfig,
+    model_obj: torch.nn.Module,
+    data: dict,
+    device: torch.device,
+    run_dir: str,
+):
     data["dataset"].use_frequency_feat = cfg.model.use_freq
     train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True)
     test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False)
@@ -154,7 +155,7 @@ def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
     save_path = os.path.join(run_dir, f"{cfg.model.name}_s{cfg.subject}.pth")
-    acc, epoch = train_classifier(
+    best_top1, best_top5, best_epoch = train_classifier(
         model_obj,
         train_loader,
         test_loader,
@@ -165,21 +166,32 @@ def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: 
         data["label_map"],
         save_path=save_path,
     )
-    return {"deep_top1": acc, "deep_epoch": epoch}
+    with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
+        f.write(f"top1={best_top1:.4f}\n")
+        f.write(f"top5={best_top5:.4f}\n")
+        f.write(f"epoch={best_epoch}\n")
+        
+    return {"top1": best_top1, "top5": best_top5, "epoch": best_epoch}
 
+def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: dict, run_dir: str) -> dict:
+    if _is_semantic_model(cfg.model.name):
+        return _train_semantic_model(cfg, device, model_obj, data, run_dir)
+    if data.get("is_simple", False):
+        return _train_simple_model(model_obj, data, run_dir)
+    return _train_nn_model(cfg, model_obj, data, device, run_dir)
 
 def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     model_name = cfg.model.name.lower()
     if _is_semantic_model(model_name):
         logger.info(
-            f"[semantic] best_top1={train_results['semantic_top1']:.4f} "
-            f"best_top5={train_results['semantic_top5']:.4f} epoch={train_results['semantic_epoch']}"
+            f"[semantic] best_top1={train_results['top1']:.4f} "
+            f"best_top5={train_results['top5']:.4f} epoch={train_results['epoch']}"
         )
         return
     if cfg.model.type == "simple":
-        logger.info(f"[simple] best_top1={train_results['simple_top1']:.4f}")
+        logger.info(f"[simple] best_top1={train_results['top1']:.4f}")
         return
-    logger.info(f"[deep] best_top1={train_results['deep_top1']:.4f} epoch={train_results['deep_epoch']}")
+    logger.info(f"[deep] best_top1={train_results['top1']:.4f} epoch={train_results['epoch']}")
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")

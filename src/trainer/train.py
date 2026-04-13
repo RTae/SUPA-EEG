@@ -90,70 +90,22 @@ def train_classifier(
             epoch_loss += loss.item()
             step_bar.set_postfix(loss=f"{loss.item():.4f}")
 
-        acc, acc5, test_loss = evaluate_classifier(model, eval_loader, criterion, device, label_map)
+        top1, top5, val_loss = evaluate_classifier(model, eval_loader, criterion, device, label_map)
         epoch_bar.set_postfix(
             tr_loss=f"{epoch_loss / max(1, len(train_loader)):.4f}",
-            eval_top1=f"{acc:.3f}",
-            eval_top5=f"{acc5:.3f}",
-            eval_loss=f"{test_loss:.4f}",
+            eval_top1=f"{top1:.3f}",
+            eval_top5=f"{top5:.3f}",
+            eval_loss=f"{val_loss:.4f}",
         )
-        if acc > best_acc:
-            best_acc = acc
+        if top1 > best_top1:
+            best_top1 = top1
+            best_top5 = top5
             best_epoch = epoch
             if save_path:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 torch.save(model.state_dict(), save_path)
 
-    return best_acc, best_epoch
-
-
-def train_generator(
-    model: torch.nn.Module,
-    train_loader: DataLoader,
-    test_loader: DataLoader,
-    criterion: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    num_epochs: int,
-    device: torch.device,
-    clip_embeddings: dict[str, torch.Tensor],
-    save_path: str | None = None,
-) -> tuple[int, float]:
-    """Train the EEG-to-CLIP mapper, return (best_epoch, best_loss).
-
-    If *save_path* is given the best checkpoint is saved there.
-    """
-    model = model.to(device)
-    report_interval = max(len(train_loader) // 2, 1)
-    best_loss, best_epoch = float("inf"), -1
-
-    for epoch in tqdm(range(num_epochs), desc="Training"):
-        model.train()
-        running_loss = 0.0
-        for batch_idx, (inputs, labels) in enumerate(train_loader):
-            targets = resolve_clip_targets(labels, clip_embeddings, device)
-            inputs = inputs.to(device)
-            optimizer.zero_grad()
-            loss = criterion(model(inputs), targets)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            if batch_idx % report_interval == report_interval - 1:
-                print(f"[epoch {epoch}, batch {batch_idx}] loss: {running_loss / report_interval:.4f}")
-                running_loss = 0.0
-
-        avg_test_loss = evaluate_generator(model, test_loader, criterion, device, clip_embeddings)
-        print(f"Test loss: {avg_test_loss:.4f}")
-
-        total_test_loss = avg_test_loss * len(test_loader)
-        if total_test_loss < best_loss:
-            best_loss = total_test_loss
-            best_epoch = epoch
-            if save_path:
-                os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                torch.save(model.state_dict(), save_path)
-
-    return best_epoch, best_loss
-
+    return best_top1, best_top5, best_epoch
 
 def train_semantic_classifier(
     model: torch.nn.Module,
@@ -221,3 +173,52 @@ def train_semantic_classifier(
                 torch.save(model.state_dict(), save_path)
 
     return best_top1, best_top5, best_epoch
+
+
+def train_generator(
+    model: torch.nn.Module,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
+    criterion: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    num_epochs: int,
+    device: torch.device,
+    clip_embeddings: dict[str, torch.Tensor],
+    save_path: str | None = None,
+) -> tuple[int, float]:
+    """Train the EEG-to-CLIP mapper, return (best_epoch, best_loss).
+
+    If *save_path* is given the best checkpoint is saved there.
+    """
+    model = model.to(device)
+    report_interval = max(len(train_loader) // 2, 1)
+    best_loss, best_epoch = float("inf"), -1
+
+    for epoch in tqdm(range(num_epochs), desc="Training"):
+        model.train()
+        running_loss = 0.0
+        for batch_idx, (inputs, labels) in enumerate(train_loader):
+            targets = resolve_clip_targets(labels, clip_embeddings, device)
+            inputs = inputs.to(device)
+            optimizer.zero_grad()
+            loss = criterion(model(inputs), targets)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            if batch_idx % report_interval == report_interval - 1:
+                print(f"[epoch {epoch}, batch {batch_idx}] loss: {running_loss / report_interval:.4f}")
+                running_loss = 0.0
+
+        avg_test_loss = evaluate_generator(model, test_loader, criterion, device, clip_embeddings)
+        print(f"Test loss: {avg_test_loss:.4f}")
+
+        total_test_loss = avg_test_loss * len(test_loader)
+        if total_test_loss < best_loss:
+            best_loss = total_test_loss
+            best_epoch = epoch
+            if save_path:
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                torch.save(model.state_dict(), save_path)
+
+    return best_epoch, best_loss
+
