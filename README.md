@@ -173,7 +173,7 @@ Implementation references:
 | Frequency features | `src/preprocessing/de_feat_cal.py` | DE feature extraction and cache reuse |
 | Training loops | `src/trainer/train.py` | classifier training and semantic training loops |
 | Evaluation | `src/trainer/metrics.py` | top-k metrics, embedding evaluation, prototype-based scoring |
-| Losses | `src/trainer/loss.py` | batch-hard triplet loss |
+| Losses | `src/trainer/loss.py` | triplet loss |
 
 More concrete execution flow:
 
