@@ -25,7 +25,6 @@ outputs/<model>/<metric>/<timestamp>/
 | RGNN | `rgnn` | freq | cross-entropy | Graph neural network over EEG channels |
 | SVM / RF / KNN / DT / Ridge | `svm` … | freq | sklearn fit/predict | Classical baselines on DE features |
 | Semantic | `semantic` | time | triplet loss | Retrieval-style embedding model |
-| MLPMapper | `mlp_sd` | freq | MSE to CLIP embeddings | Generation pipeline only |
 
 > **Adding a new model:** add the implementation in `src/model/`, create `configs/model/<name>.yaml`, and register it in `src/object_classification.py`.
 
@@ -238,11 +237,6 @@ flowchart LR
     D --> E["projection head"]
     E --> F["L2 embedding"]
 ```
-
-
-1. `src/preprocessing/blip_clip.py` captions each stimulus image with BLIP and converts the caption to CLIP text embeddings.
-2. `src/image_generation.py` trains `MLPMapper` to regress EEG DE features to CLIP embeddings with MSE loss.
-3. `src/gen_eval.py` loads the trained mapper and uses Stable Diffusion components to decode generated CLIP-like embeddings into images.
 
 ## Usage
 
