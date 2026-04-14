@@ -102,18 +102,12 @@ def get_benchmark_split(
     elif metric == "cp":
         raise NotImplementedError("CP split is not implemented yet.")
 
-    # WT : split the currently loaded dataset per category using a 30:20 ratio.
-    # When a category has 50 samples, this becomes the original 30-train / 20-test split.
+    # WT : follow the original benchmark protocol exactly.
+    # After subject / granularity filtering, samples remain arranged in 50-sample
+    # category blocks, with the first 30 used for training and the last 20 for test.
     elif metric == "wt":
-        from collections import defaultdict
-        per_label: dict[int, list[int]] = defaultdict(list)
-        for i, s in enumerate(data_list):
-            per_label[s["label"]].append(i)
-        train_idx, test_idx = [], []
-        for indices in per_label.values():
-            split = round(len(indices) * 0.6)
-            train_idx.extend(indices[:split])
-            test_idx.extend(indices[split:])
+        train_idx = [i for i in range(len(data_list)) if i % 50 < 30]
+        test_idx = [i for i in range(len(data_list)) if i % 50 >= 30]
 
     else:
         raise ValueError(f"Unknown metric_type '{metric_type}'. Expected 'wt', 'ct', or 'cp'.")
