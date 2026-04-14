@@ -24,7 +24,7 @@ def _is_semantic_model(model_name: str) -> bool:
     return model_name.lower() == "semantic"
 
 
-def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> object:
+def _model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> object:
     name = cfg.model.name.lower()
     if cfg.model.type == "simple":
         model_params = OmegaConf.to_container(cfg.model.params, resolve=True)
@@ -40,6 +40,16 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
         return SemanticModel(cfg, num_classes)
     raise ValueError(f"Unknown model: {name}")
 
+def _prep_freq_features(dataset: EEGImageNetDataset) -> None:
+    logger.info("Calculating frequency-domain features for the dataset...")
+    eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
+    de_feat = de_feat_cal(eeg_data, dataset.subject, dataset.granularity)
+    dataset.add_frequency_feat(de_feat)
+    
+def _prep_time_features(dataset: EEGImageNetDataset) -> None:
+    logger.info("Using raw time-domain features for the dataset.")
+    # No additional preparation needed for time-domain features, but this function is here for consistency and future extensibility.
+    pass
 
 def load_data(cfg: DictConfig, device: torch.device) -> dict:
     dataset = EEGImageNetDataset(
@@ -51,9 +61,17 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
 
     model_feature_type = str(cfg.model.get("feature_type", "time")).lower()
+    
+    # Add frequency features to the dataset if required by the model configuration
     if model_feature_type == "freq":
-        de_feat = de_feat_cal(eeg_data, int(cfg.get("subject", -1)), cfg.granularity)
-        dataset.add_frequency_feat(de_feat)
+        _prep_freq_features(dataset)
+    
+    # Add time-domain features to the dataset if required by the model configuration
+    if model_feature_type == "time":
+        _prep_time_features(dataset)
+        
+    if model_feature_type not in ["time", "freq"]:
+        raise ValueError(f"Unsupported feature type: {model_feature_type}")
 
     all_labels = np.array([sample[1] for sample in dataset])
     train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric)
@@ -204,7 +222,7 @@ def main(cfg: DictConfig) -> None:
     device = get_device()
 
     data = load_data(cfg, device)
-    model_obj = model_init(cfg, data["num_classes"], device)
+    model_obj = _model_init(cfg, data["num_classes"], device)
     run_dir = HydraConfig.get().runtime.output_dir
     train_results = train_model(cfg, device, model_obj, data, run_dir)
     evaluate_model(cfg, train_results)
