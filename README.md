@@ -163,6 +163,28 @@ Detailed steps:
 5. Training dispatch depends on `model.type` and `model.name`.
 6. The best checkpoint and summary metrics are written to the Hydra run directory.
 
+Implementation references:
+
+| Stage | Main file | What happens there |
+|------|-----------|--------------------|
+| Experiment entrypoint | `src/object_classification.py` | Hydra config loading, feature routing, split creation, train dispatch |
+| Dataset loading | `src/dataset.py` | subject filtering, granularity filtering, contiguous label generation |
+| Benchmark split | `src/utilities.py` | `wt` split logic and general helper utilities |
+| Frequency features | `src/preprocessing/de_feat_cal.py` | DE feature extraction and cache reuse |
+| Training loops | `src/trainer/train.py` | classifier training and semantic training loops |
+| Evaluation | `src/trainer/metrics.py` | top-k metrics, embedding evaluation, prototype-based scoring |
+| Losses | `src/trainer/loss.py` | batch-hard triplet loss |
+
+More concrete execution flow:
+
+1. `src/object_classification.py` reads `configs/config.yaml` plus `configs/model/<name>.yaml` and creates the selected model.
+2. `src/dataset.py` constructs `EEGImageNetDataset`, filters records, and exposes labels as contiguous indices local to the filtered dataset.
+3. `src/object_classification.py` decides whether to call the time-domain path directly or to populate `dataset.frequency_feat` via `src/preprocessing/de_feat_cal.py`.
+4. `src/utilities.py` creates the benchmark split indices, which are then wrapped as `Subset` objects in `src/object_classification.py`.
+5. `src/object_classification.py` dispatches to either the sklearn path, the cross-entropy path, or the semantic path.
+6. `src/trainer/train.py` runs optimization, while `src/trainer/metrics.py` evaluates top-1/top-5 or prototype-retrieval accuracy.
+7. Semantic training additionally uses `BalancedBatchSampler` from `src/dataset.py` and `batch_hard_triplet_loss` from `src/trainer/loss.py`.
+
 ### Model-Specific Training Behavior
 
 #### Classical Baselines
@@ -172,6 +194,12 @@ Models: `svm`, `rf`, `knn`, `dt`, `ridge`
 1. Frequency-domain DE features are flattened.
 2. The sklearn wrapper in `src/model/simple_model.py` is fit on the train split.
 3. Evaluation is top-1 accuracy on the test split.
+
+Reference files:
+
+- `src/object_classification.py`
+- `src/model/simple_model.py`
+- `src/preprocessing/de_feat_cal.py`
 
 #### Deep Classifiers
 
@@ -188,6 +216,15 @@ Feature routing:
 - `mlp`: DE features
 - `rgnn`: DE features
 
+Reference files:
+
+- `src/object_classification.py`
+- `src/trainer/train.py`
+- `src/trainer/metrics.py`
+- `src/model/eegnet.py`
+- `src/model/mlp.py`
+- `src/model/rgnn.py`
+
 #### Semantic Training
 
 `SemanticModel` does not train a softmax classifier. It learns an embedding with batch-hard triplet loss.
@@ -199,6 +236,15 @@ Feature routing:
 5. Evaluation builds class prototypes from the eval split and measures retrieval-style top-1 and top-5 accuracy.
 
 The triplet objective is implemented in `src/trainer/loss.py`, while evaluation logic lives in `src/trainer/metrics.py`.
+
+Reference files:
+
+- `src/object_classification.py`
+- `src/dataset.py`
+- `src/trainer/train.py`
+- `src/trainer/loss.py`
+- `src/trainer/metrics.py`
+- `src/model/semantic.py`
 
 Backbone options are selected with `model.backbone`.
 
