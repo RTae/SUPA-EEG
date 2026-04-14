@@ -32,21 +32,44 @@ class BalancedBatchSampler(Sampler):
                 groups[remapped].append(idx)
         self.groups = {k: v for k, v in groups.items() if len(v) >= samples_per_class}
         self.classes = list(self.groups.keys())
-        self.num_batches = max(1, len(self.classes) // num_classes_per_batch)
+
+        if len(self.classes) < num_classes_per_batch:
+            raise ValueError(
+                "BalancedBatchSampler requires at least num_classes_per_batch eligible classes"
+            )
+
+        self.class_chunks = {
+            cls: len(indices) // self.samples_per_class for cls, indices in self.groups.items()
+        }
+        self.num_batches = sum(self.class_chunks.values()) // self.num_classes_per_batch
+        if self.num_batches < 1:
+            raise ValueError("BalancedBatchSampler could not form a full batch with the current settings")
 
     def __iter__(self):
-        classes = self.classes.copy()
-        random.shuffle(classes)
-        for i in range(0, len(classes) - self.num_classes_per_batch + 1, self.num_classes_per_batch):
-            batch_classes = classes[i : i + self.num_classes_per_batch]
+        remaining_chunks: dict[int, list[list[int]]] = {}
+        for cls, indices in self.groups.items():
+            shuffled = indices.copy()
+            random.shuffle(shuffled)
+            chunks = [
+                shuffled[i : i + self.samples_per_class]
+                for i in range(0, len(shuffled) - self.samples_per_class + 1, self.samples_per_class)
+            ]
+            random.shuffle(chunks)
+            remaining_chunks[cls] = chunks
+
+        eligible_classes = [cls for cls, chunks in remaining_chunks.items() if chunks]
+        while len(eligible_classes) >= self.num_classes_per_batch:
+            batch_classes = random.sample(eligible_classes, k=self.num_classes_per_batch)
             batch = []
             for cls in batch_classes:
-                batch.extend(random.choices(self.groups[cls], k=self.samples_per_class))
+                batch.extend(remaining_chunks[cls].pop())
             random.shuffle(batch)
             yield batch
 
+            eligible_classes = [cls for cls, chunks in remaining_chunks.items() if chunks]
+
     def __len__(self) -> int:
-        return self.num_batches * self.num_classes_per_batch * self.samples_per_class
+        return self.num_batches
 
 
 
