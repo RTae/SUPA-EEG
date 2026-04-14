@@ -49,9 +49,9 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         map_location=device,
     )
     eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
-    
-    if cfg.feature_type == "freq":
-        dataset.use_frequency_feat = True
+
+    model_feature_type = str(cfg.model.get("feature_type", "time")).lower()
+    if model_feature_type == "freq":
         de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
         dataset.add_frequency_feat(de_feat)
 
@@ -126,7 +126,6 @@ def _train_semantic_model(
 
 
 def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dict:
-    data["dataset"].use_frequency_feat = True
     freq_feat = data["dataset"].frequency_feat
     x_train = freq_feat[data["train_idx"]].reshape(len(data["train_idx"]), -1)
     x_test = freq_feat[data["test_idx"]].reshape(len(data["test_idx"]), -1)
@@ -150,7 +149,6 @@ def _train_nn_model(
     device: torch.device,
     run_dir: str,
 ):
-    data["dataset"].use_frequency_feat = cfg.model.use_freq
     train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True)
     test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False)
 
