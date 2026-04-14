@@ -1,4 +1,5 @@
 name: dt
 type: simple
+feature_type: freq
 params:
   criterion: entropy

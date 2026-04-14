@@ -1,6 +1,6 @@
 name: mlp
 type: deep
-use_freq: true
+feature_type: freq
 epochs: 1000
 optimizer:
   type: sgd

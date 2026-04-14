@@ -1,6 +1,6 @@
 name: semantic
 type: deep
-use_freq: false
+feature_type: time
 epochs: 300
 
 backbone: transformer
