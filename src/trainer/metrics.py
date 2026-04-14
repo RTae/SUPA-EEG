@@ -37,10 +37,11 @@ def batch_hard_triplet_loss(
         logging.warning(f"[triplet] {n_nan}/{embeddings.shape[0]} embeddings contain NaN/Inf — returning 0")
         return embeddings.new_tensor(0.0)
 
-    # Use matmul-based distance (MPS-compatible). Embeddings are L2-normalised,
-    # so ||a - b||^2 = 2 - 2*(a·b^T), clamped to avoid sqrt of negatives.
-    sim = embeddings @ embeddings.t()
-    dist_mat = (2.0 - 2.0 * sim).clamp(min=0.0).sqrt()
+    # Use squared Euclidean distance on L2-normalised embeddings.
+    # Avoid sqrt here: d/dx sqrt(x) explodes at x=0 and can destabilise training
+    # when positives collapse to identical embeddings early in optimisation.
+    sim = (embeddings @ embeddings.t()).clamp(min=-1.0, max=1.0)
+    dist_mat = (2.0 - 2.0 * sim).clamp(min=0.0)
     same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
     eye = torch.eye(labels.shape[0], device=labels.device, dtype=torch.bool)
 
