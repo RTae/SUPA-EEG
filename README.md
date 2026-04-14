@@ -140,8 +140,8 @@ The classification entrypoint is `src/object_classification.py`. The high-level 
 flowchart LR
     A[Hydra config] --> B[Load EEGImageNetDataset]
     B --> C{model.feature_type}
-    C -->|time| D[Use cropped EEG window]
-    C -->|freq| E[Compute or load DE features]
+    C -->|time| D[Use time-domain features]
+    C -->|freq| E[Use frequency-domain features]
     D --> F[Apply benchmark split]
     E --> F
     F --> G[Build train/test subsets]
