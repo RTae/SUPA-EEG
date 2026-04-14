@@ -16,7 +16,7 @@ from model.rgnn import RGNN, get_edge_weight
 from model.semantic import SemanticModel
 from model.simple_model import SimpleModel
 from preprocessing.de_feat_cal import de_feat_cal
-from trainer import build_label_map, train_classifier, train_semantic_classifier
+from trainer import train_classifier, train_semantic_classifier
 from utilities import build_optimizer, get_benchmark_split, get_device
 
 
@@ -71,13 +71,9 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     if model_feature_type not in ["time", "freq"]:
         raise ValueError(f"Unsupported feature type: {model_feature_type}")
 
-    all_labels = np.array([sample[1] for sample in dataset])
     train_idx, test_idx = get_benchmark_split(dataset.data, cfg.metric)
     train_idx = np.array(train_idx)
     test_idx = np.array(test_idx)
-
-    combined_labels = np.concatenate([all_labels[train_idx], all_labels[test_idx]])
-    label_map = build_label_map(combined_labels)
 
     train_subset = Subset(dataset, train_idx)
     test_subset = Subset(dataset, test_idx)
@@ -89,7 +85,6 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         num_classes_per_batch = max(2, cfg.batch_size // samples_per_class)
         balanced_sampler = BalancedBatchSampler(
             train_subset,
-            label_map=label_map,
             num_classes_per_batch=num_classes_per_batch,
             samples_per_class=samples_per_class,
         )
@@ -97,11 +92,9 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         eval_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
 
     return {
-        "num_classes": len(label_map),
-        "label_map": label_map,
+        "num_classes": len(dataset.label_to_index),
         "train_subset": train_subset,
         "test_subset": test_subset,
-        "all_labels": all_labels,
         "train_idx": train_idx,
         "test_idx": test_idx,
         "is_simple": cfg.model.type == "simple",
@@ -127,7 +120,6 @@ def _train_semantic_model(
         optimizer,
         cfg.model.epochs,
         device,
-        data["label_map"],
         triplet_margin=float(cfg.model.get("triplet_margin", 0.2)),
         ema_decay=float(cfg.model.get("ema_decay", 0.996)),
         save_path=save_path,
@@ -147,8 +139,9 @@ def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dic
 
     x_train = freq_feat[data["train_idx"]].reshape(len(data["train_idx"]), -1)
     x_test = freq_feat[data["test_idx"]].reshape(len(data["test_idx"]), -1)
-    y_train = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["train_idx"]]])
-    y_test = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["test_idx"]]])
+    all_labels = np.array([sample[1] for sample in data["dataset"]])
+    y_train = all_labels[data["train_idx"]]
+    y_test = all_labels[data["test_idx"]]
 
     model_obj.fit(x_train, y_train)
     pred = model_obj.predict(x_test)
@@ -180,7 +173,6 @@ def _train_nn_model(
         optimizer,
         cfg.model.epochs,
         device,
-        data["label_map"],
         save_path=save_path,
     )
     with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:

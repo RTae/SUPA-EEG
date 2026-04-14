@@ -4,21 +4,17 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from .metrics import remap_labels
-
 
 @torch.no_grad()
 def infer_classifier(
     model: torch.nn.Module,
     dataloader: DataLoader,
     device: torch.device,
-    label_map: dict[int, int],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (all_predictions, all_true_labels) as numpy arrays."""
     model.eval()
     all_preds, all_true = [], []
     for inputs, labels in dataloader:
-        labels = remap_labels(labels, label_map)
         inputs = inputs.to(device)
         preds = model(inputs).argmax(dim=1).cpu().numpy()
         all_preds.append(preds)

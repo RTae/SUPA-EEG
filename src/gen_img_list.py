@@ -27,7 +27,7 @@ def main(cfg: DictConfig) -> None:
         dataset.use_image_label = False
         for idx, data in enumerate(dataset):
             if idx % 50 == 0:
-                label_wnid = dataset.labels[data[1]]
+                label_wnid = dataset.index_to_label[data[1]]
                 f.write(f"{idx + 1}-{idx + 50}: {wnid2category(label_wnid, 'ch')}\n")
 
 

@@ -1,22 +1,11 @@
-"""Label mapping and evaluation helpers."""
+"""Evaluation helpers."""
 
 import logging
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-
-
-def build_label_map(all_labels: np.ndarray) -> dict[int, int]:
-    """Map original label ids to contiguous 0-based indices."""
-    unique = torch.from_numpy(all_labels).unique()
-    return {orig.item(): new for new, orig in enumerate(unique)}
-
-
-def remap_labels(labels: torch.Tensor, label_map: dict[int, int]) -> torch.Tensor:
-    return torch.tensor([label_map[l.item()] for l in labels])
 
 
 def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
@@ -91,14 +80,12 @@ def evaluate_classifier(
     dataloader: DataLoader,
     criterion: torch.nn.Module,
     device: torch.device,
-    label_map: dict[int, int],
 ) -> tuple[float, float, float]:
     """Return (top1_acc, top5_acc, avg_loss) on the given dataloader."""
     model.eval()
     top1_correct = top5_correct = total = 0
     total_loss = 0.0
     for inputs, labels in dataloader:
-        labels = remap_labels(labels, label_map)
         inputs, labels = inputs.to(device), labels.to(device)
         outputs = model(inputs)
         total_loss += criterion(outputs, labels).item()
@@ -114,14 +101,12 @@ def _collect_semantic_embeddings(
     model: torch.nn.Module,
     dataloader: DataLoader,
     device: torch.device,
-    label_map: dict[int, int],
 ) -> tuple[torch.Tensor, torch.Tensor]:
     model.eval()
     all_embeddings: list[torch.Tensor] = []
     all_labels: list[torch.Tensor] = []
 
     for inputs, labels in dataloader:
-        labels = remap_labels(labels, label_map)
         inputs = inputs.to(device)
         outputs = model(inputs)
         all_embeddings.append(F.normalize(outputs["embedding"], dim=1).cpu())
@@ -137,11 +122,10 @@ def evaluate_semantic_embeddings(
     model: torch.nn.Module,
     eval_loader: DataLoader,
     device: torch.device,
-    label_map: dict[int, int],
     triplet_margin: float,
 ) -> tuple[float, float, float]:
     """Evaluate semantic embeddings using eval-set class prototypes and triplet loss."""
-    embeddings, labels = _collect_semantic_embeddings(model, eval_loader, device, label_map)
+    embeddings, labels = _collect_semantic_embeddings(model, eval_loader, device)
 
     if embeddings.numel() == 0:
         return 0.0, 0.0, 0.0

@@ -13,23 +13,21 @@ class BalancedBatchSampler(Sampler):
     """
     In triplet-based semantic training, we want each batch to contain multiple examples of a few classes.
     This sampler ensures that by grouping dataset indices by class and sampling accordingly.
-    It requires a label_map to remap raw dataset labels to contiguous class indices.
+    It assumes the dataset already returns contiguous class indices.
     
     For example, with num_classes_per_batch=8 and samples_per_class=4, each batch will have 32 samples from 8 classes.
     """
 
-    def __init__(self, dataset, label_map: dict[int, int], num_classes_per_batch: int, samples_per_class: int) -> None:
+    def __init__(self, dataset, num_classes_per_batch: int, samples_per_class: int) -> None:
         super().__init__()
         self.samples_per_class = samples_per_class
         self.num_classes_per_batch = num_classes_per_batch
 
-        # Group dataset indices by remapped class label.
+        # Group dataset indices by the labels returned by the dataset.
         groups: dict[int, list[int]] = defaultdict(list)
         for idx in range(len(dataset)):
-            _, raw_label = dataset[idx]
-            remapped = label_map.get(int(raw_label))
-            if remapped is not None:
-                groups[remapped].append(idx)
+            _, label = dataset[idx]
+            groups[int(label)].append(idx)
         self.groups = {k: v for k, v in groups.items() if len(v) >= samples_per_class}
         self.classes = list(self.groups.keys())
 
@@ -100,10 +98,13 @@ class EEGImageNetDataset(Dataset):
         loaded = self._load_checkpoint(path, map_location)
         self.labels = loaded["labels"]
         self.images = loaded["images"]
-        self.label_to_index = {label: idx for idx, label in enumerate(self.labels)}
+        self.global_label_to_index = {label: idx for idx, label in enumerate(self.labels)}
 
         chosen_data = self._filter_subject(loaded["dataset"], self.subject)
         self.data = self._filter_granularity(chosen_data, self.granularity)
+        present_labels = {item["label"] for item in self.data}
+        self.index_to_label = [label for label in self.labels if label in present_labels]
+        self.label_to_index = {label: idx for idx, label in enumerate(self.index_to_label)}
 
         self.use_frequency_feat = False
         self.frequency_feat = None
@@ -183,7 +184,7 @@ class EEGImageNetDataset(Dataset):
             item
             for item in dataset
             if item.get("granularity") == "fine"
-            and start <= self.label_to_index.get(item.get("label"), -1) < end
+            and start <= self.global_label_to_index.get(item.get("label"), -1) < end
         ]
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, Any]:

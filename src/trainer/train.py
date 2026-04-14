@@ -10,7 +10,6 @@ from .metrics import (
     evaluate_classifier,
     evaluate_generator,
     evaluate_semantic_embeddings,
-    remap_labels,
     resolve_clip_targets,
 )
 
@@ -22,7 +21,6 @@ def train_classifier(
     optimizer: torch.optim.Optimizer,
     num_epochs: int,
     device: torch.device,
-    label_map: dict[int, int],
     save_path: str | None = None,
 ) -> tuple[float, float, int]:
     """
@@ -38,7 +36,6 @@ def train_classifier(
         model.train()
         epoch_loss = 0.0
         for inputs, labels in train_loader:
-            labels = remap_labels(labels, label_map)
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             loss = criterion(model(inputs), labels)
@@ -46,7 +43,7 @@ def train_classifier(
             optimizer.step()
             epoch_loss += loss.item()
 
-        top1, top5, val_loss = evaluate_classifier(model, eval_loader, criterion, device, label_map)
+        top1, top5, val_loss = evaluate_classifier(model, eval_loader, criterion, device)
         epoch_bar.set_postfix(
             train_loss=f"{epoch_loss / max(1, len(train_loader)):.4f}",
             eval_top1=f"{top1:.3f}",
@@ -70,7 +67,6 @@ def train_semantic_classifier(
     optimizer: torch.optim.Optimizer,
     num_epochs: int,
     device: torch.device,
-    label_map: dict[int, int],
     *,
     triplet_margin: float,
     ema_decay: float,
@@ -89,7 +85,6 @@ def train_semantic_classifier(
         running_triplet = 0.0
 
         for inputs, labels in train_loader:
-            labels = remap_labels(labels, label_map)
             inputs, labels = inputs.to(device), labels.to(device)
 
             optimizer.zero_grad()
@@ -117,7 +112,6 @@ def train_semantic_classifier(
             model,
             eval_loader,
             device,
-            label_map,
             triplet_margin,
         )
         epoch_bar.set_postfix(

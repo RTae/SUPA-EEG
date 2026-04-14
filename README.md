@@ -148,8 +148,8 @@ The classification entrypoint is `src/object_classification.py`. The high-level 
 flowchart LR
     A[Hydra config] --> B[Load EEGImageNetDataset]
     B --> C{model.feature_type}
-    C -->|time| D[Use cropped EEG window\n62 x 400]
-    C -->|freq| E[Compute or load DE features\n62 x 5]
+    C -->|time| D[Use cropped EEG window]
+    C -->|freq| E[Compute or load DE features]
     D --> F[Apply benchmark split]
     E --> F
     F --> G[Build label map\nand subsets]
@@ -165,7 +165,7 @@ flowchart LR
 Detailed steps:
 
 1. `EEGImageNetDataset` loads `EEG-ImageNet.pth`, filters by `subject` and `granularity`, and returns either cropped time-domain windows or cached frequency features.
-2. If `model.feature_type=freq`, `preprocessing/de_feat_cal.py` computes or loads DE features and attaches them to the dataset.
+2. If `model.feature_type=freq` uses a frequency-domain feature extractor, but if `model.feature_type=time` uses the time domain signal directly.
 3. `utilities.get_benchmark_split` builds train/test indices for the selected metric.
 4. Labels are remapped to contiguous class ids for the current split.
 5. Training dispatch depends on `model.type` and `model.name`.
@@ -243,21 +243,6 @@ flowchart LR
     E --> F["L2 embedding"]
 ```
 
-### Image Generation Pipeline
-
-The generation workflow is split across three scripts.
-
-```mermaid
-flowchart LR
-    A[ImageNet stimulus image] --> B[BLIP caption]
-    B --> C[CLIP text embedding]
-    C --> D[clip_embeddings.pth]
-    E[EEG sample] --> F[DE features]
-    F --> G[MLPMapper]
-    G --> H[Predicted CLIP embedding]
-    H --> I[Stable Diffusion]
-    I --> J[Generated image]
-```
 
 1. `src/preprocessing/blip_clip.py` captions each stimulus image with BLIP and converts the caption to CLIP text embeddings.
 2. `src/image_generation.py` trains `MLPMapper` to regress EEG DE features to CLIP embeddings with MSE loss.
