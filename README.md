@@ -24,7 +24,7 @@ outputs/<model>/<metric>/<timestamp>/
 | MLP | `mlp` | freq | cross-entropy | DE features, fully connected classifier |
 | RGNN | `rgnn` | freq | cross-entropy | Graph neural network over EEG channels |
 | SVM / RF / KNN / DT / Ridge | `svm` … | freq | sklearn fit/predict | Classical baselines on DE features |
-| Semantic | `semantic` | time | batch-hard triplet loss | Retrieval-style embedding model |
+| Semantic | `semantic` | time | triplet loss | Retrieval-style embedding model |
 | MLPMapper | `mlp_sd` | freq | MSE to CLIP embeddings | Generation pipeline only |
 
 > **Adding a new model:** add the implementation in `src/model/`, create `configs/model/<name>.yaml`, and register it in `src/object_classification.py`.
