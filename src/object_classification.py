@@ -124,8 +124,7 @@ def _train_semantic_model(
 
     return {"top1": best_top1, "top5": best_top5, "epoch": best_epoch}
 
-
-def _get_flat_frequency_splits(data: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dict:
     freq_feat = data["dataset"].frequency_feat
     if freq_feat is None:
         raise ValueError("Frequency features are required for this model but were not prepared in load_data().")
@@ -134,11 +133,6 @@ def _get_flat_frequency_splits(data: dict) -> tuple[np.ndarray, np.ndarray, np.n
     x_test = freq_feat[data["test_idx"]].reshape(len(data["test_idx"]), -1)
     y_train = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["train_idx"]]])
     y_test = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["test_idx"]]])
-    return x_train, x_test, y_train, y_test
-
-
-def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dict:
-    x_train, x_test, y_train, y_test = _get_flat_frequency_splits(data)
 
     model_obj.fit(x_train, y_train)
     pred = model_obj.predict(x_test)
