@@ -92,10 +92,10 @@ class EEGImageNetDataset(Dataset):
         
         path = os.path.join(self.dataset_dir, pth_name)
         
-        logger.info(f"Loading dataset checkpoint from: {path}" 
-            f" (map_location={map_location})" 
-            f"Granularity={self.granularity}, "
-            f"Subject={self.subject}")
+        logger.info(f"Load data from {path} " 
+            f" device={map_location} " 
+            f" Granularity={self.granularity} "
+            f" Subject={self.subject}")
 
         loaded = self._load_checkpoint(path, map_location)
         self.labels = loaded["labels"]
