@@ -24,13 +24,14 @@ def train_classifier(
     device: torch.device,
     label_map: dict[int, int],
     save_path: str | None = None,
-) -> tuple[float, int]:
-    """Train a classifier, evaluate each epoch, return (best_acc, best_epoch).
-
+) -> tuple[float, float, int]:
+    """
+    Train the classifier, return (best_top1, best_top5, best_epoch).
+    
     If *save_path* is given the best checkpoint is saved there.
     """
     model = model.to(device)
-    best_acc, best_epoch = 0.0, -1
+    best_top1, best_top5, best_epoch = 0.0, 0.0, -1
 
     epoch_bar = tqdm(range(num_epochs), desc="train", unit="ep")
     for epoch in epoch_bar:

@@ -125,13 +125,20 @@ def _train_semantic_model(
     return {"top1": best_top1, "top5": best_top5, "epoch": best_epoch}
 
 
-def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dict:
+def _get_flat_frequency_splits(data: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     freq_feat = data["dataset"].frequency_feat
+    if freq_feat is None:
+        raise ValueError("Frequency features are required for this model but were not prepared in load_data().")
+
     x_train = freq_feat[data["train_idx"]].reshape(len(data["train_idx"]), -1)
     x_test = freq_feat[data["test_idx"]].reshape(len(data["test_idx"]), -1)
-
     y_train = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["train_idx"]]])
     y_test = np.array([data["label_map"][int(v)] for v in data["all_labels"][data["test_idx"]]])
+    return x_train, x_test, y_train, y_test
+
+
+def _train_simple_model(model_obj: SimpleModel, data: dict, run_dir: str) -> dict:
+    x_train, x_test, y_train, y_test = _get_flat_frequency_splits(data)
 
     model_obj.fit(x_train, y_train)
     pred = model_obj.predict(x_test)
@@ -155,7 +162,7 @@ def _train_nn_model(
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
     save_path = os.path.join(run_dir, f"{cfg.model.name}.pth")
-    best_top1, best_top5, best_epoch = train_classifier(
+    best_top1, best_epoch = train_classifier(
         model_obj,
         train_loader,
         test_loader,
@@ -168,10 +175,9 @@ def _train_nn_model(
     )
     with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
         f.write(f"top1={best_top1:.4f}\n")
-        f.write(f"top5={best_top5:.4f}\n")
         f.write(f"epoch={best_epoch}\n")
-        
-    return {"top1": best_top1, "top5": best_top5, "epoch": best_epoch}
+
+    return {"top1": best_top1, "epoch": best_epoch}
 
 def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: dict, run_dir: str) -> dict:
     if _is_semantic_model(cfg.model.name):
