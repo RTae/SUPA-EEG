@@ -1,9 +1,8 @@
 # Time-Series Project
 
-Decode visual perception from EEG recorded while subjects view ImageNet images. The repository currently supports two workflows:
+Decode visual perception from EEG recorded while subjects view ImageNet images. The repository currently supports one workflow:
 
 - **Object classification**: predict the viewed category from EEG.
-- **Image generation**: map EEG to CLIP text embeddings, then decode them with Stable Diffusion.
 
 ## Overview
 
