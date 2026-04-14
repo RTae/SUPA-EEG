@@ -44,7 +44,7 @@ def model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> objec
 def load_data(cfg: DictConfig, device: torch.device) -> dict:
     dataset = EEGImageNetDataset(
         dataset_dir=cfg.dataset_dir,
-        subject=-1,
+        subject=int(cfg.get("subject", -1)),
         granularity=cfg.granularity,
         map_location=device,
     )
