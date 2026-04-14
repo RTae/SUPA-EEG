@@ -1,6 +1,6 @@
 # Time-Series Project
 
-Decode visual perception from EEG recorded while subjects view ImageNet images. The repository currently supports one workflow:
+Decode visual perception from EEG recorded while subjects view ImageNet images. The repository is currently documented around one primary workflow:
 
 - **Object classification**: predict the viewed category from EEG.
 
@@ -47,13 +47,13 @@ src/
 ├── preprocessing/
 │   └── de_feat_cal.py        # Differential entropy (DE) feature extraction
 ├── trainer/
+│   ├── loss.py               # Training losses
 │   ├── train.py              # Training loops
 │   ├── inference.py          # Inference-only helpers
-│   └── metrics.py            # Evaluation and triplet-loss utilities
+│   └── metrics.py            # Evaluation helpers
 └── model/
     ├── eegnet.py
     ├── mlp.py
-    ├── mlp_sd.py
     ├── rgnn.py
     ├── semantic.py
     └── simple_model.py
@@ -62,7 +62,6 @@ scripts/
 data/
 ├── EEG-ImageNet.pth          # Merged dataset used by the training scripts
 ├── de_feat/                  # Cached DE features
-├── imageNet_images/          # ImageNet stimuli for generation
 └── mode/                     # EEG montage files for RGNN
 ```
 
@@ -77,8 +76,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) and place the `.pth` files under `data/`.
-
-3. For image generation only, place ImageNet images under `data/imageNet_images/`.
 
 ### Installation
 
@@ -147,7 +144,7 @@ flowchart LR
     C -->|freq| E[Compute or load DE features]
     D --> F[Apply benchmark split]
     E --> F
-    F --> G[Build label map\nand subsets]
+    F --> G[Build train/test subsets]
     G --> H{model type}
     H -->|simple| I[sklearn fit / predict]
     H -->|deep| J[CrossEntropy training]
@@ -159,10 +156,10 @@ flowchart LR
 
 Detailed steps:
 
-1. `EEGImageNetDataset` loads `EEG-ImageNet.pth`, filters by `subject` and `granularity`, and returns either cropped time-domain windows or cached frequency features.
-2. If `model.feature_type=freq` uses a frequency-domain feature extractor, but if `model.feature_type=time` uses the time domain signal directly.
+1. `EEGImageNetDataset` loads `EEG-ImageNet.pth`, filters by `subject` and `granularity`, and returns dataset-local contiguous class ids.
+2. If `model.feature_type=freq`, DE features are computed or loaded from cache. If `model.feature_type=time`, the cropped EEG window is used directly.
 3. `utilities.get_benchmark_split` builds train/test indices for the selected metric.
-4. Labels are remapped to contiguous class ids for the current split.
+4. `torch.utils.data.Subset` objects are created over a dataset that already emits contiguous labels.
 5. Training dispatch depends on `model.type` and `model.name`.
 6. The best checkpoint and summary metrics are written to the Hydra run directory.
 
@@ -200,6 +197,8 @@ Feature routing:
 3. The model outputs L2-normalized embeddings.
 4. Training uses batch-hard triplet loss.
 5. Evaluation builds class prototypes from the eval split and measures retrieval-style top-1 and top-5 accuracy.
+
+The triplet objective is implemented in `src/trainer/loss.py`, while evaluation logic lives in `src/trainer/metrics.py`.
 
 Backbone options are selected with `model.backbone`.
 
