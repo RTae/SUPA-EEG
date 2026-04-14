@@ -44,11 +44,8 @@ configs/
 src/
 ├── dataset.py                # EEGImageNetDataset and BalancedBatchSampler
 ├── object_classification.py  # Classification training entrypoint
-├── image_generation.py       # EEG -> CLIP mapper training entrypoint
-├── gen_eval.py               # Stable Diffusion inference from EEG
 ├── utilities.py              # Splits, device helpers, optimizer builder
 ├── preprocessing/
-│   ├── blip_clip.py          # BLIP captions -> CLIP text embeddings
 │   └── de_feat_cal.py        # Differential entropy (DE) feature extraction
 ├── trainer/
 │   ├── train.py              # Training loops
