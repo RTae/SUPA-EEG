@@ -1,7 +1,10 @@
 """Label mapping and evaluation helpers."""
 
+import logging
+
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -33,7 +36,6 @@ def batch_hard_triplet_loss(
 
     if not embeddings.isfinite().all():
         n_nan = (~embeddings.isfinite()).any(dim=1).sum().item()
-        import logging
         logging.warning(f"[triplet] {n_nan}/{embeddings.shape[0]} embeddings contain NaN/Inf — returning 0")
         return embeddings.new_tensor(0.0)
 
@@ -52,14 +54,20 @@ def batch_hard_triplet_loss(
     has_neg = neg_mask.any(dim=1)
     valid = has_pos & has_neg
     if not valid.any():
-        import logging
         logging.warning(f"[triplet] no valid triplets in batch — labels={labels.tolist()}")
         return embeddings.new_tensor(0.0)
 
-    hardest_pos = (dist_mat * pos_mask.float()).max(dim=1).values
     max_dist = dist_mat.max().detach() + 1.0
-    hardest_neg = dist_mat.masked_fill(~neg_mask, max_dist).min(dim=1).values
-    return torch.relu(hardest_pos - hardest_neg + margin)[valid].mean()
+    hardest_pos_idx = dist_mat.masked_fill(~pos_mask, -1.0).argmax(dim=1)
+    hardest_neg_idx = dist_mat.masked_fill(~neg_mask, max_dist).argmin(dim=1)
+
+    valid_idx = valid.nonzero(as_tuple=False).squeeze(1)
+    anchors = embeddings[valid_idx]
+    positives = embeddings[hardest_pos_idx[valid_idx]]
+    negatives = embeddings[hardest_neg_idx[valid_idx]]
+
+    triplet_criterion = nn.TripletMarginLoss(margin=margin, p=2, reduction="mean")
+    return triplet_criterion(anchors, positives, negatives)
 
 
 def resolve_clip_targets(

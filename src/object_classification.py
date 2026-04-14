@@ -156,7 +156,7 @@ def _train_nn_model(
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
     save_path = os.path.join(run_dir, f"{cfg.model.name}.pth")
-    best_top1, best_epoch = train_classifier(
+    best_top1, best_top5, best_epoch = train_classifier(
         model_obj,
         train_loader,
         test_loader,
@@ -169,9 +169,10 @@ def _train_nn_model(
     )
     with open(os.path.join(run_dir, "result.txt"), "a", encoding="utf-8") as f:
         f.write(f"top1={best_top1:.4f}\n")
+        f.write(f"top5={best_top5:.4f}\n")
         f.write(f"epoch={best_epoch}\n")
 
-    return {"top1": best_top1, "epoch": best_epoch}
+    return {"top1": best_top1, "top5": best_top5, "epoch": best_epoch}
 
 def train_model(cfg: DictConfig, device: torch.device, model_obj: object, data: dict, run_dir: str) -> dict:
     if _is_semantic_model(cfg.model.name):
@@ -191,7 +192,10 @@ def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     if cfg.model.type == "simple":
         logger.info(f"[simple] best_top1={train_results['top1']:.4f}")
         return
-    logger.info(f"[deep] best_top1={train_results['top1']:.4f} epoch={train_results['epoch']}")
+    logger.info(
+        f"[deep] best_top1={train_results['top1']:.4f} "
+        f"best_top5={train_results['top5']:.4f} epoch={train_results['epoch']}"
+    )
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")

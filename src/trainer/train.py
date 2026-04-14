@@ -37,8 +37,7 @@ def train_classifier(
     for epoch in epoch_bar:
         model.train()
         epoch_loss = 0.0
-        step_bar = tqdm(train_loader, desc=f"ep {epoch}", leave=False, unit="step")
-        for inputs, labels in step_bar:
+        for inputs, labels in train_loader:
             labels = remap_labels(labels, label_map)
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -46,11 +45,10 @@ def train_classifier(
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
-            step_bar.set_postfix(loss=f"{loss.item():.4f}")
 
         top1, top5, val_loss = evaluate_classifier(model, eval_loader, criterion, device, label_map)
         epoch_bar.set_postfix(
-            tr_loss=f"{epoch_loss / max(1, len(train_loader)):.4f}",
+            train_loss=f"{epoch_loss / max(1, len(train_loader)):.4f}",
             eval_top1=f"{top1:.3f}",
             eval_top5=f"{top5:.3f}",
             eval_loss=f"{val_loss:.4f}",
