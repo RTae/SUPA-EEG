@@ -89,8 +89,15 @@ class EEGImageNetDataset(Dataset):
         self.granularity = granularity
         self.transform = transform
         self.eeg_window = eeg_window
+        
+        path = os.path.join(self.dataset_dir, pth_name)
+        
+        logger.info(f"Loading dataset checkpoint from: {path}" 
+            f" (map_location={map_location})" 
+            f"Granularity={self.granularity}, "
+            f"Subject={self.subject}")
 
-        loaded = self._load_checkpoint(os.path.join(self.dataset_dir, pth_name), map_location)
+        loaded = self._load_checkpoint(path, map_location)
         self.labels = loaded["labels"]
         self.images = loaded["images"]
         self.label_to_index = {label: idx for idx, label in enumerate(self.labels)}
@@ -141,7 +148,6 @@ class EEGImageNetDataset(Dataset):
         if map_location == torch.device("mps"):
             map_location = torch.device("cpu")
             
-        logger.info(f"Loading dataset checkpoint from: {path}" f" (map_location={map_location})")
         try:
             return torch.load(path, map_location=map_location, weights_only=True)
         except pickle.UnpicklingError:
