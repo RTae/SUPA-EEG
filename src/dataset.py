@@ -4,8 +4,50 @@ from typing import Any, Callable
 
 import torch
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
+import random
+from collections import defaultdict
 from loguru import logger
+
+class BalancedBatchSampler(Sampler):
+    """
+    In triplet-based semantic training, we want each batch to contain multiple examples of a few classes.
+    This sampler ensures that by grouping dataset indices by class and sampling accordingly.
+    It requires a label_map to remap raw dataset labels to contiguous class indices.
+    
+    For example, with num_classes_per_batch=4 and samples_per_class=4, each batch will have 16 samples from 4 classes.
+    """
+
+    def __init__(self, dataset, label_map: dict[int, int], num_classes_per_batch: int, samples_per_class: int) -> None:
+        super().__init__()
+        self.samples_per_class = samples_per_class
+        self.num_classes_per_batch = num_classes_per_batch
+
+        # Group dataset indices by remapped class label.
+        groups: dict[int, list[int]] = defaultdict(list)
+        for idx in range(len(dataset)):
+            _, raw_label = dataset[idx]
+            remapped = label_map.get(int(raw_label))
+            if remapped is not None:
+                groups[remapped].append(idx)
+        self.groups = {k: v for k, v in groups.items() if len(v) >= samples_per_class}
+        self.classes = list(self.groups.keys())
+        self.num_batches = max(1, len(self.classes) // num_classes_per_batch)
+
+    def __iter__(self):
+        classes = self.classes.copy()
+        random.shuffle(classes)
+        for i in range(0, len(classes) - self.num_classes_per_batch + 1, self.num_classes_per_batch):
+            batch_classes = classes[i : i + self.num_classes_per_batch]
+            batch = []
+            for cls in batch_classes:
+                batch.extend(random.choices(self.groups[cls], k=self.samples_per_class))
+            random.shuffle(batch)
+            yield batch
+
+    def __len__(self) -> int:
+        return self.num_batches * self.num_classes_per_batch * self.samples_per_class
+
 
 
 class EEGImageNetDataset(Dataset):

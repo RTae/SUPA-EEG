@@ -9,14 +9,14 @@ from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
 from loguru import logger
 
-from dataset import EEGImageNetDataset
+from dataset import EEGImageNetDataset, BalancedBatchSampler
 from model.eegnet import EEGNet
 from model.mlp import MLP
 from model.rgnn import RGNN, get_edge_weight
 from model.semantic import SemanticModel
 from model.simple_model import SimpleModel
 from preprocessing.de_feat_cal import de_feat_cal
-from trainer import build_label_map, train_classifier, train_semantic_classifier, BalancedBatchSampler
+from trainer import build_label_map, train_classifier, train_semantic_classifier
 from utilities import build_optimizer, get_benchmark_split, get_device
 
 

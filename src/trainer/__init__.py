@@ -6,7 +6,7 @@ from .metrics import (
     topk_correct,
 )
 from .inference import infer_classifier, infer_generator
-from .train import BalancedBatchSampler, train_classifier, train_generator, train_semantic_classifier
+from .train import train_classifier, train_generator, train_semantic_classifier
 
 __all__ = [
     "build_label_map",
