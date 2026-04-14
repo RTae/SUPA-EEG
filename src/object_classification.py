@@ -58,8 +58,6 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
         granularity=cfg.granularity,
         map_location=device,
     )
-    eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
-
     model_feature_type = str(cfg.model.get("feature_type", "time")).lower()
     
     # Add frequency features to the dataset if required by the model configuration

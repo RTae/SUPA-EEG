@@ -44,6 +44,13 @@ def batch_hard_triplet_loss(
     # when positives collapse to identical embeddings early in optimisation.
     sim = (embeddings @ embeddings.t()).clamp(min=-1.0, max=1.0)
     dist_mat = (2.0 - 2.0 * sim).clamp(min=0.0)
+    
+    # Create boolean masks for valid positive and negative pairs.
+    # For example, with labels [0, 0, 1, 2], we want:
+    # same_label = [[T, T, F, F], # sample 0 and 1 share the same label, but not with 2 or 3
+    #               [T, T, F, F], # sample 1 shares the same label as 0 but not 2 or 3
+    #               [F, F, T, F], # sample 2 shares the same label as itself but not 0, 1, or 3
+    #               [F, F, F, T]] # sample 3 shares the same label as itself but not 0, 1, or 2
     same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
     eye = torch.eye(labels.shape[0], device=labels.device, dtype=torch.bool)
 
