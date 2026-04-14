@@ -52,7 +52,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
 
     model_feature_type = str(cfg.model.get("feature_type", "time")).lower()
     if model_feature_type == "freq":
-        de_feat = de_feat_cal(eeg_data, -1, cfg.granularity)
+        de_feat = de_feat_cal(eeg_data, int(cfg.get("subject", -1)), cfg.granularity)
         dataset.add_frequency_feat(de_feat)
 
     all_labels = np.array([sample[1] for sample in dataset])

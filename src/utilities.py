@@ -102,12 +102,12 @@ def get_benchmark_split(
     elif metric == "cp":
         raise NotImplementedError("CP split is not implemented yet.")
 
-    # WT : 60% of samples per category for training, 40% for testing (30:20 ratio).
+    # WT : split the currently loaded dataset per category using a 30:20 ratio.
+    # When a category has 50 samples, this becomes the original 30-train / 20-test split.
     elif metric == "wt":
         from collections import defaultdict
-        stage2 = [(i, s) for i, s in enumerate(data_list) if s["subject"] >= 8]
         per_label: dict[int, list[int]] = defaultdict(list)
-        for i, s in stage2:
+        for i, s in enumerate(data_list):
             per_label[s["label"]].append(i)
         train_idx, test_idx = [], []
         for indices in per_label.values():
