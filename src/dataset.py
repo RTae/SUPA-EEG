@@ -15,7 +15,7 @@ class BalancedBatchSampler(Sampler):
     This sampler ensures that by grouping dataset indices by class and sampling accordingly.
     It requires a label_map to remap raw dataset labels to contiguous class indices.
     
-    For example, with num_classes_per_batch=4 and samples_per_class=4, each batch will have 16 samples from 4 classes.
+    For example, with num_classes_per_batch=8 and samples_per_class=4, each batch will have 32 samples from 8 classes.
     """
 
     def __init__(self, dataset, label_map: dict[int, int], num_classes_per_batch: int, samples_per_class: int) -> None:
