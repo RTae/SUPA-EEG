@@ -69,7 +69,6 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     train_loader = None
     eval_loader = None
     if _is_semantic_model(cfg.model.name):
-        dataset.use_frequency_feat = False
         samples_per_class = int(cfg.model.get("samples_per_class", 4))
         num_classes_per_batch = max(2, cfg.batch_size // samples_per_class)
         balanced_sampler = BalancedBatchSampler(
