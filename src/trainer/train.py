@@ -5,8 +5,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from .loss import batch_hard_triplet_loss
 from .metrics import (
-    batch_hard_triplet_loss,
     evaluate_classifier,
     evaluate_generator,
     evaluate_semantic_embeddings,
