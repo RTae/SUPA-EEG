@@ -3,6 +3,8 @@
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from sklearn.metrics import accuracy_score
+
 
 from .loss import batch_hard_triplet_loss
 
