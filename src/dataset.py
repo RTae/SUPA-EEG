@@ -87,11 +87,12 @@ class EEGImageNetDataset(Dataset):
         self.granularity = granularity
         self.transform = transform
         self.eeg_window = eeg_window
+        self.device = map_location if isinstance(map_location, torch.device) else torch.device(map_location)
         
         path = os.path.join(self.dataset_dir, pth_name)
         
         logger.info(f"data_path={path} " 
-            f" device={map_location} " 
+            f" device={self.device} "
             f" granularity={self.granularity} "
             f" subject={self.subject}")
 
@@ -216,8 +217,8 @@ class EEGImageNetDataset(Dataset):
     def set_frequency_feat(self, feat: Any) -> None:
         if len(feat) != len(self.data):
             raise ValueError("Frequency features must have same length")
-        if isinstance(feat, torch.Tensor):
-            self.frequency_feat = feat.float()
+        if self.device.type != "cpu":
+            self.frequency_feat = torch.as_tensor(feat).float().to(self.device)
         else:
             self.frequency_feat = torch.as_tensor(feat).float()
         self.use_frequency_feat = True
