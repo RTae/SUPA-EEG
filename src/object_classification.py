@@ -12,7 +12,6 @@ from loguru import logger
 from dataset import EEGImageNetDataset, BalancedBatchSampler
 from model.eegnet import EEGNet
 from model.mlp import MLP
-from model.rgnn import RGNN, get_edge_weight
 from model.semantic import SemanticModel
 from model.simple_model import SimpleModel
 from preprocessing.de_feat_cal import de_feat_cal
@@ -23,7 +22,6 @@ from utilities import build_optimizer, get_benchmark_split, get_device
 def _is_semantic_model(model_name: str) -> bool:
     return model_name.lower() == "semantic"
 
-
 def _model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> object:
     name = cfg.model.name.lower()
     if cfg.model.type == "simple":
@@ -33,9 +31,6 @@ def _model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> obje
         return EEGNet(cfg, num_classes)
     if name == "mlp":
         return MLP(cfg, num_classes)
-    if name == "rgnn":
-        edge_index, edge_weight = get_edge_weight()
-        return RGNN(device, 62, edge_weight, edge_index, 5, 200, num_classes, 2)
     if _is_semantic_model(name):
         return SemanticModel(cfg, num_classes)
     raise ValueError(f"Unknown model: {name}")
