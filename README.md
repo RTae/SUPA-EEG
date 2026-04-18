@@ -75,14 +75,32 @@ data/
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) and place the `.pth` files under `data/`.
+2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) by using a command below
+```bash
+curl -L "https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/files/?p=%2FEEG-ImageNet_1.pth&dl=1" \
+    -o ./data/EEG-ImageNet_1.pth
+
+curl -L "https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/files/?p=%2FEEG-ImageNet_2.pth&dl=1" -o \
+    ./data/EEG-ImageNet_2.pth
+```
 
 ### Installation
 
+1. Install dependencies and create a virtual environment (One time setup):
 ```bash
 uv venv && uv sync
-python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.pth data/EEG-ImageNet.pth
+```
+
+2. Activate the virtual environment:
+
+```bash
 source .venv/bin/activate
+```
+
+3. Merge the downloaded dataset parts into a single file (One time setup):
+
+```bash
+python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.pth data/EEG-ImageNet.pth
 ```
 
 ## Configuration
