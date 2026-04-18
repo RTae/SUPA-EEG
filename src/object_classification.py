@@ -37,12 +37,15 @@ def _model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> obje
 
 def _prep_freq_features(dataset: EEGImageNetDataset) -> None:
     logger.info("Calculating frequency-domain features for the dataset...")
-    # Check sample is tensor or numpy array and convert to numpy if necessary
-    eeg_data = []
-    if isinstance(dataset[0][0], torch.Tensor):
-        eeg_data = np.stack([sample[0].cpu().numpy() for sample in dataset], axis=0)
-    else:
-        eeg_data = np.stack([sample[0].numpy() for sample in dataset], axis=0)
+
+    eeg_samples = []
+    for feat, _ in dataset:
+        if torch.is_tensor(feat):
+            eeg_samples.append(feat.detach().cpu().numpy())
+        else:
+            eeg_samples.append(np.asarray(feat))
+
+    eeg_data = np.stack(eeg_samples, axis=0)
     de_feat = de_feat_cal(eeg_data, dataset.subject, dataset.granularity)
     dataset.add_frequency_feat(de_feat)
     
