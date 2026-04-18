@@ -146,14 +146,17 @@ class EEGImageNetDataset(Dataset):
 
     @staticmethod
     def _load_checkpoint(path: str, map_location: str | torch.device = "cpu") -> dict[str, Any]:
-        # Our data is float64, but some environments (like MPS) don't support it. Load to CPU first and convert to float32 if needed.
-        if map_location == torch.device("mps"):
-            map_location = torch.device("cpu")
-            
+        # Keep the raw dataset on CPU. Training code moves mini-batches to the target device,
+        # and frequency features can be transferred after preprocessing if needed.
+        if not isinstance(map_location, torch.device):
+            map_location = torch.device(map_location)
+
+        load_location = torch.device("cpu") if map_location.type in {"cuda", "mps"} else map_location
+
         try:
-            return torch.load(path, map_location=map_location, weights_only=True)
+            return torch.load(path, map_location=load_location, weights_only=True)
         except pickle.UnpicklingError:
-            return torch.load(path, map_location=map_location, weights_only=False)
+            return torch.load(path, map_location=load_location, weights_only=False)
 
     def _filter_subject(self, dataset: list[dict[str, Any]], subject: int) -> list[dict[str, Any]]:
         if subject == -1:
@@ -217,10 +220,12 @@ class EEGImageNetDataset(Dataset):
     def set_frequency_feat(self, feat: Any) -> None:
         if len(feat) != len(self.data):
             raise ValueError("Frequency features must have same length")
+
+        freq_tensor = torch.as_tensor(feat).float()
         if self.device.type != "cpu":
-            self.frequency_feat = torch.as_tensor(feat).float().to(self.device)
-        else:
-            self.frequency_feat = torch.as_tensor(feat).float()
+            freq_tensor = freq_tensor.to(self.device)
+
+        self.frequency_feat = freq_tensor
         self.use_frequency_feat = True
 
     def clear_frequency_feat(self) -> None:
