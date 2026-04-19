@@ -150,7 +150,7 @@ test:  i % 50 >= 30
 
 1. Queue an experiment with `dvc exp run --queue` and the desired overrides:
 ```bash
-uv run dvc exp run --queue --set-param model=mlp --set-param subject=-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 --set-param model.feature_type=freq,time train_mlp --set-param metric=wt
+uv run dvc exp run --queue -S subject=-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 -S feature_type=freq -S metric=wt train_mlp
 ```
 
 2. Review the experiment queue with `dvc exp show` and run all queued experiments with `dvc exp run --run-all`:
@@ -183,7 +183,7 @@ dvc exp push <best_exp_id>
 ```bash
 dvc exp remove <exp_id>
 
-dvc exp remove --queue -- all
+dvc exp remove --queue --all
 ```
 
 ### Object Classification Pipeline
@@ -284,12 +284,12 @@ Reference files:
 1. Create a experiment queue with `dvc exp run --queue` and the desired overrides:
 ```bash
 # Train MLP on all subjects with DE features and within-time split
-uv run dvc exp run --queue --set-param model=mlp --set-param subject=-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 --set-param model.feature_type=freq,time train_mlp --set-param metric=wt
+uv run dvc exp run --queue -S subject=-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 -S feature_type=freq -S metric=wt train_mlp
 ```
 ```bash
 
 # Train MLP on all subjects with DE features and cross-participant split
-uv run dvc exp run --queue -S model=mlp -S subject=-1 -S model.feature_type=freq,time train_mlp -S metric=cp
+uv run dvc exp run --queue -S subject=-1 -S feature_type=freq -S metric=cp train_mlp
 ```
 
 #### Semantic Training
