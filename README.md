@@ -135,7 +135,7 @@ Current implementation status:
 |----------|:--------:|--------|----------|
 | Within-Time | `wt` | implemented | exact upstream 30/20 split inside each 50-sample block |
 | Cross-Time | `ct` | not implemented | placeholder in code |
-| Cross-Participant | `cp` | not implemented | placeholder in code |
+| Cross-Participant | `cp` | implemented | subjects 0-9 for training, remaining subjects for testing |
 
 For `wt`, the dataset is first filtered by `subject` and `granularity`, then split with:
 
