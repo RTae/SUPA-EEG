@@ -1,8 +1,6 @@
 import os
-import sys
 from datetime import datetime
 
-import hydra
 import numpy as np
 import torch
 from hydra.core.hydra_config import HydraConfig
@@ -57,11 +55,12 @@ def _prep_time_features(dataset: EEGImageNetDataset) -> None:
     pass
 
 def load_data(cfg: DictConfig, device: torch.device) -> dict:
+    # When loading data, it does not need to be loaded into GPU, since the dataset will handle moving data to the correct device during training. We can load it on CPU to save GPU memory.
     dataset = EEGImageNetDataset(
         dataset_dir=cfg.dataset_dir,
         subject=int(cfg.get("subject", -1)),
         granularity=cfg.granularity,
-        map_location=device,
+        map_location="cpu",
     )
     model_feature_type = str(cfg.model.get("feature_type", "time")).lower()
     
@@ -93,8 +92,8 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
             num_classes_per_batch=num_classes_per_batch,
             samples_per_class=samples_per_class,
         )
-        train_loader = DataLoader(train_subset, batch_sampler=balanced_sampler)
-        eval_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False)
+        train_loader = DataLoader(train_subset, batch_sampler=balanced_sampler, pin_memory=True)
+        eval_loader = DataLoader(test_subset, batch_size=cfg.batch_size, shuffle=False, pin_memory=True)
 
     return {
         "num_classes": len(dataset.label_to_index),
@@ -164,8 +163,8 @@ def _train_nn_model(
     device: torch.device,
     run_dir: str,
 ):
-    train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True)
-    test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False)
+    train_loader = DataLoader(data["train_subset"], batch_size=cfg.batch_size, shuffle=True, pin_memory=True)
+    test_loader = DataLoader(data["test_subset"], batch_size=cfg.batch_size, shuffle=False, pin_memory=True)
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = build_optimizer(model_obj.parameters(), cfg.model.optimizer)
