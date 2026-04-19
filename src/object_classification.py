@@ -209,7 +209,7 @@ def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     )
 
 
-@hydra.main(config_path="../configs", config_name="config", version_base="1.3")
+@hydra.main(config_path="../conf", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     logger.info(f"\n{OmegaConf.to_yaml(cfg)}")
     device = get_device()
