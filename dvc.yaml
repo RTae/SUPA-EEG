@@ -7,21 +7,22 @@ stages:
       - conf/
       - data/EEG-ImageNet.pth
     params:
-      - dataset_dir
-      - granularity
-      - subject
-      - batch_size
-      - output_dir
-      - pretrained_model
-      - metric
-      - model.name
-      - model.type
-      - model.feature_type
-      - model.epochs
-      - model.optimizer.type
-      - model.optimizer.lr
-      - model.optimizer.weight_decay
-      - model.optimizer.momentum
+      - params.yaml:
+        - dataset_dir
+        - granularity
+        - subject
+        - batch_size
+        - output_dir
+        - pretrained_model
+        - metric
+        - model.name
+        - model.type
+        - model.feature_type
+        - model.epochs
+        - model.optimizer.type
+        - model.optimizer.lr
+        - model.optimizer.weight_decay
+        - model.optimizer.momentum
     outs:
       - outputs/:
           cache: false
