@@ -8,7 +8,6 @@ stages:
       - data/EEG-ImageNet.pth
     params:
       - configs/config.yaml:
-          - model
           - batch_size
           - granularity
           - subject
