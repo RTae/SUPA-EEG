@@ -75,7 +75,7 @@ data/
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) by using a command below
+2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) by using a command below (One time setup):
 ```bash
 bash scripts/download_dataset.sh
 ```
@@ -87,7 +87,7 @@ bash scripts/download_dataset.sh
 uv venv && uv sync
 ```
 
-2. Activate the virtual environment:
+2. Activate the virtual environment (every time you start a new terminal session):
 
 ```bash
 source .venv/bin/activate
