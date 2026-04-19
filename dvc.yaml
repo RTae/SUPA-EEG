@@ -1,13 +1,7 @@
 stages:
   train_object_classification:
-    desc: Train the default EEG object-classification model through Hydra CLI overrides
-    cmd: >-
-      uv run python src/object_classification.py
-      model=eegnet
-      subject=0
-      metric=wt
-      output_dir=outputs/dvc
-      hydra.run.dir=outputs/dvc/eegnet/wt/subject_0
+    desc: Train the object classification model using EEG data.
+    cmd: uv run python src/object_classification.py
     deps:
       - src/
       - configs/
@@ -15,6 +9,9 @@ stages:
       - configs/config.yaml:
           - batch_size
           - granularity
+          - subject
+          - metric
+          - output_dir
       - configs/model/eegnet.yaml:
           - epochs
           - optimizer.type
@@ -22,4 +19,6 @@ stages:
           - optimizer.weight_decay
           - optimizer.momentum
     outs:
-      - outputs/dvc/eegnet/wt/subject_0
+      - path: outputs/
+        cache: false
+        persist: true
