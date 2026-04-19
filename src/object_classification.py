@@ -1,4 +1,6 @@
 import os
+import sys
+from datetime import datetime
 
 import hydra
 import numpy as np
@@ -209,16 +211,31 @@ def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     )
 
 
-@hydra.main(config_path="../conf", config_name="config", version_base="1.3")
-def main(cfg: DictConfig) -> None:
+def _get_run_dir(cfg: DictConfig) -> str:
+    try:
+        return HydraConfig.get().runtime.output_dir
+    except Exception:
+        root = str(cfg.get("output_dir", "outputs/")).rstrip("/\\")
+        model_name = str(cfg.model.get("name", "run"))
+        metric = str(cfg.get("metric", "default"))
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_dir = os.path.join(root, model_name, metric, timestamp)
+        os.makedirs(run_dir, exist_ok=True)
+        return run_dir
+
+def run_experiment(cfg: DictConfig) -> None:
     logger.info(f"\n{OmegaConf.to_yaml(cfg)}")
     device = get_device()
 
     data = load_data(cfg, device)
     model_obj = _model_init(cfg, data["num_classes"], device)
-    run_dir = HydraConfig.get().runtime.output_dir
+    run_dir = _get_run_dir(cfg)
     train_results = train_model(cfg, device, model_obj, data, run_dir)
     evaluate_model(cfg, train_results)
+
+def main(params_path: str = "params.yaml") -> None:
+    cfg = OmegaConf.load(params_path)
+    run_experiment(cfg)
 
 
 if __name__ == "__main__":

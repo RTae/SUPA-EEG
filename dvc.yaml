@@ -1,25 +1,27 @@
 stages:
   train_mlp:
-    desc: Orchestrate the MLP experiment through Hydra
-    cmd: uv run python src/object_classification.py
+    desc: Orchestrate the MLP experiment from params.yaml
+    cmd: uv run python src/object_classification.py --from-params
     deps:
       - src/
-      - configs/
+      - conf/
       - data/EEG-ImageNet.pth
     params:
-      - configs/config.yaml:
-          - batch_size
-          - granularity
-          - subject
-          - metric
-          - output_dir
-      - configs/model/mlp.yaml:
-          - model.feature_type
-          - model.epochs
-          - model.optimizer.type
-          - model.optimizer.lr
-          - model.optimizer.weight_decay
-          - model.optimizer.momentum
+      - dataset_dir
+      - granularity
+      - subject
+      - batch_size
+      - output_dir
+      - pretrained_model
+      - metric
+      - model.name
+      - model.type
+      - model.feature_type
+      - model.epochs
+      - model.optimizer.type
+      - model.optimizer.lr
+      - model.optimizer.weight_decay
+      - model.optimizer.momentum
     outs:
       - outputs/:
           cache: false

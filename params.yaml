@@ -1,0 +1,18 @@
+dataset_dir: data/
+granularity: fine
+subject: 0
+batch_size: 40
+output_dir: outputs/
+pretrained_model: null
+metric: wt
+
+model:
+  name: mlp
+  type: deep
+  feature_type: freq
+  epochs: 1000
+  optimizer:
+    type: sgd
+    lr: 0.0001
+    weight_decay: 0.0001
+    momentum: 0.9
