@@ -1,7 +1,7 @@
 stages:
   train_mlp:
     desc: Orchestrate the MLP experiment from params.yaml
-    cmd: uv run python src/object_classification.py --from-params
+    cmd: uv run python src/object_classification.py
     deps:
       - src/
       - conf/
