@@ -98,9 +98,21 @@ def get_benchmark_split(
     if metric == "ct":
         raise NotImplementedError("CT split is not implemented yet.")
     
-    # CP : Train on all other people, test on the target person (using their first session).
+    # CP : Use subjects 0-9 for training and all remaining subjects for testing.
     elif metric == "cp":
-        raise NotImplementedError("CP split is not implemented yet.")
+        train_idx = [
+            i for i, sample in enumerate(data_list)
+            if 0 <= int(sample.get("subject", -1)) <= 9
+        ]
+        test_idx = [
+            i for i, sample in enumerate(data_list)
+            if int(sample.get("subject", -1)) > 9
+        ]
+
+        if not train_idx:
+            raise ValueError("CP split produced an empty training set. Expected subjects 0-9 in the data.")
+        if not test_idx:
+            raise ValueError("CP split produced an empty test set. Expected subjects above 9 in the data.")
 
     # WT : follow the original benchmark protocol exactly.
     # After subject / granularity filtering, samples remain arranged in 50-sample
