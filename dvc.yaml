@@ -1,24 +1,26 @@
 stages:
-  train_object_classification:
-    desc: Train the object classification model using EEG data.
+  train_mlp:
+    desc: Orchestrate the MLP experiment through Hydra
     cmd: uv run python src/object_classification.py
     deps:
       - src/
       - configs/
+      - data/EEG-ImageNet.pth
     params:
       - configs/config.yaml:
+          - model
           - batch_size
           - granularity
           - subject
           - metric
           - output_dir
-      - configs/model/eegnet.yaml:
+      - configs/model/mlp.yaml:
           - epochs
           - optimizer.type
           - optimizer.lr
           - optimizer.weight_decay
           - optimizer.momentum
     outs:
-      - path: outputs/
-        cache: false
-        persist: true
+      - outputs/:
+          cache: false
+          persist: true
