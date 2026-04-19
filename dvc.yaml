@@ -14,12 +14,12 @@ stages:
           - metric
           - output_dir
       - configs/model/mlp.yaml:
-          - feature_type
-          - epochs
-          - optimizer.type
-          - optimizer.lr
-          - optimizer.weight_decay
-          - optimizer.momentum
+          - model.feature_type
+          - model.epochs
+          - model.optimizer.type
+          - model.optimizer.lr
+          - model.optimizer.weight_decay
+          - model.optimizer.momentum
     outs:
       - outputs/:
           cache: false
