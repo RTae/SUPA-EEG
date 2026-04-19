@@ -146,6 +146,46 @@ test:  i % 50 >= 30
 
 ## Training Pipelines
 
+### How to train a model with DVC:
+
+1. Queue an experiment with `dvc exp run --queue` and the desired overrides:
+```bash
+uv run dvc exp run --queue -S model=mlp -S subject=2,3,4 -S model.feature_type=freq,time train_mlp -S metric=wt
+```
+
+2. Review the experiment queue with `dvc exp show` and run all queued experiments with `dvc exp run --run-all`:
+```bash
+dvc exp show
+```
+```bash
+dvc exp run --run-all
+```
+
+3. Review results with `dvc exp show` and `dvc exp diff`:
+```bash
+dvc exp show
+```
+```bash
+dvc exp diff <exp_id_1> <exp_id_2>
+```
+
+4. Apply the best experiment to the workspace with `dvc exp apply`:
+```bash
+dvc exp apply <best_exp_id>
+```
+
+5. Optionally, push the experiment to the remote DVC storage with `dvc exp push`:
+```bash
+dvc exp push <best_exp_id>
+```
+
+6. Optionally, remove the experiment from the queue with `dvc exp remove`:
+```bash
+dvc exp remove <exp_id>
+
+dvc exp remove --queue -- all
+```
+
 ### Object Classification Pipeline
 
 The classification entrypoint is `src/object_classification.py`. The high-level flow is:
@@ -238,6 +278,17 @@ Reference files:
 - `src/model/eegnet.py`
 - `src/model/mlp.py`
 - `src/model/rgnn.py`
+
+##### DVC commands for running experiments with different overrides and tracking them with DVC:
+
+1. Create a experiment queue with `dvc exp run --queue` and the desired overrides:
+```bash
+# Train MLP on all subjects with DE features and within-time split
+uv run dvc exp run --queue -S model=mlp -S subject=-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 -S model.feature_type=freq,time train_mlp -S metric=wt
+
+# Train MLP on all subjects with DE features and cross-participant split
+uv run dvc exp run --queue -S model=mlp -S subject=-1 -S model.feature_type=freq,time train_mlp -S metric=cp
+```
 
 #### Semantic Training
 
