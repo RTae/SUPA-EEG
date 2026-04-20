@@ -1,6 +1,6 @@
 # Experiment
 
-## Baseline MLP
+## Baseline MLP (Freq)
 
 | Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
 |---|---|---:|---|---|---|---:|---:|---:|
@@ -23,3 +23,28 @@
 
 Average Top1: 0.5254
 Average Top5: 0.8483
+
+## Baseline MLP (Time)
+
+| Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
+|---|---|---:|---|---|---|---:|---:|---:|
+| alpha-rale | ce52e87 | 0 | wt | mlp | time | 0.0600 | 0.2000 | 845 |
+| ionic-prof | fc6eee4 | 1 | wt | mlp | time | 0.1000 | 0.2700 | 490 |
+| manky-joss | 3840276 | 2 | wt | mlp | time | 0.0512 | 0.1963 | 820 |
+| mirky-rick | 3f219bb | 3 | wt | mlp | time | 0.0900 | 0.2462 | 742 |
+| forty-huts | d0f7d68 | 4 | wt | mlp | time | 0.0725 | 0.2200 | 814 |
+| adunc-doge | e9dc508 | 5 | wt | mlp | time | 0.0625 | 0.2238 | 995 |
+| farci-coed | 220d0d2 | 6 | wt | mlp | time | 0.1013 | 0.2988 | 945 |
+| genic-luce | 659e1f3 | 7 | wt | mlp | time | 0.0625 | 0.2050 | 866 |
+| soled-cool | 54b3757 | 8 | wt | mlp | time | 0.1013 | 0.2750 | 197 |
+| prosy-prow | d200a57 | 9 | wt | mlp | time | 0.0700 | 0.2238 | 405 |
+| enemy-maya | c3e5a25 | 10 | wt | mlp | time | 0.0788 | 0.2487 | 991 |
+| olden-merk | 0d3c22c | 11 | wt | mlp | time | 0.0775 | 0.2062 | 714 |
+| kinky-hate | c978aab | 12 | wt | mlp | time | 0.0900 | 0.3075 | 797 |
+| tonic-wort | 50f0e85 | 13 | wt | mlp | time | 0.0575 | 0.1850 | 985 |
+| woozy-erns | 8ae0fa7 | 14 | wt | mlp | time | 0.0700 | 0.1913 | 818 |
+| blond-linn | 8281594 | 15 | wt | mlp | time | 0.1025 | 0.2625 | 751 |
+
+Average Top1: 0.0780
+Average Top5: 0.2350
+
