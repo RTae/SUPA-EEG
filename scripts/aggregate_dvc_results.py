@@ -1,8 +1,9 @@
-"""Aggregate successful DVC experiment result.txt files into summary reports."""
+"""Aggregate successful DVC experiment metrics into summary reports."""
 
 from __future__ import annotations
 
 import csv
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,27 @@ def find_result_path(rev: str) -> str | None:
     return None
 
 
+def load_metrics(rev: str) -> dict[str, Any]:
+    json_text = try_show_file(rev, "reports/dvc_metrics.json")
+    if json_text:
+        data = json.loads(json_text)
+        if isinstance(data, dict):
+            return data
+
+    result_path = find_result_path(rev)
+    if not result_path:
+        return {}
+
+    result_text = try_show_file(rev, result_path)
+    if not result_text:
+        return {}
+
+    metrics = parse_result_text(result_text)
+    if result_path:
+        metrics["result_path"] = result_path
+    return metrics
+
+
 def load_params(rev: str) -> dict[str, Any]:
     text = try_show_file(rev, "params.yaml")
     if not text:
@@ -80,15 +102,7 @@ def collect_rows() -> list[dict[str, Any]]:
             continue
 
         rev = run_cmd("git", "rev-parse", ref)
-        result_path = find_result_path(rev)
-        if not result_path:
-            continue
-
-        result_text = try_show_file(rev, result_path)
-        if not result_text:
-            continue
-
-        metrics = parse_result_text(result_text)
+        metrics = load_metrics(rev)
         if not {"top1", "top5", "epoch"}.issubset(metrics):
             continue
 
@@ -106,7 +120,7 @@ def collect_rows() -> list[dict[str, Any]]:
                 "top1": metrics["top1"],
                 "top5": metrics["top5"],
                 "epoch": metrics["epoch"],
-                "result_path": result_path,
+                "result_path": metrics.get("result_path", "reports/dvc_metrics.json"),
             }
         )
 

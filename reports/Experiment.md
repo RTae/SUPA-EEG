@@ -2,6 +2,8 @@
 
 ## Baseline MLP (Freq)
 
+Freq = apply only `src/preprocessing/de_feat_cal.py` to extract features, and train a MLP on the extracted features.
+
 | Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
 |---|---|---:|---|---|---|---:|---:|---:|
 | frank-sick | a8223e8 | 0 | wt | mlp | freq | 0.5337 | 0.8125 | 733 |
@@ -25,6 +27,8 @@ Average Top1: 0.5254
 Average Top5: 0.8483
 
 ## Baseline MLP (Time)
+
+Using raw time-series data as input to train a MLP
 
 | Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
 |---|---|---:|---|---|---|---:|---:|---:|
