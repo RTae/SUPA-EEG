@@ -212,7 +212,7 @@ def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     )
 
 
-def _write_experiment_metrics(run_dir: str, train_results: dict) -> None:
+def _write_experiment_metrics(train_results: dict) -> None:
     metrics = {}
     if "top1" in train_results:
         metrics["top1"] = float(train_results["top1"])
@@ -223,9 +223,6 @@ def _write_experiment_metrics(run_dir: str, train_results: dict) -> None:
 
     if not metrics:
         return
-
-    run_metrics_path = Path(run_dir) / "metrics.json"
-    run_metrics_path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
 
     report_dir = Path("reports")
     report_dir.mkdir(parents=True, exist_ok=True)
