@@ -1,13 +1,15 @@
+import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import torch
 from hydra.core.hydra_config import HydraConfig
+from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
-from loguru import logger
 
 from dataset import EEGImageNetDataset, BalancedBatchSampler
 from model.eegnet import EEGNet
@@ -210,6 +212,27 @@ def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     )
 
 
+def _write_experiment_metrics(run_dir: str, train_results: dict) -> None:
+    metrics = {}
+    if "top1" in train_results:
+        metrics["top1"] = float(train_results["top1"])
+    if "top5" in train_results:
+        metrics["top5"] = float(train_results["top5"])
+    if train_results.get("epoch") is not None:
+        metrics["epoch"] = int(train_results["epoch"])
+
+    if not metrics:
+        return
+
+    run_metrics_path = Path(run_dir) / "metrics.json"
+    run_metrics_path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+
+    report_dir = Path("reports")
+    report_dir.mkdir(parents=True, exist_ok=True)
+    dvc_metrics_path = report_dir / "dvc_metrics.json"
+    dvc_metrics_path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+
+
 def _get_run_dir(cfg: DictConfig) -> str:
     try:
         return HydraConfig.get().runtime.output_dir
@@ -230,6 +253,7 @@ def run_experiment(cfg: DictConfig) -> None:
     model_obj = _model_init(cfg, data["num_classes"], device)
     run_dir = _get_run_dir(cfg)
     train_results = train_model(cfg, device, model_obj, data, run_dir)
+    _write_experiment_metrics(run_dir, train_results)
     evaluate_model(cfg, train_results)
 
 def main(params_path: str = "params.yaml") -> None:

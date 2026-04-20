@@ -23,6 +23,9 @@ stages:
         - model.optimizer.lr
         - model.optimizer.weight_decay
         - model.optimizer.momentum
+    metrics:
+      - reports/dvc_metrics.json:
+          cache: false
     outs:
       - outputs/:
           cache: false
