@@ -1,15 +1,14 @@
 dataset_dir: data/
 granularity: fine
-subject: -1
+subject: 0
 batch_size: 40
 output_dir: outputs/
-pretrained_model: null
-metric: cp
+metric: wt
 
 model:
   name: mlp
   type: deep
-  feature_type: freq
+  feature_type: time
   epochs: 1000
   optimizer:
     type: sgd

@@ -3,13 +3,16 @@ import torch.nn.functional as F
 
 
 class MLP(nn.Module):
-    def __init__(self, args, num_classes, chans=62, dropout_rate=0.5):
+    def __init__(self, args, num_classes, chans=62, dropout_rate=0.5, feature_type="time"):
         super(MLP, self).__init__()
 
         self.num_classes = num_classes
         self.chans = chans
         input_dim = chans * 5
 
+        if feature_type == "time":
+            input_dim = chans * 400
+        
         self.l1 = nn.Linear(input_dim, 256)
         self.bn1 = nn.BatchNorm1d(256)
         self.l2 = nn.Linear(256, 128)
