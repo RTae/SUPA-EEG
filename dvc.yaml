@@ -27,3 +27,8 @@ stages:
       - outputs/:
           cache: false
           persist: true
+
+    plots:
+      - outputs/:
+          cache: false
+          persist: true

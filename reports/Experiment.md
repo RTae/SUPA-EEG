@@ -21,5 +21,5 @@
 | moral-agio | 8afb66a | 14 | wt | mlp | freq | 0.5175 | 0.8037 | 647 |
 | hulky-deys | 49631d3 | 15 | wt | mlp | freq | 0.5188 | 0.9163 | 699 |
 
-Average Top1: 0.5175
-Average Top5: 0.8675
+Average Top1: 0.5254
+Average Top5: 0.8483
