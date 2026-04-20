@@ -212,7 +212,7 @@ def evaluate_model(cfg: DictConfig, train_results: dict) -> None:
     )
 
 
-def _write_experiment_metrics(train_results: dict) -> None:
+def _write_experiment_metrics(train_results: dict, metric_name: str) -> None:
     metrics = {}
     if "top1" in train_results:
         metrics["top1"] = float(train_results["top1"])
@@ -220,6 +220,8 @@ def _write_experiment_metrics(train_results: dict) -> None:
         metrics["top5"] = float(train_results["top5"])
     if train_results.get("epoch") is not None:
         metrics["epoch"] = int(train_results["epoch"])
+    
+    metrics['metric'] = metric_name
 
     if not metrics:
         return
@@ -250,7 +252,7 @@ def run_experiment(cfg: DictConfig) -> None:
     model_obj = _model_init(cfg, data["num_classes"], device)
     run_dir = _get_run_dir(cfg)
     train_results = train_model(cfg, device, model_obj, data, run_dir)
-    _write_experiment_metrics(run_dir, train_results)
+    _write_experiment_metrics(train_results, cfg.get("metric", None))
     evaluate_model(cfg, train_results)
 
 def main(params_path: str = "params.yaml") -> None:
