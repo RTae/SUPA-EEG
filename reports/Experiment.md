@@ -6,6 +6,8 @@
 
 Apply only `src/preprocessing/de_feat_cal.py` to extract features to train a model
 
+#### Train and test on the same subject
+
 | Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
 |---|---|---:|---|---|---|---:|---:|---:|
 | frank-sick | a8223e8 | 0 | wt | mlp | freq | 0.5337 | 0.8125 | 733 |
@@ -27,6 +29,13 @@ Apply only `src/preprocessing/de_feat_cal.py` to extract features to train a mod
 
 Average Top1: 0.5254
 Average Top5: 0.8483
+
+#### Train and test with all subjects
+
+| Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
+|---|---|---:|---|---|---|---:|---:|---:|
+| frank-sick | a8223e8 | -1 | wt | mlp | freq | - | - | - |
+| frank-sick | a8223e8 | -1 | ct | mlp | freq | - | - | - |
 
 ### Time features
 
@@ -54,3 +63,9 @@ Using raw time-series data as input to train a MLP
 Average Top1: 0.0780
 Average Top5: 0.2350
 
+#### Train and test with all subjects
+
+| Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
+|---|---|---:|---|---|---|---:|---:|---:|
+| frank-sick | a8223e8 | -1 | wt | mlp | time | - | - | - |
+| frank-sick | a8223e8 | -1 | ct | mlp | time | - | - | - |
