@@ -1,8 +1,10 @@
 # Experiment
 
-## Baseline MLP (Freq)
+## Baseline MLP
 
-Freq = apply only `src/preprocessing/de_feat_cal.py` to extract features, and train a MLP on the extracted features.
+### Fequency features
+
+Apply only `src/preprocessing/de_feat_cal.py` to extract features to train a model
 
 | Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
 |---|---|---:|---|---|---|---:|---:|---:|
@@ -26,7 +28,7 @@ Freq = apply only `src/preprocessing/de_feat_cal.py` to extract features, and tr
 Average Top1: 0.5254
 Average Top5: 0.8483
 
-## Baseline MLP (Time)
+### Time features
 
 Using raw time-series data as input to train a MLP
 
