@@ -34,8 +34,8 @@ Average Top5: 0.8483
 
 | Experiment | Rev | Subject | Metric | Model | Feature | Top1 | Top5 | Epoch |
 |---|---|---:|---|---|---|---:|---:|---:|
-| frank-sick | a8223e8 | -1 | wt | mlp | freq | - | - | - |
-| frank-sick | a8223e8 | -1 | ct | mlp | freq | - | - | - |
+| frank-sick | a8223e8 | -1 | wt | mlp | freq | 0.1673 | 0.4559 | 219 |
+| frank-sick | a8223e8 | -1 | ct | mlp | freq | 0.0354 | 0.1171 | 787 |
 
 ### Time features
 
