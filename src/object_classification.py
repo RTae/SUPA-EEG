@@ -32,7 +32,7 @@ def _model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> obje
     if name == "eegnet":
         return EEGNet(cfg, num_classes)
     if name == "mlp":
-        return MLP(cfg, num_classes)
+        return MLP(cfg, num_classes, feature_type=cfg.model.feature_type)
     if _is_semantic_model(name):
         return SemanticModel(cfg, num_classes)
     raise ValueError(f"Unknown model: {name}")
@@ -249,12 +249,12 @@ def run_experiment(cfg: DictConfig) -> None:
     logger.info(f"\n{OmegaConf.to_yaml(cfg)}")
     device = get_device()
 
-    data = load_data(cfg, device)
-    model_obj = _model_init(cfg, data["num_classes"], device)
-    run_dir = _get_run_dir(cfg)
-    train_results = train_model(cfg, device, model_obj, data, run_dir)
-    _write_experiment_metrics(train_results, cfg.get("metric", None))
-    evaluate_model(cfg, train_results)
+    # data = load_data(cfg, device)
+    model_obj = _model_init(cfg, 80, device)
+    # run_dir = _get_run_dir(cfg)
+    # train_results = train_model(cfg, device, model_obj, data, run_dir)
+    # _write_experiment_metrics(train_results, cfg.get("metric", None))
+    # evaluate_model(cfg, train_results)
 
 def main(params_path: str = "params.yaml") -> None:
     cfg = OmegaConf.load(params_path)
