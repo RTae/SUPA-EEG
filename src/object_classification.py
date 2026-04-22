@@ -11,14 +11,14 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader, Subset
 
-from dataset import EEGImageNetDataset, BalancedBatchSampler
-from model.eegnet import EEGNet
-from model.mlp import MLP
-from model.semantic import SemanticModel
-from model.simple_model import SimpleModel
-from preprocessing.de_feat_cal import de_feat_cal
-from trainer import train_classifier, train_semantic_classifier
-from utilities import build_optimizer, get_benchmark_split, get_device
+from src.dataset import EEGImageNetDataset, BalancedBatchSampler
+from src.model.eegnet import EEGNet
+from src.model.mlp import MLP
+from src.model.semantic import SemanticModel
+from src.model.simple_model import SimpleModel
+from src.preprocessing.de_feat_cal import de_feat_cal
+from src.trainer import train_classifier, train_semantic_classifier
+from src.utilities import build_optimizer, get_benchmark_split, get_device
 
 
 def _is_semantic_model(model_name: str) -> bool:
