@@ -1,7 +1,6 @@
 name: eegnet
 type: deep
 feature_type: time
-freq_feature: de
 epochs: 1000
 optimizer:
   type: sgd

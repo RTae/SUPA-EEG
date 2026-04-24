@@ -16,12 +16,6 @@ output_dir: outputs/
 pretrained_model: null
 metric: wt   # evaluation paradigm: wt (Within-Time), ct (Cross-Time), cp (Cross-Participant)
 
-window:
-  use: false
-  size: 100
-  stride: 50
-  aggregate: flatten
-
 # For general model settings, see configs/model/*.yaml
 diffusion:
   sd_model: CompVis/stable-diffusion-v1-4

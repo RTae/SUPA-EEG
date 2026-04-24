@@ -1,7 +1,6 @@
 name: mlp_sd
 type: deep
 feature_type: freq
-freq_feature: de
 epochs: 1000
 optimizer:
   type: adam

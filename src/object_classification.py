@@ -2,7 +2,6 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-import mne
 
 import numpy as np
 import torch
@@ -17,13 +16,10 @@ from src.model.eegnet import EEGNet
 from src.model.mlp import MLP
 from src.model.semantic import SemanticModel
 from src.model.simple_model import SimpleModel
+from src.preprocessing.de_feat_cal import de_feat_cal
 from src.trainer import train_classifier, train_semantic_classifier
 from src.utilities import build_optimizer, get_benchmark_split, get_device
-from src.preprocessing.windowing import sliding_window
-from src.preprocessing.feature_pipeline import normalize
-from src.preprocessing.feature_pipeline import extract_features
-from src.preprocessing.de_feat_cal import de_feature_chunk
-from src.preprocessing.psd_feat_cal import psd_feature_chunk
+
 
 def _is_semantic_model(model_name: str) -> bool:
     return model_name.lower() == "semantic"
@@ -41,10 +37,9 @@ def _model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> obje
         return SemanticModel(cfg, num_classes)
     raise ValueError(f"Unknown model: {name}")
 
-def _prep_freq_features(dataset: EEGImageNetDataset, cfg: DictConfig) -> None:
-    logger.info("Preparing frequency-domain features...")
+def _prep_freq_features(dataset: EEGImageNetDataset) -> None:
+    logger.info("Calculating frequency-domain features for the dataset...")
 
-    # Collect EEG data
     eeg_samples = []
     for feat, _ in dataset:
         if torch.is_tensor(feat):
@@ -53,79 +48,13 @@ def _prep_freq_features(dataset: EEGImageNetDataset, cfg: DictConfig) -> None:
             eeg_samples.append(np.asarray(feat))
 
     eeg_data = np.stack(eeg_samples, axis=0)
-
-    # Create MNE info
-    channel_names = [f"EEG{i}" for i in range(1, 63)]
-    info = mne.create_info(ch_names=channel_names, sfreq=1000, ch_types="eeg")
-
-    # Feature selection
-    freq_feature = str(cfg.model.get("freq_feature", "de")).lower()
-
-    if freq_feature == "de":
-        feature_fn = de_feature_chunk
-    elif freq_feature == "psd":
-        feature_fn = psd_feature_chunk
-    else:
-        raise ValueError(f"Unsupported freq_feature: {freq_feature}")
-
-    # Window config
-    window_cfg = cfg.get("window", {})
-
-    use_window = window_cfg.get("use", False)
-    window_size = window_cfg.get("size", 100)
-    stride = window_cfg.get("stride", 50)
-    aggregate = window_cfg.get("aggregate", "flatten")
-
-    window_fn = None
-    if use_window:
-        window_fn = lambda x: sliding_window(x, window_size, stride)
-
-    # Feature pipeline
-    feat = extract_features(
-        eeg_data,
-        feature_fn,
-        info,
-        window_fn=window_fn,
-        aggregate=aggregate,
-    )
-
-    dataset.add_frequency_feat(feat)
+    de_feat = de_feat_cal(eeg_data, dataset.subject, dataset.granularity)
+    dataset.add_frequency_feat(de_feat)
     
-
-def _prep_time_features(dataset, cfg: DictConfig) -> None:
-    logger.info("Preparing time-domain features...")
-
-    eeg_samples = []
-    for feat, _ in dataset:
-        if torch.is_tensor(feat):
-            eeg_samples.append(feat.detach().cpu().numpy())
-        else:
-            eeg_samples.append(np.asarray(feat))
-
-    eeg_data = np.stack(eeg_samples, axis=0)
-
-    # Normalize (IMPORTANT)
-    eeg_data = normalize(eeg_data)
-
-    # Window config
-    window_cfg = cfg.get("window", {})
-    use_window = window_cfg.get("use", False)
-    window_size = window_cfg.get("size", 100)
-    stride = window_cfg.get("stride", 50)
-
-    if use_window:
-        windows = sliding_window(eeg_data, window_size, stride)
-        # (n_samples, n_windows, channels, time)
-
-        # ⚠️ For now: flatten windows into channels
-        n_samples, n_windows, n_channels, w_len = windows.shape
-        eeg_data = windows.reshape(n_samples, n_windows * n_channels, w_len)
-
-    # overwrite dataset features
-    dataset.data = [
-        (torch.tensor(eeg_data[i], dtype=torch.float32), label)
-        for i, (_, label) in enumerate(dataset)
-    ]
+def _prep_time_features(dataset: EEGImageNetDataset) -> None:
+    logger.info("Using raw time-domain features for the dataset.")
+    # No additional preparation needed for time-domain features, but this function is here for consistency and future extensibility.
+    pass
 
 def load_data(cfg: DictConfig, device: torch.device) -> dict:
     # When loading data, it does not need to be loaded into GPU, since the dataset will handle moving data to the correct device during training. We can load it on CPU to save GPU memory.
@@ -139,7 +68,7 @@ def load_data(cfg: DictConfig, device: torch.device) -> dict:
     
     # Add frequency features to the dataset if required by the model configuration
     if model_feature_type == "freq":
-        _prep_freq_features(dataset, cfg)
+        _prep_freq_features(dataset)
     
     # Add time-domain features to the dataset if required by the model configuration
     if model_feature_type == "time":
