@@ -5,6 +5,13 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
+# Register Ascend NPU support early, before any tensors or models are built.
+try:  # pragma: no cover - environment-dependent
+    import torch_npu  # noqa: F401
+except ImportError:
+    pass
+
 from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf

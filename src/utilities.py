@@ -5,6 +5,13 @@ from typing import Optional
 import torch
 import torch.optim as optim
 
+# Register the Ascend NPU device type if torch_npu is installed.
+# Importing it is a no-op on non-NPU systems where the package is absent.
+try:  # pragma: no cover - environment-dependent
+    import torch_npu  # noqa: F401
+except ImportError:  # torch_npu not installed; NPU simply won't be available.
+    torch_npu = None
+
 # -- EEG channel groups --
 PRE_FRONTAL = ["FP1", "FPZ", "FP2", "AF3", "AF4"]
 FRONTAL = ["F7", "F5", "F3", "F1", "FZ", "F2", "F4", "F6", "F8"]
@@ -54,7 +61,10 @@ def category2wnid(category: str, language: str, img_dir: str | None = None) -> s
 
 
 def get_device() -> torch.device:
-    """Return the best available device (CUDA > MPS > CPU)."""
+    """Return the best available device (NPU > CUDA > MPS > CPU)."""
+    # Ascend NPU (exposed through torch_npu) registers torch.npu.
+    if hasattr(torch, "npu") and torch.npu.is_available():
+        return torch.device("npu")
     if torch.cuda.is_available():
         return torch.device("cuda")
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
