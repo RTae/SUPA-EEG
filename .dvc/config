@@ -1,9 +1,0 @@
-['remote "myremote"']
-    url = gdrive://18nVHMZkR82cAry07I2EDUyg4U5lR5out
-[core]
-    remote = myremote
-    autostage = true
-[hydra]
-    enabled = True
-    config_dir = conf
-    config_name = config
