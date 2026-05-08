@@ -75,10 +75,11 @@ data/
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-2. Download the EEG-ImageNet dataset from [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/d/d812f7d1fc474b14bbd0/) by using a command below (One time setup):
-```bash
-bash scripts/download_dataset.sh
-```
+2. Download the THINGS_EEG2 dataset from the list below and place the files in the `data/things_eeg/` directory (One time setup):
+- [EEG Data](https://osf.io/anp5v/files/osfstorage) Use can choose to download the entire dataset or just the parts needed for visual context (sub-0x mean filltered data and sub stand for subject. _63_channel mean all 63 channels are included)
+- [Image Data Metadata](https://osf.io/y63gw/files/qkgtf)
+- [Train Image Data](https://osf.io/y63gw/files/3v527)
+- [Test Image Data](https://osf.io/y63gw/files/znu7b)
 
 ### Installation
 
@@ -93,11 +94,10 @@ uv venv && uv sync
 source .venv/bin/activate
 ```
 
-3. Merge the downloaded dataset parts into a single file (One time setup):
+## Dataset
 
-```bash
-python scripts/merge_dataset.py data/EEG-ImageNet_1.pth data/EEG-ImageNet_2.pth data/EEG-ImageNet.pth
-```
+1. Open `viz.ipynb` in Jupyter to inspect samples, splits, and feature preparation interactively. (Deprecated)
+2. Open `viz_thingseeg.ipynb` in Jupyter to inspect the THINGS_EEG2 dataset interactively.
 
 ## Configuration
 
@@ -392,7 +392,3 @@ python src/object_classification.py model=semantic model.backbone=nn
 # Tune triplet settings
 python src/object_classification.py model=semantic model.triplet_margin=0.25 model.samples_per_class=6
 ```
-
-### Visualization
-
-Open `viz.ipynb` in Jupyter to inspect samples, splits, and feature preparation interactively.
