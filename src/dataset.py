@@ -283,8 +283,8 @@ class ThingsEEGDataset(Dataset):
         
         logger.info(
             "ThingsEEGDataset\n"
-            "Number of subjects loaded : {}\n"
             "Total samples : {}\n"
+            "Number of subjects loaded : {}\n"
             "Samples per subject without repetition : {}\n"
             "Number of repetitions : {}\n"
             "Number of images : {}\n"
