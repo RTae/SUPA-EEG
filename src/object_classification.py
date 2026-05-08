@@ -5,6 +5,13 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
+# Register Ascend NPU support early, before any tensors or models are built.
+try:  # pragma: no cover - environment-dependent
+    import torch_npu  # noqa: F401
+except ImportError:
+    pass
+
 from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
@@ -13,6 +20,7 @@ from torch.utils.data import DataLoader, Subset
 
 from src.dataset import EEGImageNetDataset, BalancedBatchSampler
 from src.model.eegnet import EEGNet
+from src.model.llmfew import LLMFew
 from src.model.mlp import MLP
 from src.model.semantic import SemanticModel
 from src.model.simple_model import SimpleModel
@@ -33,6 +41,8 @@ def _model_init(cfg: DictConfig, num_classes: int, device: torch.device) -> obje
         return EEGNet(cfg, num_classes)
     if name == "mlp":
         return MLP(cfg, num_classes, feature_type=cfg.model.feature_type)
+    if name == "llmfew":
+        return LLMFew(cfg, num_classes)
     if _is_semantic_model(name):
         return SemanticModel(cfg, num_classes)
     raise ValueError(f"Unknown model: {name}")
