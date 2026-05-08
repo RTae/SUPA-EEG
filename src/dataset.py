@@ -254,6 +254,9 @@ class ThingsEEGDataset(Dataset):
         if data_type not in ["train", "test"]:
             raise ValueError(f"Invalid data_type: {data_type}. Expected 'train' or 'test'.")
         
+        if not (0 < subject <=   self.max_subjects or subject == -1):
+            raise ValueError(f"Invalid subject index: {subject}. Must be between 1 and {self.max_subjects}, or -1 for all subjects.")
+        
         # Get list of eeg data from each subject
         eeg_folder_list = [f for f in os.listdir(dataset_dir) if f.startswith("sub")]
         eeg_file_name = "preprocessed_eeg_training" if data_type == "train" else "preprocessed_eeg_test"
@@ -270,12 +273,29 @@ class ThingsEEGDataset(Dataset):
         
         logger.info("Loading image metadata...")
         self.image_meta_data = self._load_image_meta_data(image_meta_data)
-        num_image = len(self.image_meta_data[f'{self.data_type}_img_concepts'])
-        self.samples_per_subject = num_image * self.number_of_repetitions
-        print(f"number_of_repetitions={self.number_of_repetitions} number_of_subjects_loaded={self.number_of_subjects_loaded} num_image={num_image} samples_per_subject={self.samples_per_subject}")
+        num_data = len(self.image_meta_data[f'{self.data_type}_img_concepts'])
+        self.samples_per_subject = num_data * self.number_of_repetitions
 
         logger.info("Loading image data...")
         self.image_data = self._load_image(image_dir, transform, device)
+        
+        n_concepts = len(np.unique(self.image_meta_data[f'{self.data_type}_img_concepts']))
+        
+        logger.info(
+            "ThingsEEGDataset\n"
+            "Number of subjects loaded : {}\n"
+            "Total samples : {}\n"
+            "Samples per subject without repetition : {}\n"
+            "Number of repetitions : {}\n"
+            "Number of images : {}\n"
+            "Number of samples per image : {}",
+            self.number_of_subjects_loaded,
+            len(self.eeg_data),
+            num_data,
+            self.number_of_repetitions,
+            n_concepts,
+            int(num_data / n_concepts),
+        )
         
         logger.info("EEG data loaded successfully.")
 
