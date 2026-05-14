@@ -81,6 +81,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 - [Train Image Data](https://osf.io/y63gw/files/3v527)
 - [Test Image Data](https://osf.io/y63gw/files/znu7b)
 
+or use the `download_things_eeg.sh` script for filltered data:
+
+```bash
+bash scripts/download_things_eeg.sh
+```
+
 ### Installation
 
 1. Install dependencies and create a virtual environment (One time setup):
