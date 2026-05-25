@@ -70,7 +70,22 @@ class VisualEncoder(nn.Module):
         encoder_type: Literal["clip", "ijepa"] = "clip",
         model_name: str | None = None,
         device: str | torch.device = "cpu",
+        encoder_layers_path: str | None = None,
     ) -> None:
+        """
+        Args:
+            encoder_type:        ``"clip"`` or ``"ijepa"``.
+            model_name:          HuggingFace model identifier.
+            device:              Target device for the model weights.
+            encoder_layers_path: Optional dot-separated path to the transformer
+                                 layer list inside the model object, e.g.
+                                 ``"encoder.layer"`` or ``"ijepa.encoder.layer"``.
+                                 Only needed if auto-discovery fails for an unusual
+                                 checkpoint.  Example::
+
+                                     VisualEncoder("ijepa",
+                                                   encoder_layers_path="encoder.layer")
+        """
         super().__init__()
 
         if encoder_type not in _ENCODER_CONFIGS:
@@ -83,6 +98,7 @@ class VisualEncoder(nn.Module):
         cfg = _ENCODER_CONFIGS[encoder_type]
         self._model_name = model_name or cfg["default_model"]
         self.device = torch.device(device) if isinstance(device, str) else device
+        self._encoder_layers_path = encoder_layers_path
 
         self._s1_idx: int = cfg["s1_layer"]
         self._s2_idx: int = cfg["s2_layer"]
@@ -103,6 +119,63 @@ class VisualEncoder(nn.Module):
     # Model construction
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _find_transformer_layers(model: nn.Module) -> nn.ModuleList:
+        """Locate the list of transformer encoder layers inside *model*.
+
+        Different HuggingFace model classes store their layers under different
+        attribute paths.  This method tries every known layout in order and
+        returns the first one that resolves to a non-empty ModuleList.
+
+        If nothing matches, it prints a two-level attribute tree of the model
+        so you can identify the correct path and open an issue / PR.
+
+        Known layouts tried (in order):
+            model.encoder.layer           – IJepaModel, BertModel, ViTModel
+            model.encoder.layers          – CLIPEncoder (fallback)
+            model.vision_model.encoder.layers – CLIPVisionModel (fallback)
+            model.ijepa.encoder.layer     – IJepaForMaskedImageModeling wrapper
+            model.vit.encoder.layer       – ViTForImageClassification wrapper
+            model.model.encoder.layer     – generic ForX wrapper
+            model.model.encoder.layers    – generic ForX wrapper (layers variant)
+        """
+        _CANDIDATES: list[tuple[str, object]] = [
+            ("model.encoder.layer",               lambda m: m.encoder.layer),
+            ("model.encoder.layers",              lambda m: m.encoder.layers),
+            ("model.vision_model.encoder.layers", lambda m: m.vision_model.encoder.layers),
+            ("model.ijepa.encoder.layer",         lambda m: m.ijepa.encoder.layer),
+            ("model.vit.encoder.layer",           lambda m: m.vit.encoder.layer),
+            ("model.model.encoder.layer",         lambda m: m.model.encoder.layer),
+            ("model.model.encoder.layers",        lambda m: m.model.encoder.layers),
+        ]
+
+        for path, getter in _CANDIDATES:
+            try:
+                layers = getter(model)
+                if isinstance(layers, (nn.ModuleList, list)) and len(layers) > 0:
+                    logger.debug(f"Transformer layers found at: {path}")
+                    return layers
+            except AttributeError:
+                continue
+
+        # Nothing matched – build a readable attribute tree to help debugging.
+        def _tree(module: nn.Module, depth: int = 0, max_depth: int = 2) -> list[str]:
+            lines = []
+            for name, child in module.named_children():
+                lines.append("  " * depth + f".{name}  [{type(child).__name__}]")
+                if depth < max_depth:
+                    lines.extend(_tree(child, depth + 1, max_depth))
+            return lines
+
+        tree_str = "\n".join(_tree(model))
+        raise AttributeError(
+            f"\n\nCould not locate transformer encoder layers in "
+            f"{type(model).__name__}.\n\n"
+            f"Model attribute tree (depth ≤ 2):\n{tree_str}\n\n"
+            f"Look for a ModuleList of encoder/layer blocks in the tree above, "
+            f"then pass the correct dot-path via the encoder_layers_path= argument.\n"
+        )
+
     def _build_model(self) -> None:
         """Instantiate model + processor and freeze all parameters."""
         if self.encoder_type == "clip":
@@ -110,7 +183,9 @@ class VisualEncoder(nn.Module):
 
             self.processor = CLIPImageProcessor.from_pretrained(self._model_name)
             self.model = CLIPVisionModel.from_pretrained(self._model_name)
-            # Transformer layers live at vision_model.encoder.layers
+            # CLIP stores its layers at vision_model.encoder.layers – resolve
+            # directly instead of going through the generic finder so that the
+            # CLIP path stays unambiguous.
             self._transformer_layers = self.model.vision_model.encoder.layers
 
         else:  # ijepa
@@ -118,8 +193,18 @@ class VisualEncoder(nn.Module):
 
             self.processor = AutoImageProcessor.from_pretrained(self._model_name)
             self.model = AutoModel.from_pretrained(self._model_name)
-            # Standard ViT layout used by I-JEPA
-            self._transformer_layers = self.model.encoder.layer
+
+            if self._encoder_layers_path:
+                # User supplied an explicit path – resolve it via attribute traversal.
+                obj = self.model
+                for attr in self._encoder_layers_path.split("."):
+                    obj = getattr(obj, attr)
+                self._transformer_layers = obj
+                logger.info(f"Using manually specified layer path: '{self._encoder_layers_path}'")
+            else:
+                # I-JEPA's internal layout varies across transformers versions and
+                # checkpoint types – discover the layers dynamically.
+                self._transformer_layers = self._find_transformer_layers(self.model)
 
         # Freeze everything – this encoder is never trained
         for param in self.model.parameters():
@@ -128,9 +213,23 @@ class VisualEncoder(nn.Module):
         self.model.to(self.device)
 
         num_layers = len(self._transformer_layers)
+
+        # If the actual depth differs from the config default, recompute the
+        # S1/S2/S3 indices to keep the ~25 / ~65 / ~98 % depth ratios.
+        cfg_num_layers = _ENCODER_CONFIGS[self.encoder_type]["num_layers"]
+        if num_layers != cfg_num_layers:
+            logger.warning(
+                f"Actual layer count ({num_layers}) differs from config default "
+                f"({cfg_num_layers}). Recomputing S1/S2/S3 indices proportionally."
+            )
+            self._s1_idx = round(num_layers * 0.25) - 1
+            self._s2_idx = round(num_layers * 0.65) - 1
+            self._s3_idx = num_layers - 1
+
         logger.info(
             f"{self.encoder_type.upper()} loaded | "
             f"total transformer layers: {num_layers} | "
+            f"S1=layer{self._s1_idx}, S2=layer{self._s2_idx}, S3=layer{self._s3_idx} | "
             f"parameters: {sum(p.numel() for p in self.model.parameters()):,} (all frozen)"
         )
 
