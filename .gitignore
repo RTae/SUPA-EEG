@@ -6,6 +6,7 @@ __pycache__/
 *.pth
 *.npy
 .venv/
+.claude/
 
 EEG-ImageNet.pth
 data/things_eeg
