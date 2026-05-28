@@ -239,6 +239,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--encoder_layers_path",
+        type=str,
+        default=None,
+        help=(
+            "Optional dot path to the transformer layer list inside the model. "
+            "Useful for custom I-JEPA checkpoints if automatic discovery fails, "
+            "for example 'encoder.layer'."
+        ),
+    )
+    parser.add_argument(
         "--dataset_dir",
         type=str,
         default="data/things_eeg",
@@ -305,6 +315,16 @@ def main() -> None:
     device = args.device or _auto_device()
     logger.info(f"Using device: {device}")
 
+    # ── Dataset splits ──────────────────────────────────────────────────────
+    dataset_dir = Path(args.dataset_dir)
+    split_dirs = list(_iter_splits(dataset_dir, args.splits))
+    if not split_dirs:
+        requested = ", ".join(args.splits)
+        raise FileNotFoundError(
+            f"No requested image split directories were found under '{dataset_dir}'. "
+            f"Requested splits: {requested}."
+        )
+
     # ── Output path ─────────────────────────────────────────────────────────
     output_path = Path(
         args.output_path or f"data/visual_features_{args.encoder}.pt"
@@ -316,13 +336,13 @@ def main() -> None:
         encoder_type=args.encoder,
         model_name=args.model_name,
         device=device,
+        encoder_layers_path=args.encoder_layers_path,
     )
 
     # ── Extract for each split ───────────────────────────────────────────────
-    dataset_dir = Path(args.dataset_dir)
     all_features: dict[tuple[str, str], dict[str, torch.Tensor]] = {}
 
-    for split, image_dir in _iter_splits(dataset_dir, args.splits):
+    for split, image_dir in split_dirs:
         logger.info(f"--- Processing split '{split}' from {image_dir} ---")
         split_features = extract_features(
             encoder=encoder,
@@ -333,6 +353,12 @@ def main() -> None:
         )
         # Merge; duplicate keys (same image appearing in both splits) are overwritten.
         all_features.update(split_features)
+
+    if not all_features:
+        raise RuntimeError(
+            "No image features were extracted. Check that the requested split "
+            "directories contain concept folders with supported image files."
+        )
 
     # ── Save lookup table ────────────────────────────────────────────────────
     payload = {

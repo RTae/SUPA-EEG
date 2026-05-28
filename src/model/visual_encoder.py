@@ -19,7 +19,7 @@ Architecture reference:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Sequence
 
 import torch
 import torch.nn as nn
@@ -120,7 +120,7 @@ class VisualEncoder(nn.Module):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _find_transformer_layers(model: nn.Module) -> nn.ModuleList:
+    def _find_transformer_layers(model: nn.Module) -> Sequence[nn.Module]:
         """Locate the list of transformer encoder layers inside *model*.
 
         Different HuggingFace model classes store their layers under different
@@ -140,6 +140,8 @@ class VisualEncoder(nn.Module):
             model.model.encoder.layers    – generic ForX wrapper (layers variant)
         """
         _CANDIDATES: list[tuple[str, object]] = [
+            # Some custom checkpoints expose the encoder as the layer container.
+            ("model.encoder",                     lambda m: m.encoder),
             ("model.encoder.layer",               lambda m: m.encoder.layer),
             ("model.encoder.layers",              lambda m: m.encoder.layers),
             ("model.vision_model.encoder.layers", lambda m: m.vision_model.encoder.layers),
@@ -152,7 +154,7 @@ class VisualEncoder(nn.Module):
         for path, getter in _CANDIDATES:
             try:
                 layers = getter(model)
-                if isinstance(layers, (nn.ModuleList, list)) and len(layers) > 0:
+                if isinstance(layers, (nn.ModuleList, list, tuple)) and len(layers) > 0:
                     logger.debug(f"Transformer layers found at: {path}")
                     return layers
             except AttributeError:
@@ -245,8 +247,7 @@ class VisualEncoder(nn.Module):
             def _hook(module: nn.Module, input, output) -> None:  # noqa: ARG001
                 # Layer output is usually (hidden_states,) or just hidden_states.
                 hidden = output[0] if isinstance(output, tuple) else output
-                # CLS token is always the first sequence position in ViT variants.
-                self._intermediate[scale_key] = hidden[:, 0, :].detach()
+                self._intermediate[scale_key] = self._pool_hidden(hidden).detach()
 
             return _hook
 
@@ -254,6 +255,22 @@ class VisualEncoder(nn.Module):
         self._hooks.append(layers[self._s1_idx].register_forward_hook(_make_hook("S1")))
         self._hooks.append(layers[self._s2_idx].register_forward_hook(_make_hook("S2")))
         self._hooks.append(layers[self._s3_idx].register_forward_hook(_make_hook("S3")))
+
+    def _pool_hidden(self, hidden: torch.Tensor) -> torch.Tensor:
+        """Convert a ViT layer sequence output into one vector per image.
+
+        CLIP prepends a CLS token, so the first token is the global image
+        representation. I-JEPA exposes patch tokens only, so mean pooling is
+        the correct fixed-size image representation for the lookup table.
+        """
+        if hidden.ndim != 3:
+            raise RuntimeError(
+                f"Expected transformer hidden states with shape (B, tokens, D), "
+                f"got {tuple(hidden.shape)}."
+            )
+        if self.encoder_type == "clip":
+            return hidden[:, 0, :]
+        return hidden.mean(dim=1)
 
     def _remove_hooks(self) -> None:
         for h in self._hooks:
