@@ -120,17 +120,42 @@ class VisualEncoder(nn.Module):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _as_layer_sequence(candidate: object) -> Sequence[nn.Module] | None:
+        """Normalize common HuggingFace encoder containers to an indexable sequence."""
+        if isinstance(candidate, (nn.ModuleList, list, tuple)) and len(candidate) > 0:
+            return candidate
+
+        if not isinstance(candidate, nn.Module):
+            return None
+
+        children = list(candidate.named_children())
+        if not children:
+            return None
+
+        # Some encoder modules wrap the actual blocks in a single ModuleList child.
+        if len(children) == 1 and isinstance(children[0][1], nn.ModuleList):
+            layer_list = children[0][1]
+            return layer_list if len(layer_list) > 0 else None
+
+        # Other I-JEPA versions expose blocks directly as .0, .1, ... children.
+        if all(name.isdigit() for name, _ in children):
+            return [child for _, child in children]
+
+        return None
+
+    @staticmethod
     def _find_transformer_layers(model: nn.Module) -> Sequence[nn.Module]:
         """Locate the list of transformer encoder layers inside *model*.
 
         Different HuggingFace model classes store their layers under different
         attribute paths.  This method tries every known layout in order and
-        returns the first one that resolves to a non-empty ModuleList.
+        returns the first one that resolves to a non-empty layer sequence.
 
         If nothing matches, it prints a two-level attribute tree of the model
         so you can identify the correct path and open an issue / PR.
 
         Known layouts tried (in order):
+            model.encoder                 – IJepaModel variants with direct .0/.1 blocks
             model.encoder.layer           – IJepaModel, BertModel, ViTModel
             model.encoder.layers          – CLIPEncoder (fallback)
             model.vision_model.encoder.layers – CLIPVisionModel (fallback)
@@ -153,8 +178,8 @@ class VisualEncoder(nn.Module):
 
         for path, getter in _CANDIDATES:
             try:
-                layers = getter(model)
-                if isinstance(layers, (nn.ModuleList, list, tuple)) and len(layers) > 0:
+                layers = VisualEncoder._as_layer_sequence(getter(model))
+                if layers is not None:
                     logger.debug(f"Transformer layers found at: {path}")
                     return layers
             except AttributeError:
@@ -201,7 +226,13 @@ class VisualEncoder(nn.Module):
                 obj = self.model
                 for attr in self._encoder_layers_path.split("."):
                     obj = getattr(obj, attr)
-                self._transformer_layers = obj
+                layers = self._as_layer_sequence(obj)
+                if layers is None:
+                    raise AttributeError(
+                        f"encoder_layers_path='{self._encoder_layers_path}' resolved to "
+                        f"{type(obj).__name__}, but it is not an indexable layer sequence."
+                    )
+                self._transformer_layers = layers
                 logger.info(f"Using manually specified layer path: '{self._encoder_layers_path}'")
             else:
                 # I-JEPA's internal layout varies across transformers versions and
