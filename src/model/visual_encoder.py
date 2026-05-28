@@ -210,10 +210,6 @@ class VisualEncoder(nn.Module):
 
             self.processor = CLIPImageProcessor.from_pretrained(self._model_name)
             self.model = CLIPVisionModel.from_pretrained(self._model_name)
-            # CLIP stores its layers at vision_model.encoder.layers – resolve
-            # directly instead of going through the generic finder so that the
-            # CLIP path stays unambiguous.
-            self._transformer_layers = self.model.vision_model.encoder.layers
 
         else:  # ijepa
             from transformers import AutoImageProcessor, AutoModel
@@ -221,23 +217,22 @@ class VisualEncoder(nn.Module):
             self.processor = AutoImageProcessor.from_pretrained(self._model_name)
             self.model = AutoModel.from_pretrained(self._model_name)
 
-            if self._encoder_layers_path:
-                # User supplied an explicit path – resolve it via attribute traversal.
-                obj = self.model
-                for attr in self._encoder_layers_path.split("."):
-                    obj = getattr(obj, attr)
-                layers = self._as_layer_sequence(obj)
-                if layers is None:
-                    raise AttributeError(
-                        f"encoder_layers_path='{self._encoder_layers_path}' resolved to "
-                        f"{type(obj).__name__}, but it is not an indexable layer sequence."
-                    )
-                self._transformer_layers = layers
-                logger.info(f"Using manually specified layer path: '{self._encoder_layers_path}'")
-            else:
-                # I-JEPA's internal layout varies across transformers versions and
-                # checkpoint types – discover the layers dynamically.
-                self._transformer_layers = self._find_transformer_layers(self.model)
+        if self._encoder_layers_path:
+            # User supplied an explicit path – resolve it via attribute traversal.
+            obj = self.model
+            for attr in self._encoder_layers_path.split("."):
+                obj = getattr(obj, attr)
+            layers = self._as_layer_sequence(obj)
+            if layers is None:
+                raise AttributeError(
+                    f"encoder_layers_path='{self._encoder_layers_path}' resolved to "
+                    f"{type(obj).__name__}, but it is not an indexable layer sequence."
+                )
+            self._transformer_layers = layers
+            logger.info(f"Using manually specified layer path: '{self._encoder_layers_path}'")
+        else:
+            # CLIP and I-JEPA layouts both vary across transformers versions.
+            self._transformer_layers = self._find_transformer_layers(self.model)
 
         # Freeze everything – this encoder is never trained
         for param in self.model.parameters():
