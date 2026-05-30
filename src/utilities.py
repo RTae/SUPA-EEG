@@ -175,6 +175,8 @@ class Config:
     dropout: float = 0.1
     lr: float = 3e-4
     weight_decay: float = 1e-4
+    warmup_epochs: int = 10
+    grad_clip: float = 1.0
     checkpoint_dir: str = "outputs/supaeeg"
 
 
@@ -187,6 +189,7 @@ def train_one_epoch(
     lambda_reg: float = 0.1,
     beta_l1: float = 0.01,
     tau: float = 0.07,
+    grad_clip: float = 1.0,
 ) -> float:
     """Run a single training epoch.
 
@@ -226,6 +229,8 @@ def train_one_epoch(
         )
         optimizer.zero_grad()
         loss.backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
         optimizer.step()
         total_loss += float(components["total"])
 
@@ -403,3 +408,33 @@ def make_optimizer(model: Any, config: Config) -> AdamW:
         lr=config.lr,
         weight_decay=config.weight_decay,
     )
+
+
+def make_scheduler(
+    optimizer: AdamW,
+    config: Config,
+) -> Any:
+    """Build a cosine-annealing LR scheduler with optional linear warmup.
+
+    Args:
+        optimizer: The AdamW optimiser to attach the scheduler to.
+        config:    Runtime configuration (uses ``epochs``, ``warmup_epochs``).
+
+    Returns:
+        A ``SequentialLR`` (warmup → cosine) or ``CosineAnnealingLR`` if
+        ``warmup_epochs`` is 0.
+    """
+    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+
+    warmup = min(config.warmup_epochs, config.epochs // 10)
+    if warmup > 0:
+        warmup_sched = LinearLR(
+            optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup
+        )
+        cosine_sched = CosineAnnealingLR(
+            optimizer, T_max=max(config.epochs - warmup, 1), eta_min=1e-6
+        )
+        return SequentialLR(
+            optimizer, schedulers=[warmup_sched, cosine_sched], milestones=[warmup]
+        )
+    return CosineAnnealingLR(optimizer, T_max=config.epochs, eta_min=1e-6)
