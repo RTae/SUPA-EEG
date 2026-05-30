@@ -47,10 +47,10 @@ _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from src.dataset import ThingsEEGDataset  # noqa: E402
-from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup  # noqa: E402
-from src.models.supaeeg import SUPAEEG  # noqa: E402
-from src.trainer.metrics import retrieve_all  # noqa: E402
+from src.dataset import ThingsEEGDataset 
+from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup, validate_features
+from src.models.supaeeg import SUPAEEG
+from src.trainer.metrics import retrieve_all
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ def ensure_visual_features(config: DictConfig) -> VisualFeatureLookup:
     if os.path.isfile(path):
         logger.info("Visual features found. Loading from disk...")
         lookup = VisualFeatureLookup(path)
-        _validate_features(lookup)
+        validate_features(lookup)
         return lookup
 
     # ------------------------------------------------------------------
@@ -178,34 +178,8 @@ def ensure_visual_features(config: DictConfig) -> VisualFeatureLookup:
     logger.info(f"Visual features saved to {path}")
 
     lookup = VisualFeatureLookup(path)
-    _validate_features(lookup)
+    validate_features(lookup)
     return lookup
-
-
-def _validate_features(lookup: VisualFeatureLookup) -> None:
-    """Validate that the feature bank has at least one entry with correct shapes.
-
-    Args:
-        lookup: The lookup table to validate.
-
-    Raises:
-        ValueError: If the table is empty or if feature shapes are wrong.
-    """
-    if len(lookup) == 0:
-        raise ValueError("Visual feature bank is empty.")
-
-    # Check the first entry
-    first_key = next(iter(lookup._table))  # type: ignore[attr-defined]
-    entry = lookup._table[first_key]  # type: ignore[attr-defined]
-    for scale in ("S1", "S2", "S3"):
-        if scale not in entry:
-            raise ValueError(f"Feature entry missing key '{scale}'.")
-        shape = tuple(entry[scale].shape)
-        if shape != (768,):
-            raise ValueError(
-                f"Expected {scale} shape (768,), got {shape}."
-            )
-
 
 # ---------------------------------------------------------------------------
 # Evaluation helper

@@ -356,6 +356,30 @@ class VisualEncoder(nn.Module):
 # Lookup table – loaded once at training time, never updated
 # ---------------------------------------------------------------------------
 
+def validate_features(lookup: VisualFeatureLookup) -> None:
+    """Validate that the feature bank has at least one entry with correct shapes.
+
+    Args:
+        lookup: The lookup table to validate.
+
+    Raises:
+        ValueError: If the table is empty or if feature shapes are wrong.
+    """
+    if len(lookup) == 0:
+        raise ValueError("Visual feature bank is empty.")
+
+    # Check the first entry
+    first_key = next(iter(lookup._table))  # type: ignore[attr-defined]
+    entry = lookup._table[first_key]  # type: ignore[attr-defined]
+    for scale in ("S1", "S2", "S3"):
+        if scale not in entry:
+            raise ValueError(f"Feature entry missing key '{scale}'.")
+        shape = tuple(entry[scale].shape)
+        if shape != (768,):
+            raise ValueError(
+                f"Expected {scale} shape (768,), got {shape}."
+            )
+
 
 class VisualFeatureLookup:
     """Read-only lookup table of pre-extracted multi-scale image features.
@@ -460,3 +484,5 @@ class VisualFeatureLookup:
 
     def __contains__(self, key: tuple[str, str]) -> bool:
         return key in self._table
+
+
