@@ -42,8 +42,8 @@ src/
 ├── models/
 │   └── supaeeg.py            # SUPAEEG, MultiScaleEncoder, ChannelAttention
 └── trainer/
-    ├── loss.py               # info_nce_loss, sigreg_loss, l1_sparsity_loss, compute_loss, batch_hard_triplet_loss
-    └── metrics.py            # retrieve_all, retrieve_topk, evaluate_semantic_embeddings
+    ├── loss.py               # info_nce_loss, sigreg_loss, l1_sparsity_loss, compute_loss
+    └── metrics.py            # retrieve_all, retrieve_topk
 train.py                      # Typer CLI entrypoint
 data/
 ├── things_eeg/
@@ -184,7 +184,7 @@ flag with its default value.
 | EEG tokeniser | `src/encoders/eegnet_encoder.py` | Temporal → depthwise → separable conv → token sequence |
 | Visual targets | `src/encoders/visual_encoder.py` | Frozen CLIP/I-JEPA encoder + `VisualFeatureLookup` |
 | Full model | `src/models/supaeeg.py` | `SUPAEEG`, `MultiScaleEncoder`, `ChannelAttention` |
-| Loss functions | `src/trainer/loss.py` | `compute_loss`, `info_nce_loss`, `sigreg_loss`, `l1_sparsity_loss`, `batch_hard_triplet_loss` |
+| Loss functions | `src/trainer/loss.py` | `compute_loss`, `info_nce_loss`, `sigreg_loss`, `l1_sparsity_loss` |
 | Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
 
 ## Dataset Explorer
