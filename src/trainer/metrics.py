@@ -38,13 +38,13 @@ def retrieve_all(
 ) -> tuple[int, int, int]:
     """Paper-style zero-shot EEG-to-image retrieval evaluation (SAMGA protocol).
 
-    Each row i of eeg_features is an EEG concept embedding; the corresponding row i
-    of image_features is that concept's image embedding (e.g., from CLIP). The correct
-    retrieval for query i is always column i — the diagonal-match convention.
+    Each row i of eeg_features is an EEG concept embedding (mean over test trials,
+    ℓ2-normalised); the corresponding row i of image_features is that concept's CLIP
+    image embedding. The correct retrieval for query i is always column i —
+    the diagonal-match convention.
 
-    Both arrays must be ℓ2-normalised and share the same concept ordering.
-    This is a forward-looking API for when image/CLIP embeddings become available;
-    our current eval loop uses _label_retrieval_counts (prototype/class-based).
+    Used by ``utilities.evaluate`` for SUPAEEG evaluation against the pre-extracted
+    CLIP feature gallery.
 
     Args:
         eeg_features:   (N, D) ℓ2-normalised EEG embeddings, one per concept.
