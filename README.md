@@ -97,19 +97,19 @@ Manual sources:
 
 ```bash
 # All subjects (default)
-python src/train.py
+python train.py
 
 # Single subject
-python src/train.py subject=1
+python train.py subject=1
 
 # Override hyperparameters
-python src/train.py model.epochs=50 model.optimizer.lr=1e-4 model.batch_size=128
+python train.py model.epochs=50 model.optimizer.lr=1e-4 model.batch_size=128
 
 # Multi-run over several subjects
-python src/train.py --multirun subject=1,2,3,4,5
+python train.py --multirun subject=1,2,3,4,5
 
 # Force CPU
-DEVICE=cpu python src/train.py
+DEVICE=cpu python train.py
 ```
 
 Outputs are written to `outputs/supaeeg/<timestamp>/`. The best checkpoint
