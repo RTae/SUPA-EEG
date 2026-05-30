@@ -14,4 +14,4 @@ data/things_eeg
 
 *.pt
 *.log
-.hydra/*
+outputs/*
