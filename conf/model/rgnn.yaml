@@ -1,7 +1,0 @@
-name: rgnn
-type: deep
-feature_type: freq
-epochs: 1000
-optimizer:
-  type: adam
-  lr: 0.001

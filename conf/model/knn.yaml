@@ -1,5 +1,0 @@
-name: knn
-type: simple
-feature_type: freq
-params:
-  n_neighbors: 5

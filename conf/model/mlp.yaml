@@ -1,9 +1,0 @@
-name: mlp
-type: deep
-feature_type: freq
-epochs: 1000
-optimizer:
-  type: sgd
-  lr: 0.0001
-  weight_decay: 0.0001
-  momentum: 0.9
