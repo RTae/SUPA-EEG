@@ -1,31 +1,6 @@
-"""SUPAEEG training script — intra-subject and inter-subject (LOSO) protocols.
-
-Run from the project root::
-
-    # Intra-subject: train/test on subject 1 only
-    python src/train.py --subject 1
-
-    # Intra-subject: all 10 subjects sequentially
-    python src/train.py --subject -1
-
-    # Inter-subject: LOSO across all 10 subjects
-    python src/train.py --protocol inter
-
-    # CPU training
-    python src/train.py --device cpu
-
-The script:
-  1. Ensures the CLIP visual feature bank is available on disk.
-  2. Dispatches to the intra- or inter-subject protocol runner.
-  3. Trains SUPAEEG with InfoNCE + Gaussian regulariser + L1 sparsity.
-  4. Evaluates every ``eval_every`` epochs (Top-1 / Top-5 zero-shot retrieval).
-  5. Saves per-subject/per-fold checkpoints and logs a results table.
-"""
-
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -33,13 +8,6 @@ import torch
 import typer
 from loguru import logger
 from torch.utils.data import ConcatDataset, DataLoader
-
-# ---------------------------------------------------------------------------
-# Ensure the project root is on sys.path so all src.* imports resolve.
-# ---------------------------------------------------------------------------
-_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
 
 from src.dataset import ThingsEEGDataset
 from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup, validate_features
@@ -58,9 +26,7 @@ app = typer.Typer()
 
 # ---------------------------------------------------------------------------
 # Collate function
-# ---------------------------------------------------------------------------
-
-
+# --------------------------------------------------------------------------
 def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
     """Custom collate for ThingsEEGDataset batches.
 
