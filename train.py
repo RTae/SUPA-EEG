@@ -417,9 +417,16 @@ def train(
         f"epochs={cfg.epochs} batch_size={cfg.batch_size} lr={cfg.lr} "
     )
 
-    _device = torch.device(
-        cfg.device if torch.cuda.is_available() or cfg.device == "cpu" else "cpu"
-    )
+    if cfg.device == "cuda" and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available; falling back to CPU.")
+        _device = torch.device("cpu")
+    elif cfg.device == "mps" and not (
+        hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    ):
+        logger.warning("MPS requested but not available; falling back to CPU.")
+        _device = torch.device("cpu")
+    else:
+        _device = torch.device(cfg.device)
     logger.info(f"Device: {_device}")
 
     # Load the CLIP feature bank once — shared across all subject folds
