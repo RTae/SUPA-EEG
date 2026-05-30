@@ -56,11 +56,7 @@ import torch
 from loguru import logger
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-
-# Allow running from the project root without installing the package.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from src.model.visual_encoder import VisualEncoder  # noqa: E402
+from src.encoders.visual_encoder import VisualEncoder
 
 
 # ---------------------------------------------------------------------------
