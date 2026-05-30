@@ -1,8 +1,7 @@
-# SUPAEEG — EEG Visual Decoding
+# SUPAEEG — Scale-Unified Parieto-occipital Architecture
 
 Zero-shot visual decoding from EEG using the [THINGS-EEG2](https://osf.io/anp5v/) dataset.
-SUPAEEG aligns multi-scale EEG embeddings to frozen CLIP features via contrastive learning —
-no image encoder is needed at inference.
+SUPAEEG aligns multi-scale EEG embeddings to frozen CLIP features via contrastive learning.
 
 ## How it works
 
