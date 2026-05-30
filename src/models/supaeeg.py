@@ -1,4 +1,4 @@
-"""SUPAEEG: Scale-conditioned Unified Predictive Alignment for EEG.
+"""SUPAEEG: Scale-Unified Parieto-occipital Architecture
 
 Full model definition, loss functions, and supporting classes.
 

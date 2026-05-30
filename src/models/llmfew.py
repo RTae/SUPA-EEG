@@ -12,14 +12,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm
 
-# Register Ascend NPU so `.to("npu")` works when this module is imported
-# in isolation (e.g. inside a notebook or an ad-hoc script).
-try:  # pragma: no cover - environment-dependent
-    import torch_npu  # noqa: F401
-except ImportError:
-    pass
-
-
 # -----------------------------------------------------------------------------
 # Causal-convolution building blocks
 # -----------------------------------------------------------------------------
