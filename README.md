@@ -39,8 +39,11 @@ src/
 ├── encoders/
 │   ├── eegnet_encoder.py     # EEGNet spatiotemporal tokeniser  (B,17,100) → (B,N_t,256)
 │   └── visual_encoder.py     # Frozen CLIP/I-JEPA encoder + VisualFeatureLookup
-└── models/
-    └── supaeeg.py            # SUPAEEG, MultiScaleEncoder, ChannelAttention, losses
+├── models/
+│   └── supaeeg.py            # SUPAEEG, MultiScaleEncoder, ChannelAttention
+└── trainer/
+    ├── loss.py               # info_nce_loss, sigreg_loss, l1_sparsity_loss, compute_loss, batch_hard_triplet_loss
+    └── metrics.py            # retrieve_all, retrieve_topk, evaluate_semantic_embeddings
 train.py                      # Typer CLI entrypoint
 data/
 ├── things_eeg/
@@ -91,7 +94,7 @@ Manual sources:
 | Test images | [OSF — y63gw/znu7b](https://osf.io/y63gw/files/znu7b) |
 | CLIP features | [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/f/7c0d0012439b49c5a512/?dl=1) |
 
-> If `visual_features_clip.pt` is absent, `src/train.py` will extract it
+> If `visual_features_clip.pt` is absent, `train.py` will extract it
 > automatically using the frozen CLIP encoder before training begins.
 
 ## Training
@@ -180,7 +183,8 @@ flag with its default value.
 | Hyperparameter reference | `conf/model/supaeeg.yaml` | YAML mirror of all defaults |
 | EEG tokeniser | `src/encoders/eegnet_encoder.py` | Temporal → depthwise → separable conv → token sequence |
 | Visual targets | `src/encoders/visual_encoder.py` | Frozen CLIP/I-JEPA encoder + `VisualFeatureLookup` |
-| Full model | `src/models/supaeeg.py` | `SUPAEEG`, `MultiScaleEncoder`, `ChannelAttention`, loss functions |
+| Full model | `src/models/supaeeg.py` | `SUPAEEG`, `MultiScaleEncoder`, `ChannelAttention` |
+| Loss functions | `src/trainer/loss.py` | `compute_loss`, `info_nce_loss`, `sigreg_loss`, `l1_sparsity_loss`, `batch_hard_triplet_loss` |
 | Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
 
 ## Dataset Explorer

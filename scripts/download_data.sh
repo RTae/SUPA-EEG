@@ -33,7 +33,7 @@ https://cloud.tsinghua.edu.cn/f/c67e4ace9fbd46618717/?dl=1
   out=train_images.zip
 https://cloud.tsinghua.edu.cn/f/4b56fa976f5e4a70b249/?dl=1
   out=test_images.zip
-https://cloud.tsinghua.edu.cn/f/153e36193f9f473cb449/?dl=1
+https://cloud.tsinghua.edu.cn/f/bb5a66919a524bb6832d/?dl=1
   out=image_metadata.npy
 EOF
 
