@@ -4,9 +4,10 @@ import os
 from pathlib import Path
 from typing import Any
 
+import hydra
 import torch
-import typer
 from loguru import logger
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import ConcatDataset, DataLoader
 
 from src.dataset import ThingsEEGDataset
@@ -22,8 +23,6 @@ from src.utilities import (
     save_checkpoint,
     train_one_epoch,
 )
-
-app = typer.Typer()
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +136,45 @@ def ensure_visual_features(
     lookup = VisualFeatureLookup(path)
     validate_features(lookup)
     return lookup
+
+
+# ---------------------------------------------------------------------------
+# Config conversion
+# ---------------------------------------------------------------------------
+
+def _cfg_to_config(cfg: DictConfig) -> Config:
+    """Convert a Hydra DictConfig into the Config dataclass used by the runners."""
+    encoder_cfg = EncoderConfig(
+        type=cfg.encoder.type,
+        model_name=cfg.encoder.model_name,
+        layer_indices=OmegaConf.to_container(cfg.encoder.layer_indices, resolve=True),
+    )
+    return Config(
+        protocol=cfg.protocol,
+        subject=cfg.subject,
+        all_subjects=list(OmegaConf.to_container(cfg.all_subjects, resolve=True)),
+        dataset_dir=cfg.dataset_dir,
+        feature_path=cfg.feature_path,
+        device=cfg.device,
+        encoder=encoder_cfg,
+        epochs=cfg.epochs,
+        batch_size=cfg.batch_size,
+        eval_every=cfg.eval_every,
+        lambda_reg=cfg.lambda_reg,
+        beta_l1=cfg.beta_l1,
+        tau=cfg.tau,
+        d_model=cfg.d_model,
+        nhead=cfg.nhead,
+        num_layers=cfg.num_layers,
+        dim_feedforward=cfg.dim_feedforward,
+        dropout=cfg.dropout,
+        lr=cfg.lr,
+        weight_decay=cfg.weight_decay,
+        warmup_epochs=cfg.warmup_epochs,
+        grad_clip=cfg.grad_clip,
+        checkpoint_dir=cfg.checkpoint_dir,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Protocol runners
@@ -345,111 +383,46 @@ def run_inter_subject(
 # ---------------------------------------------------------------------------
 
 
-@app.command()
-def train(
-    protocol: str = typer.Option(
-        "intra", help="Training protocol: 'intra' (per-subject) or 'inter' (LOSO)"
-    ),
-    dataset_dir: str = typer.Option("data/things_eeg", help="THINGS-EEG2 root directory"),
-    subject: int = typer.Option(
-        1, help="Subject index for intra protocol (1–10); -1 = all subjects"
-    ),
-    feature_path: str = typer.Option(
-        "data/vision_encoder/clip/visual_features_clip.pt",
-        help="Path to the CLIP visual feature bank",
-    ),
-    device: str = typer.Option(
-        os.environ.get("DEVICE", "cuda"),
-        help="Compute device (overridden by DEVICE env var)",
-    ),
-    # ---- Encoder ----------------------------------------------------------
-    encoder_type: str = typer.Option(
-        "clip", help="Visual encoder type: 'clip' or 'ijepa'"
-    ),
-    encoder_model_name: str = typer.Option(
-        "openai/clip-vit-base-patch32", help="HuggingFace model identifier for the visual encoder"
-    ),
-    encoder_s1_layer: int = typer.Option(3, help="Transformer layer index for S1 (early) features"),
-    encoder_s2_layer: int = typer.Option(7, help="Transformer layer index for S2 (mid) features"),
-    encoder_s3_layer: int = typer.Option(11, help="Transformer layer index for S3 (late) features"),
-    # ---- Training ---------------------------------------------------------
-    epochs: int = typer.Option(100, help="Training epochs"),
-    batch_size: int = typer.Option(256, help="Batch size"),
-    eval_every: int = typer.Option(5, help="Evaluate every N epochs"),
-    lambda_reg: float = typer.Option(0.1, help="Gaussian regulariser weight"),
-    beta_l1: float = typer.Option(0.01, help="Channel-attention L1 sparsity weight"),
-    tau: float = typer.Option(0.07, help="InfoNCE temperature"),
-    d_model: int = typer.Option(256, help="Token embedding dimension"),
-    nhead: int = typer.Option(8, help="Transformer attention heads"),
-    num_layers: int = typer.Option(4, help="Transformer depth"),
-    dim_feedforward: int = typer.Option(512, help="FFN hidden size"),
-    dropout: float = typer.Option(0.1, help="Dropout"),
-    lr: float = typer.Option(3e-4, help="Learning rate"),
-    weight_decay: float = typer.Option(1e-4, help="Weight decay"),
-    warmup_epochs: int = typer.Option(10, help="Linear LR warmup epochs before cosine decay"),
-    grad_clip: float = typer.Option(1.0, help="Max gradient norm for clipping (0 = disabled)"),
-    checkpoint_dir: str = typer.Option(
-        "outputs/supaeeg", help="Directory for saved checkpoints"
-    ),
-) -> None:
-    """Train SUPAEEG on THINGS-EEG2 using the intra- or inter-subject protocol."""
-    if protocol not in ("intra", "inter"):
-        raise typer.BadParameter(f"protocol must be 'intra' or 'inter', got {protocol!r}")
+# ---------------------------------------------------------------------------
+# Hydra entry point
+# ---------------------------------------------------------------------------
 
-    encoder_cfg = EncoderConfig(
-        type=encoder_type,
-        model_name=encoder_model_name,
-        layer_indices={"S1": encoder_s1_layer, "S2": encoder_s2_layer, "S3": encoder_s3_layer},
-    )
-    cfg = Config(
-        protocol=protocol,
-        subject=subject,
-        dataset_dir=dataset_dir,
-        feature_path=feature_path,
-        device=device,
-        encoder=encoder_cfg,
-        epochs=epochs,
-        batch_size=batch_size,
-        eval_every=eval_every,
-        lambda_reg=lambda_reg,
-        beta_l1=beta_l1,
-        tau=tau,
-        d_model=d_model,
-        nhead=nhead,
-        num_layers=num_layers,
-        dim_feedforward=dim_feedforward,
-        dropout=dropout,
-        lr=lr,
-        weight_decay=weight_decay,
-        warmup_epochs=warmup_epochs,
-        grad_clip=grad_clip,
-        checkpoint_dir=checkpoint_dir,
-    )
-    logger.info(
-        f"Protocol={cfg.protocol!r} subject={cfg.subject} device={cfg.device!r} "
-        f"epochs={cfg.epochs} batch_size={cfg.batch_size} lr={cfg.lr} "
-    )
 
-    if cfg.device == "cuda" and not torch.cuda.is_available():
+@hydra.main(config_path="conf", config_name="config", version_base=None)
+def train(cfg: DictConfig) -> None:
+    """Train SUPAEEG on THINGS-EEG2 using the intra- or inter-subject protocol.
+
+    All options are controlled via conf/config.yaml or CLI overrides, e.g.::
+
+        python train.py subject=2 epochs=500
+        python train.py protocol=inter lr=1e-4
+    """
+    config = _cfg_to_config(cfg)
+
+    if config.protocol not in ("intra", "inter"):
+        raise ValueError(f"protocol must be 'intra' or 'inter', got {config.protocol!r}")
+
+    logger.info("\n" + OmegaConf.to_yaml(cfg))
+
+    if config.device == "cuda" and not torch.cuda.is_available():
         logger.warning("CUDA requested but not available; falling back to CPU.")
         _device = torch.device("cpu")
-    elif cfg.device == "mps" and not (
+    elif config.device == "mps" and not (
         hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
     ):
         logger.warning("MPS requested but not available; falling back to CPU.")
         _device = torch.device("cpu")
     else:
-        _device = torch.device(cfg.device)
+        _device = torch.device(config.device)
     logger.info(f"Device: {_device}")
 
-    # Load the CLIP feature bank once — shared across all subject folds
-    feature_lookup = ensure_visual_features(cfg.feature_path, cfg.encoder, cfg.dataset_dir)
+    feature_lookup = ensure_visual_features(config.feature_path, config.encoder, config.dataset_dir)
 
-    if cfg.protocol == "intra":
-        run_intra_subject(cfg, feature_lookup, _device)
+    if config.protocol == "intra":
+        run_intra_subject(config, feature_lookup, _device)
     else:
-        run_inter_subject(cfg, feature_lookup, _device)
+        run_inter_subject(config, feature_lookup, _device)
 
 
 if __name__ == "__main__":
-    app()
+    train()
