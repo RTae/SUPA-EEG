@@ -182,19 +182,29 @@ def train_one_epoch(
     model: Any,
     train_loader: DataLoader,
     optimizer: AdamW,
+    feature_lookup: Any,
     device: torch.device,
+    lambda_reg: float = 0.1,
+    beta_l1: float = 0.01,
+    tau: float = 0.07,
 ) -> float:
     """Run a single training epoch.
 
     Args:
-        model:        SUPAEEG model (will be set to train mode).
-        train_loader: DataLoader for the training split.
-        optimizer:    AdamW optimiser.
-        device:       Compute device.
+        model:          SUPAEEG model (will be set to train mode).
+        train_loader:   DataLoader for the training split.
+        optimizer:      AdamW optimiser.
+        feature_lookup: VisualFeatureLookup used to retrieve CLIP targets.
+        device:         Compute device.
+        lambda_reg:     Gaussian regulariser weight.
+        beta_l1:        Channel-attention L1 sparsity weight.
+        tau:            InfoNCE temperature.
 
     Returns:
         Mean total loss over all batches in the epoch.
     """
+    from src.trainer.loss import compute_loss  # local import avoids circular deps
+
     model.train()
     total_loss = 0.0
     for batch in train_loader:
@@ -202,8 +212,17 @@ def train_one_epoch(
         image_concepts: list[str] = batch["image_concepts"]
         image_files: list[str] = batch["image_files"]
 
-        _z1, _z2, _z3, loss, components = model(
-            eeg, image_concepts, image_files, return_loss=True
+        z1, z2, z3 = model(eeg)
+
+        S1, S2, S3 = feature_lookup.retrieve_batch(image_concepts, image_files)
+        S1, S2, S3 = S1.to(device), S2.to(device), S3.to(device)
+
+        loss, components = compute_loss(
+            z1, z2, z3, S1, S2, S3,
+            model.scale_encoder,
+            lambda_reg=lambda_reg,
+            beta_l1=beta_l1,
+            tau=tau,
         )
         optimizer.zero_grad()
         loss.backward()
@@ -346,16 +365,14 @@ def log_results_table(
 
 
 def make_model(
-    feature_lookup: Any,
     config: Config,
     device: torch.device,
 ) -> Any:
     """Instantiate a fresh SUPAEEG model from ``config``.
 
     Args:
-        feature_lookup: Pre-loaded visual feature bank.
-        config:         Runtime configuration.
-        device:         Compute device.
+        config: Runtime configuration.
+        device: Compute device.
 
     Returns:
         Initialised SUPAEEG model placed on ``device``.
@@ -363,13 +380,11 @@ def make_model(
     from src.models.supaeeg import SUPAEEG  # local import avoids circular deps
 
     return SUPAEEG(
-        feature_lookup=feature_lookup,
         d_model=config.d_model,
         nhead=config.nhead,
         num_layers=config.num_layers,
         dim_feedforward=config.dim_feedforward,
         dropout=config.dropout,
-        device=device,
     ).to(device)
 
 

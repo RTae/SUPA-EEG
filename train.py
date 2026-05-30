@@ -216,13 +216,16 @@ def run_intra_subject(
             num_workers=0,
         )
 
-        model = make_model(feature_lookup, config, device)
+        model = make_model(config, device)
         optimizer = make_optimizer(model, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
         for epoch in range(1, config.epochs + 1):
-            mean_loss = train_one_epoch(model, train_loader, optimizer, device)
+            mean_loss = train_one_epoch(
+                model, train_loader, optimizer, feature_lookup, device,
+                lambda_reg=config.lambda_reg, beta_l1=config.beta_l1, tau=config.tau,
+            )
             logger.info(
                 f"Sub{subject_id:02d} | epoch {epoch}/{config.epochs} | loss={mean_loss:.4f}"
             )
@@ -310,13 +313,16 @@ def run_inter_subject(
             num_workers=0,
         )
 
-        model = make_model(feature_lookup, config, device)
+        model = make_model(config, device)
         optimizer = make_optimizer(model, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
         for epoch in range(1, config.epochs + 1):
-            mean_loss = train_one_epoch(model, train_loader, optimizer, device)
+            mean_loss = train_one_epoch(
+                model, train_loader, optimizer, feature_lookup, device,
+                lambda_reg=config.lambda_reg, beta_l1=config.beta_l1, tau=config.tau,
+            )
             logger.info(
                 f"LOSO test=Sub{test_subject:02d} | epoch {epoch}/{config.epochs} | "
                 f"loss={mean_loss:.4f}"
