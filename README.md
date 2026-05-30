@@ -33,14 +33,15 @@ S3 late). At inference, `embed()` concatenates and ℓ2-normalises [z1, z2, z3] 
 ```text
 conf/
 └── model/
-    └── supaeeg.yaml          # all hyperparameters
+    └── supaeeg.yaml          # hyperparameter reference
 src/
-├── train.py                  # Hydra training entrypoint
+├── utilities.py              # Config / EncoderConfig dataclasses + training helpers
 ├── encoders/
 │   ├── eegnet_encoder.py     # EEGNet spatiotemporal tokeniser  (B,17,100) → (B,N_t,256)
-│   └── visual_encoder.py     # Frozen CLIP encoder + VisualFeatureLookup
+│   └── visual_encoder.py     # Frozen CLIP/I-JEPA encoder + VisualFeatureLookup
 └── models/
     └── supaeeg.py            # SUPAEEG, MultiScaleEncoder, ChannelAttention, losses
+train.py                      # Typer CLI entrypoint
 data/
 ├── things_eeg/
 │   ├── sub-01/ … sub-10/     # preprocessed_eeg_training.npy / _test.npy
@@ -96,54 +97,89 @@ Manual sources:
 ## Training
 
 ```bash
-# All subjects (default)
-python train.py
+# Single subject — intra-subject protocol (default)
+python train.py --subject 1
 
-# Single subject
-python train.py subject=1
+# All subjects, intra protocol
+python train.py --subject -1
+
+# Leave-one-subject-out (LOSO) inter-subject protocol
+python train.py --protocol inter
 
 # Override hyperparameters
-python train.py model.epochs=50 model.optimizer.lr=1e-4 model.batch_size=128
+python train.py --epochs 50 --lr 1e-4 --batch-size 128
 
-# Multi-run over several subjects
-python train.py --multirun subject=1,2,3,4,5
+# Custom encoder depth taps
+python train.py --encoder-s1-layer 2 --encoder-s2-layer 6 --encoder-s3-layer 10
 
 # Force CPU
 DEVICE=cpu python train.py
+
+# Show all options
+python train.py --help
 ```
 
-Outputs are written to `outputs/supaeeg/<timestamp>/`. The best checkpoint
+Outputs (checkpoints, logs) are written to `outputs/supaeeg/`. The best checkpoint
 (by Top-1 retrieval accuracy) is saved as `supaeeg_best.pt` in that directory.
 
-## Configuration (`conf/model/supaeeg.yaml`)
+## Configuration
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `dataset_dir` | THINGS-EEG2 root | `data/things_eeg` |
-| `feature_path` | CLIP feature bank | `data/vision_encoder/clip/visual_features_clip.pt` |
-| `device` | Compute device (`DEVICE` env var overrides) | `cuda` |
-| `epochs` | Training epochs | `100` |
-| `batch_size` | Batch size | `256` |
-| `eval_every` | Evaluate every N epochs | `5` |
-| `lambda_reg` | Gaussian regulariser weight | `0.1` |
-| `beta_l1` | Channel-attention L1 sparsity weight | `0.01` |
-| `tau` | InfoNCE temperature | `0.07` |
-| `d_model` | Token embedding dim | `256` |
-| `nhead` | Transformer attention heads | `8` |
-| `num_layers` | Transformer depth | `4` |
-| `dim_feedforward` | FFN hidden size | `512` |
-| `dropout` | Dropout | `0.1` |
-| `optimizer.lr` | Learning rate | `3e-4` |
-| `optimizer.weight_decay` | Weight decay | `1e-4` |
+All options can be passed as CLI flags to `train.py`. The table below lists every
+flag with its default value.
+
+### Data & device
+
+| Flag | Description | Default |
+|------|-------------|-------|
+| `--dataset-dir` | THINGS-EEG2 root | `data/things_eeg` |
+| `--feature-path` | Visual feature bank `.pt` file | `data/vision_encoder/clip/visual_features_clip.pt` |
+| `--device` | Compute device (`DEVICE` env var overrides) | `cuda` |
+
+### Protocol
+
+| Flag | Description | Default |
+|------|-------------|-------|
+| `--protocol` | `intra` (per-subject) or `inter` (LOSO) | `intra` |
+| `--subject` | Subject index 1–10; `-1` = all subjects (intra only) | `1` |
+
+### Visual encoder
+
+| Flag | Description | Default |
+|------|-------------|-------|
+| `--encoder-type` | `clip` or `ijepa` | `clip` |
+| `--encoder-model-name` | HuggingFace model identifier | `openai/clip-vit-base-patch32` |
+| `--encoder-s1-layer` | Transformer layer index for S1 (early features) | `3` |
+| `--encoder-s2-layer` | Transformer layer index for S2 (mid features) | `7` |
+| `--encoder-s3-layer` | Transformer layer index for S3 (late features) | `11` |
+
+### Training
+
+| Flag | Description | Default |
+|------|-------------|-------|
+| `--epochs` | Training epochs | `100` |
+| `--batch-size` | Batch size | `256` |
+| `--eval-every` | Evaluate every N epochs | `5` |
+| `--lambda-reg` | Gaussian regulariser weight | `0.1` |
+| `--beta-l1` | Channel-attention L1 sparsity weight | `0.01` |
+| `--tau` | InfoNCE temperature | `0.07` |
+| `--d-model` | Token embedding dim | `256` |
+| `--nhead` | Transformer attention heads | `8` |
+| `--num-layers` | Transformer depth | `4` |
+| `--dim-feedforward` | FFN hidden size | `512` |
+| `--dropout` | Dropout | `0.1` |
+| `--lr` | Learning rate | `3e-4` |
+| `--weight-decay` | Weight decay | `1e-4` |
+| `--checkpoint-dir` | Checkpoint output directory | `outputs/supaeeg` |
 
 ## Implementation References
 
 | Component | File | Role |
 |-----------|------|------|
-| Config | `conf/model/supaeeg.yaml` | All hyperparameters |
-| Training | `src/train.py` | Hydra entry, data loading, training loop, evaluation |
+| CLI entry | `train.py` | Typer entry, protocol dispatch, feature extraction |
+| Config dataclasses | `src/utilities.py` | `Config`, `EncoderConfig`; training helpers |
+| Hyperparameter reference | `conf/model/supaeeg.yaml` | YAML mirror of all defaults |
 | EEG tokeniser | `src/encoders/eegnet_encoder.py` | Temporal → depthwise → separable conv → token sequence |
-| Visual targets | `src/encoders/visual_encoder.py` | Frozen CLIP encoder + `VisualFeatureLookup` |
+| Visual targets | `src/encoders/visual_encoder.py` | Frozen CLIP/I-JEPA encoder + `VisualFeatureLookup` |
 | Full model | `src/models/supaeeg.py` | `SUPAEEG`, `MultiScaleEncoder`, `ChannelAttention`, loss functions |
 | Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
 
