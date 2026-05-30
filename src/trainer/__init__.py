@@ -1,8 +1,6 @@
-from .metrics import retrieve_all, retrieve_topk, topk_correct
+from .metrics import retrieve_all, retrieve_topk
 
 __all__ = [
-    "batch_hard_triplet_loss",
     "retrieve_all",
     "retrieve_topk",
-    "topk_correct",
 ]

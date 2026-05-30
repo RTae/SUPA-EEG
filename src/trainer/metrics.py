@@ -1,16 +1,5 @@
-"""Evaluation helpers."""
-
 import numpy as np
-import torch
-import torch.nn.functional as F
 from sklearn.metrics.pairwise import cosine_similarity as sk_cosine_similarity
-from torch.utils.data import DataLoader
-
-def topk_correct(logits: torch.Tensor, labels: torch.Tensor, k: int) -> int:
-    """Return the count of samples whose true label is among the top-k predictions."""
-    k = min(k, logits.shape[-1])
-    return int(logits.topk(k, dim=1).indices.eq(labels.unsqueeze(1)).any(dim=1).sum().item())
-
 
 def retrieve_topk(similarity_matrix: np.ndarray, k: int) -> tuple[int, int]:
     """Count top-k and top-1 correct retrievals using the SAMGA paper's diagonal convention.
