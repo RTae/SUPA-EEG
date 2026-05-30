@@ -7,21 +7,39 @@ fi
 mkdir -p data/things_eeg
 mkdir -p data/vision_encoder/clip
 
+# Write input file for aria2c
+cat > /tmp/things_eeg.txt << 'EOF'
+https://cloud.tsinghua.edu.cn/f/3f9f369660834eb49a4d/?dl=1
+  out=sub-01.zip
+https://cloud.tsinghua.edu.cn/f/7ed84ca62fa54b439e18/?dl=1
+  out=sub-02.zip
+https://cloud.tsinghua.edu.cn/f/f880d1eb0f964ad99c98/?dl=1
+  out=sub-03.zip
+https://cloud.tsinghua.edu.cn/f/51bf91e55c5f4efb8609/?dl=1
+  out=sub-04.zip
+https://cloud.tsinghua.edu.cn/f/171a344be8fb4f14a6e9/?dl=1
+  out=sub-05.zip
+https://cloud.tsinghua.edu.cn/f/092caa007a9845d9bc38/?dl=1
+  out=sub-06.zip
+https://cloud.tsinghua.edu.cn/f/9f052176ac0f4f25a885/?dl=1
+  out=sub-07.zip
+https://cloud.tsinghua.edu.cn/f/4c9ff435f1904e209bed/?dl=1
+  out=sub-08.zip
+https://cloud.tsinghua.edu.cn/f/70bea1e5fdb4401e930f/?dl=1
+  out=sub-09.zip
+https://cloud.tsinghua.edu.cn/f/ea778895483749f488d1/?dl=1
+  out=sub-10.zip
+https://cloud.tsinghua.edu.cn/f/c67e4ace9fbd46618717/?dl=1
+  out=train_images.zip
+https://cloud.tsinghua.edu.cn/f/4b56fa976f5e4a70b249/?dl=1
+  out=test_images.zip
+https://cloud.tsinghua.edu.cn/f/153e36193f9f473cb449/?dl=1
+  out=image_metadata.npy
+EOF
+
 aria2c --dir=data/things_eeg \
-  --max-concurrent-downloads=4 --split=4 --min-split-size=10M \
-  "https://cloud.tsinghua.edu.cn/f/3f9f369660834eb49a4d/?dl=1" -o sub-01.zip \
-  "https://cloud.tsinghua.edu.cn/f/7ed84ca62fa54b439e18/?dl=1" -o sub-02.zip \
-  "https://cloud.tsinghua.edu.cn/f/f880d1eb0f964ad99c98/?dl=1" -o sub-03.zip \
-  "https://cloud.tsinghua.edu.cn/f/51bf91e55c5f4efb8609/?dl=1" -o sub-04.zip \
-  "https://cloud.tsinghua.edu.cn/f/171a344be8fb4f14a6e9/?dl=1" -o sub-05.zip \
-  "https://cloud.tsinghua.edu.cn/f/092caa007a9845d9bc38/?dl=1" -o sub-06.zip \
-  "https://cloud.tsinghua.edu.cn/f/9f052176ac0f4f25a885/?dl=1" -o sub-07.zip \
-  "https://cloud.tsinghua.edu.cn/f/4c9ff435f1904e209bed/?dl=1" -o sub-08.zip \
-  "https://cloud.tsinghua.edu.cn/f/70bea1e5fdb4401e930f/?dl=1" -o sub-09.zip \
-  "https://cloud.tsinghua.edu.cn/f/ea778895483749f488d1/?dl=1" -o sub-10.zip \
-  "https://cloud.tsinghua.edu.cn/f/c67e4ace9fbd46618717/?dl=1" -o train_images.zip \
-  "https://cloud.tsinghua.edu.cn/f/4b56fa976f5e4a70b249/?dl=1" -o test_images.zip \
-  "https://cloud.tsinghua.edu.cn/f/153e36193f9f473cb449/?dl=1" -o image_metadata.npy
+  --input-file=/tmp/things_eeg.txt \
+  --max-concurrent-downloads=4 --split=4 --min-split-size=10M
 
 aria2c --dir=data/vision_encoder/clip \
   --max-concurrent-downloads=4 --split=4 --min-split-size=10M \
