@@ -107,42 +107,19 @@ def ensure_visual_features(
         layer_indices=encoder_cfg.layer_indices,
     )
 
+    from scripts.extract_visual_features import extract_features  # local import — only needed during extraction
+
     feature_dict: dict[tuple[str, str], dict[str, torch.Tensor]] = {}
 
     image_base = Path(dataset_dir)
     splits = [image_base / "training_images", image_base / "test_images"]
 
-    from PIL import Image  # local import — only needed during extraction
-
     for split_dir in splits:
         if not split_dir.is_dir():
             logger.warning(f"Image directory not found, skipping: {split_dir}")
             continue
-
-        for concept_dir in sorted(split_dir.iterdir()):
-            if not concept_dir.is_dir():
-                continue
-            concept = concept_dir.name
-
-            for img_path in sorted(concept_dir.iterdir()):
-                if not img_path.is_file():
-                    continue
-
-                try:
-                    pil_image = Image.open(img_path).convert("RGB")
-                except Exception as exc:
-                    logger.warning(f"Could not open {img_path}: {exc}")
-                    continue
-
-                pixel_values = encoder.preprocess([pil_image])
-                features = encoder.forward(pixel_values)  # {"S1":…, "S2":…, "S3":…}
-
-                key = (concept, img_path.name)
-                feature_dict[key] = {
-                    "S1": features["S1"].squeeze(0),
-                    "S2": features["S2"].squeeze(0),
-                    "S3": features["S3"].squeeze(0),
-                }
+        split_features = extract_features(encoder=encoder, image_dir=split_dir)
+        feature_dict.update(split_features)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(
