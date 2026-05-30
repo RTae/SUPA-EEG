@@ -3,7 +3,6 @@
 These tests cover the three pure-numpy evaluation functions:
   - retrieve_topk        (paper-style: square N×N diagonal matching)
   - retrieve_all         (paper-style: wraps retrieve_topk with cosine similarity)
-  - _label_retrieval_counts  (our label/prototype-based rectangular retrieval)
 
 Torch is stubbed out so the tests run without a GPU runtime.
 """

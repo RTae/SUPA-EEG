@@ -3,42 +3,6 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-
-def batch_hard_triplet_loss(
-    embeddings: torch.Tensor,
-    labels: torch.Tensor,
-    margin: float = 0.3,
-) -> torch.Tensor:
-    """Online batch-hard triplet loss.
-
-    For each anchor, selects the hardest positive (same class, max distance) and
-    the hardest negative (different class, min distance), then computes the
-    margin-based triplet loss.
-
-    Args:
-        embeddings: ℓ2-normalised feature vectors, shape ``(N, D)``.
-        labels:     Integer class labels, shape ``(N,)``.
-        margin:     Triplet margin.
-
-    Returns:
-        Scalar loss tensor.
-    """
-    dot = torch.mm(embeddings, embeddings.t())
-    sq_norm = dot.diag()
-    distances = (sq_norm.unsqueeze(1) - 2.0 * dot + sq_norm.unsqueeze(0)).clamp(min=0.0).sqrt()
-
-    labels_equal = labels.unsqueeze(1).eq(labels.unsqueeze(0))
-    self_mask = torch.eye(labels.size(0), dtype=torch.bool, device=embeddings.device)
-
-    pos_mask = labels_equal & ~self_mask
-    hardest_pos = (distances * pos_mask.float()).max(dim=1).values
-
-    neg_mask = ~labels_equal
-    hardest_neg = (distances + (~neg_mask).float() * 1e6).min(dim=1).values
-
-    return F.relu(hardest_pos - hardest_neg + margin).mean()
-
-
 def info_nce_loss(zk: torch.Tensor, Sk: torch.Tensor, tau: float = 0.07) -> torch.Tensor:
     """Symmetric InfoNCE contrastive loss between EEG and visual embeddings.
 
