@@ -18,6 +18,7 @@ from src.utilities import (
     log_results_table,
     make_model,
     make_optimizer,
+    make_scheduler,
     save_checkpoint,
     train_one_epoch,
 )
@@ -182,6 +183,7 @@ def run_intra_subject(
             train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
+            drop_last=True,
             collate_fn=collate_fn,
             num_workers=0,
         )
@@ -195,6 +197,7 @@ def run_intra_subject(
 
         model = make_model(config, device)
         optimizer = make_optimizer(model, config)
+        scheduler = make_scheduler(optimizer, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
@@ -202,7 +205,9 @@ def run_intra_subject(
             mean_loss = train_one_epoch(
                 model, train_loader, optimizer, feature_lookup, device,
                 lambda_reg=config.lambda_reg, beta_l1=config.beta_l1, tau=config.tau,
+                grad_clip=config.grad_clip,
             )
+            scheduler.step()
             logger.info(
                 f"Sub{subject_id:02d} | epoch {epoch}/{config.epochs} | loss={mean_loss:.4f}"
             )
@@ -279,6 +284,7 @@ def run_inter_subject(
             train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
+            drop_last=True,
             collate_fn=collate_fn,
             num_workers=0,
         )
@@ -292,6 +298,7 @@ def run_inter_subject(
 
         model = make_model(config, device)
         optimizer = make_optimizer(model, config)
+        scheduler = make_scheduler(optimizer, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
@@ -299,7 +306,9 @@ def run_inter_subject(
             mean_loss = train_one_epoch(
                 model, train_loader, optimizer, feature_lookup, device,
                 lambda_reg=config.lambda_reg, beta_l1=config.beta_l1, tau=config.tau,
+                grad_clip=config.grad_clip,
             )
+            scheduler.step()
             logger.info(
                 f"LOSO test=Sub{test_subject:02d} | epoch {epoch}/{config.epochs} | "
                 f"loss={mean_loss:.4f}"
@@ -377,6 +386,8 @@ def train(
     dropout: float = typer.Option(0.1, help="Dropout"),
     lr: float = typer.Option(3e-4, help="Learning rate"),
     weight_decay: float = typer.Option(1e-4, help="Weight decay"),
+    warmup_epochs: int = typer.Option(10, help="Linear LR warmup epochs before cosine decay"),
+    grad_clip: float = typer.Option(1.0, help="Max gradient norm for clipping (0 = disabled)"),
     checkpoint_dir: str = typer.Option(
         "outputs/supaeeg", help="Directory for saved checkpoints"
     ),
@@ -410,6 +421,8 @@ def train(
         dropout=dropout,
         lr=lr,
         weight_decay=weight_decay,
+        warmup_epochs=warmup_epochs,
+        grad_clip=grad_clip,
         checkpoint_dir=checkpoint_dir,
     )
     logger.info(
