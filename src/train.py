@@ -1,35 +1,42 @@
-"""SUPAEEG training script.
+"""SUPAEEG training script (Hydra-configured).
 
 Run from the project root::
 
+    # Default config (conf/model/supaeeg.yaml)
     python src/train.py
 
-Or with a custom subject::
+    # Override any key on the CLI
+    python src/train.py subject=1 model.epochs=50
 
-    python src/train.py --subject 1
+    # Multi-run over several subjects
+    python src/train.py --multirun subject=1,2,3,4,5
+
+Hydra writes all outputs to::
+
+    outputs/supaeeg/<timestamp>/
 
 The script:
   1. Ensures the CLIP visual feature bank is available on disk.
   2. Builds ThingsEEGDataset train / test splits.
   3. Trains SUPAEEG with InfoNCE + Gaussian regulariser + L1 sparsity.
-  4. Evaluates every ``eval_every`` epochs using the THINGS-EEG retrieval
-     protocol (Top-1 / Top-5 zero-shot concept retrieval).
-  5. Saves the best checkpoint to ``checkpoints/supaeeg_best.pt``.
+  4. Evaluates every ``model.eval_every`` epochs using the THINGS-EEG
+     retrieval protocol (Top-1 / Top-5 zero-shot concept retrieval).
+  5. Saves the best checkpoint to the Hydra run directory.
 """
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
 from collections import defaultdict
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import hydra
 import torch
 import torch.nn.functional as F
 from loguru import logger
+from omegaconf import DictConfig, OmegaConf
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
@@ -44,42 +51,6 @@ from src.dataset import ThingsEEGDataset  # noqa: E402
 from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup  # noqa: E402
 from src.models.supaeeg import SUPAEEG  # noqa: E402
 from src.trainer.metrics import retrieve_all  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class Config:
-    """Training hyperparameters and path configuration."""
-
-    dataset_dir: str = "data/things_eeg"
-    feature_path: str = "data/vision_encoder/clip/visual_features_clip.pt"
-    checkpoint_dir: str = "checkpoints"
-
-    subject: int = -1
-
-    lr: float = 3e-4
-    weight_decay: float = 1e-4
-    batch_size: int = 256
-    epochs: int = 100
-    eval_every: int = 5
-
-    lambda_reg: float = 0.1
-    beta_l1: float = 0.01
-    tau: float = 0.07
-
-    d_model: int = 256
-    nhead: int = 8
-    num_layers: int = 4
-    dim_feedforward: int = 512
-    dropout: float = 0.1
-
-    device: str = field(
-        default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +90,7 @@ def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def ensure_visual_features(config: Config) -> VisualFeatureLookup:
+def ensure_visual_features(config: DictConfig) -> VisualFeatureLookup:
     """Load or extract the CLIP visual feature bank.
 
     Step 1 — If the feature file already exists, load and return it.
@@ -129,7 +100,8 @@ def ensure_visual_features(config: Config) -> VisualFeatureLookup:
               with correct S1/S2/S3 shapes.
 
     Args:
-        config: Training configuration.
+        config: Hydra DictConfig with at least ``model.feature_path`` and
+                ``model.device`` keys.
 
     Returns:
         Populated VisualFeatureLookup.
@@ -137,7 +109,7 @@ def ensure_visual_features(config: Config) -> VisualFeatureLookup:
     Raises:
         ValueError: If the loaded features fail shape validation.
     """
-    path = config.feature_path
+    path = config.model.feature_path
 
     if os.path.isfile(path):
         logger.info("Visual features found. Loading from disk...")
@@ -153,12 +125,12 @@ def ensure_visual_features(config: Config) -> VisualFeatureLookup:
     encoder = VisualEncoder(
         encoder_type="clip",
         model_name="openai/clip-vit-base-patch32",
-        device=config.device,
+        device=config.model.device,
     )
 
     feature_dict: dict[tuple[str, str], dict[str, torch.Tensor]] = {}
 
-    image_base = Path(config.dataset_dir)
+    image_base = Path(config.dataset_dir)  # top-level dataset_dir from conf/config.yaml
     splits = [image_base / "training_images", image_base / "test_images"]
 
     from PIL import Image  # local import — only needed during extraction
@@ -322,32 +294,42 @@ def _evaluate(
 # ---------------------------------------------------------------------------
 
 
-def train(config: Config) -> None:
-    """Main training entry point.
+@hydra.main(config_path="../conf", config_name="config", version_base=None)
+def train(cfg: DictConfig) -> None:
+    """Main training entry point, driven by Hydra configuration.
+
+    The active model config group (``conf/model/supaeeg.yaml`` by default) is
+    merged under the ``model`` key by Hydra before this function is called.
 
     Args:
-        config: Fully populated training configuration.
+        cfg: Merged Hydra config (``conf/config.yaml`` + ``conf/model/*.yaml``).
     """
-    device = torch.device(config.device)
+    logger.info("Config:\n" + OmegaConf.to_yaml(cfg))
+
+    device = torch.device(
+        cfg.model.device
+        if hasattr(cfg.model, "device")
+        else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
     logger.info(f"Device: {device}")
 
     # ------------------------------------------------------------------
     # 1. Visual feature bank
     # ------------------------------------------------------------------
-    feature_lookup = ensure_visual_features(config)
+    feature_lookup = ensure_visual_features(cfg)
 
     # ------------------------------------------------------------------
     # 2 & 3. Datasets
     # ------------------------------------------------------------------
     train_dataset = ThingsEEGDataset(
-        dataset_dir=config.dataset_dir,
+        dataset_dir=cfg.dataset_dir,
         data_type="train",
-        subject=config.subject,
+        subject=cfg.subject,
     )
     test_dataset = ThingsEEGDataset(
-        dataset_dir=config.dataset_dir,
+        dataset_dir=cfg.dataset_dir,
         data_type="test",
-        subject=config.subject,
+        subject=cfg.subject,
     )
 
     # ------------------------------------------------------------------
@@ -355,14 +337,14 @@ def train(config: Config) -> None:
     # ------------------------------------------------------------------
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config.batch_size,
+        batch_size=cfg.model.batch_size,
         shuffle=True,
         collate_fn=collate_fn,
         num_workers=0,
     )
     test_loader = DataLoader(
         test_dataset,
-        batch_size=config.batch_size,
+        batch_size=cfg.model.batch_size,
         shuffle=False,
         collate_fn=collate_fn,
         num_workers=0,
@@ -373,11 +355,11 @@ def train(config: Config) -> None:
     # ------------------------------------------------------------------
     model = SUPAEEG(
         feature_lookup=feature_lookup,
-        d_model=config.d_model,
-        nhead=config.nhead,
-        num_layers=config.num_layers,
-        dim_feedforward=config.dim_feedforward,
-        dropout=config.dropout,
+        d_model=cfg.model.d_model,
+        nhead=cfg.model.nhead,
+        num_layers=cfg.model.num_layers,
+        dim_feedforward=cfg.model.dim_feedforward,
+        dropout=cfg.model.dropout,
         device=device,
     ).to(device)
 
@@ -386,8 +368,8 @@ def train(config: Config) -> None:
     # ------------------------------------------------------------------
     optimizer = AdamW(
         model.parameters(),
-        lr=config.lr,
-        weight_decay=config.weight_decay,
+        lr=cfg.model.optimizer.lr,
+        weight_decay=cfg.model.optimizer.weight_decay,
     )
 
     best_top1: float = 0.0
@@ -395,7 +377,7 @@ def train(config: Config) -> None:
     # ------------------------------------------------------------------
     # Training epochs
     # ------------------------------------------------------------------
-    for epoch in range(1, config.epochs + 1):
+    for epoch in range(1, cfg.model.epochs + 1):
         model.train()
 
         for batch in train_loader:
@@ -412,7 +394,7 @@ def train(config: Config) -> None:
             optimizer.step()
 
         logger.info(
-            f"Epoch {epoch}/{config.epochs} | "
+            f"Epoch {epoch}/{cfg.model.epochs} | "
             f"total={components['total']:.4f} | "
             f"infonce={components['infonce']:.4f} | "
             f"sigreg={components['sigreg']:.4f} | "
@@ -422,7 +404,7 @@ def train(config: Config) -> None:
         # ------------------------------------------------------------------
         # Periodic evaluation
         # ------------------------------------------------------------------
-        if epoch % config.eval_every == 0:
+        if epoch % cfg.model.eval_every == 0:
             top1, top5 = _evaluate(model, test_loader, feature_lookup, device)
             logger.info(
                 f"Eval  epoch {epoch} | Top-1: {top1:.4f} | Top-5: {top5:.4f}"
@@ -430,7 +412,6 @@ def train(config: Config) -> None:
 
             if top1 > best_top1:
                 best_top1 = top1
-                os.makedirs(config.checkpoint_dir, exist_ok=True)
                 torch.save(
                     {
                         "model": model.state_dict(),
@@ -438,9 +419,9 @@ def train(config: Config) -> None:
                         "epoch": epoch,
                         "top1": top1,
                         "top5": top5,
-                        "config": config,
+                        "config": OmegaConf.to_container(cfg, resolve=True),
                     },
-                    f"{config.checkpoint_dir}/supaeeg_best.pt",
+                    "supaeeg_best.pt",  # written into Hydra's run dir
                 )
                 logger.info(
                     f"New best | Top-1: {top1:.4f} | Top-5: {top5:.4f}"
@@ -449,44 +430,5 @@ def train(config: Config) -> None:
     logger.info(f"Training complete. Best Top-1: {best_top1:.4f}")
 
 
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
-
-
-def _parse_args() -> Config:
-    """Parse command-line overrides and return a Config instance."""
-    parser = argparse.ArgumentParser(description="Train SUPAEEG")
-    parser.add_argument("--subject", type=int, default=-1)
-    parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--eval_every", type=int, default=5)
-    parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
-    parser.add_argument("--dataset_dir", type=str, default="data/things_eeg")
-    parser.add_argument(
-        "--feature_path",
-        type=str,
-        default="data/vision_encoder/clip/visual_features_clip.pt",
-    )
-    parser.add_argument("--device", type=str, default=None)
-    args = parser.parse_args()
-
-    cfg = Config(
-        subject=args.subject,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        eval_every=args.eval_every,
-        checkpoint_dir=args.checkpoint_dir,
-        dataset_dir=args.dataset_dir,
-        feature_path=args.feature_path,
-    )
-    if args.device is not None:
-        cfg.device = args.device
-    return cfg
-
-
 if __name__ == "__main__":
-    cfg = _parse_args()
-    train(cfg)
+    train()  # Hydra injects cfg automatically
