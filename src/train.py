@@ -26,16 +26,12 @@ from __future__ import annotations
 
 import os
 import sys
-from collections import defaultdict
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 import typer
 from loguru import logger
-from torch.optim import AdamW
 from torch.utils.data import ConcatDataset, DataLoader
 
 # ---------------------------------------------------------------------------
@@ -47,41 +43,17 @@ if _PROJECT_ROOT not in sys.path:
 
 from src.dataset import ThingsEEGDataset
 from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup, validate_features
-from src.models.supaeeg import SUPAEEG
-from src.trainer.metrics import retrieve_all
+from src.utilities import (
+    Config,
+    evaluate,
+    log_results_table,
+    make_model,
+    make_optimizer,
+    save_checkpoint,
+    train_one_epoch,
+)
 
 app = typer.Typer()
-
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class Config:
-    """All runtime hyperparameters in one place."""
-
-    protocol: str = "intra"
-    subject: int = 1
-    all_subjects: list[int] = field(default_factory=lambda: list(range(1, 11)))
-    dataset_dir: str = "data/things_eeg"
-    feature_path: str = "data/vision_encoder/clip/visual_features_clip.pt"
-    device: str = "cuda"
-    epochs: int = 100
-    batch_size: int = 256
-    eval_every: int = 5
-    lambda_reg: float = 0.1
-    beta_l1: float = 0.01
-    tau: float = 0.07
-    d_model: int = 256
-    nhead: int = 8
-    num_layers: int = 4
-    dim_feedforward: int = 512
-    dropout: float = 0.1
-    lr: float = 3e-4
-    weight_decay: float = 1e-4
-    checkpoint_dir: str = "outputs/supaeeg"
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +91,6 @@ def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Visual feature bank
 # ---------------------------------------------------------------------------
-
-
 def ensure_visual_features(
     feature_path: str,
     device: str,
@@ -219,221 +189,6 @@ def ensure_visual_features(
     return lookup
 
 # ---------------------------------------------------------------------------
-# Training and evaluation helpers
-# ---------------------------------------------------------------------------
-
-
-def train_one_epoch(
-    model: SUPAEEG,
-    train_loader: DataLoader,
-    optimizer: AdamW,
-    device: torch.device,
-) -> float:
-    """Run a single training epoch.
-
-    Args:
-        model:        SUPAEEG model (will be set to train mode).
-        train_loader: DataLoader for the training split.
-        optimizer:    AdamW optimiser.
-        device:       Compute device.
-
-    Returns:
-        Mean total loss over all batches in the epoch.
-    """
-    model.train()
-    total_loss = 0.0
-    for batch in train_loader:
-        eeg: torch.Tensor = batch["eeg"].to(device)
-        image_concepts: list[str] = batch["image_concepts"]
-        image_files: list[str] = batch["image_files"]
-
-        _z1, _z2, _z3, loss, components = model(
-            eeg, image_concepts, image_files, return_loss=True
-        )
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total_loss += float(components["total"])
-
-    return total_loss / max(len(train_loader), 1)
-
-
-def evaluate(
-    model: SUPAEEG,
-    test_loader: DataLoader,
-    feature_lookup: VisualFeatureLookup,
-    device: torch.device,
-) -> tuple[float, float]:
-    """Zero-shot concept retrieval evaluation on the test set.
-
-    Aggregates per-concept EEG embeddings (averaged over repetitions) and
-    paired CLIP image embeddings, then computes Top-1 and Top-5 retrieval
-    accuracy via the diagonal-retrieval protocol.
-
-    Args:
-        model:          SUPAEEG model.
-        test_loader:    DataLoader over the test split.
-        feature_lookup: Visual feature bank.
-        device:         Compute device.
-
-    Returns:
-        Tuple ``(top1, top5)`` accuracy values in [0, 1].
-    """
-    model.eval()
-    concept_embeddings: dict[str, list[torch.Tensor]] = defaultdict(list)
-    concept_to_file: dict[str, str] = {}
-
-    with torch.no_grad():
-        for batch in test_loader:
-            eeg = batch["eeg"].to(device)
-            z = model.embed(eeg)  # (batch, 2304), ℓ2-normalised inside embed()
-            for i, (concept, img_file) in enumerate(
-                zip(batch["image_concepts"], batch["image_files"])
-            ):
-                concept_embeddings[concept].append(z[i].cpu())
-                concept_to_file[concept] = img_file
-
-    concept_order = sorted(concept_embeddings.keys())
-
-    # Average per concept then ℓ2-normalise
-    eeg_features = torch.cat(
-        [
-            F.normalize(
-                torch.stack(concept_embeddings[c]).mean(dim=0, keepdim=True),
-                dim=1,
-            )
-            for c in concept_order
-        ],
-        dim=0,
-    ).numpy()  # (N_concepts, 2304)
-
-    # Concat(S1, S2, S3) then ℓ2-normalise
-    image_features = torch.cat(
-        [
-            F.normalize(
-                torch.cat([*feature_lookup.retrieve(c, concept_to_file[c])]).unsqueeze(0),
-                dim=1,
-            )
-            for c in concept_order
-        ],
-        dim=0,
-    ).numpy()  # (N_concepts, 2304)
-
-    top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
-    return top1_count / total, top5_count / total
-
-
-def save_checkpoint(
-    model: SUPAEEG,
-    optimizer: AdamW,
-    epoch: int,
-    top1: float,
-    top5: float,
-    path: str,
-) -> None:
-    """Persist model and optimiser state to disk.
-
-    Args:
-        model:     SUPAEEG model.
-        optimizer: AdamW optimiser.
-        epoch:     Current training epoch.
-        top1:      Top-1 accuracy at this checkpoint.
-        top5:      Top-5 accuracy at this checkpoint.
-        path:      File path for the checkpoint (``.pt``).
-    """
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "epoch": epoch,
-            "top1": top1,
-            "top5": top5,
-        },
-        path,
-    )
-    logger.info(f"Checkpoint saved | top1={top1:.4f} | path={path}")
-
-
-def log_results_table(
-    results: dict[int, dict[str, float]],
-    avg_top1: float,
-    avg_top5: float,
-    protocol: str,
-) -> None:
-    """Log per-subject results in tabular format.
-
-    Matches the Table 1 layout from the Shallow Alignment paper.
-
-    Args:
-        results:  Mapping of subject_id → {``'top1'``: float, ``'top5'``: float}.
-        avg_top1: Average Top-1 accuracy across all subjects.
-        avg_top5: Average Top-5 accuracy across all subjects.
-        protocol: ``"intra"`` or ``"inter"``.
-    """
-    logger.info(f"\n{'=' * 60}")
-    logger.info(f"Protocol: {protocol.upper()}-SUBJECT")
-    logger.info(f"{'Subject':<12} {'Top-1':>8} {'Top-5':>8}")
-    logger.info(f"{'-' * 30}")
-    for subject_id, r in sorted(results.items()):
-        logger.info(
-            f"Sub{subject_id:02d}{'':>8} "
-            f"{r['top1'] * 100:>7.1f}% "
-            f"{r['top5'] * 100:>7.1f}%"
-        )
-    logger.info(f"{'-' * 30}")
-    logger.info(
-        f"{'Avg':<12} "
-        f"{avg_top1 * 100:>7.1f}% "
-        f"{avg_top5 * 100:>7.1f}%"
-    )
-    logger.info(f"{'=' * 60}\n")
-
-
-def _make_model(
-    feature_lookup: VisualFeatureLookup,
-    config: Config,
-    device: torch.device,
-) -> SUPAEEG:
-    """Instantiate a fresh SUPAEEG model from ``config``.
-
-    Args:
-        feature_lookup: Pre-loaded visual feature bank.
-        config:         Runtime configuration.
-        device:         Compute device.
-
-    Returns:
-        Initialised SUPAEEG model placed on ``device``.
-    """
-    return SUPAEEG(
-        feature_lookup=feature_lookup,
-        d_model=config.d_model,
-        nhead=config.nhead,
-        num_layers=config.num_layers,
-        dim_feedforward=config.dim_feedforward,
-        dropout=config.dropout,
-        device=device,
-    ).to(device)
-
-
-def _make_optimizer(model: SUPAEEG, config: Config) -> AdamW:
-    """Build an AdamW optimiser from ``config``.
-
-    Args:
-        model:  Model whose parameters will be optimised.
-        config: Runtime configuration.
-
-    Returns:
-        Configured AdamW optimiser.
-    """
-    return AdamW(
-        model.parameters(),
-        lr=config.lr,
-        weight_decay=config.weight_decay,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Protocol runners
 # ---------------------------------------------------------------------------
 
@@ -489,8 +244,8 @@ def run_intra_subject(
             num_workers=0,
         )
 
-        model = _make_model(feature_lookup, config, device)
-        optimizer = _make_optimizer(model, config)
+        model = make_model(feature_lookup, config, device)
+        optimizer = make_optimizer(model, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
@@ -583,8 +338,8 @@ def run_inter_subject(
             num_workers=0,
         )
 
-        model = _make_model(feature_lookup, config, device)
-        optimizer = _make_optimizer(model, config)
+        model = make_model(feature_lookup, config, device)
+        optimizer = make_optimizer(model, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
