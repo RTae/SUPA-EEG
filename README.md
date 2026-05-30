@@ -81,11 +81,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 - [Train Image Data](https://osf.io/y63gw/files/3v527)
 - [Test Image Data](https://osf.io/y63gw/files/znu7b)
 
-or use the `download_things_eeg.sh` script for filltered data:
+Also you need to download a vision encoder for the image features. You can download the CLIP visual features from [here](https://cloud.tsinghua.edu.cn/f/7c0d0012439b49c5a512/?dl=1)
+
+or use the `download_data.sh` script for filltered data and CLIP visual features (Recommended):
 
 ```bash
-bash scripts/download_things_eeg.sh
+bash scripts/download_data.sh
 ```
+
 
 ### Installation
 
