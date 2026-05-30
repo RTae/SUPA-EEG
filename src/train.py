@@ -13,6 +13,7 @@ from src.dataset import ThingsEEGDataset
 from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup, validate_features
 from src.utilities import (
     Config,
+    EncoderConfig,
     evaluate,
     log_results_table,
     make_model,
@@ -59,7 +60,7 @@ def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def ensure_visual_features(
     feature_path: str,
-    device: str,
+    encoder_cfg: EncoderConfig,
     dataset_dir: str,
 ) -> VisualFeatureLookup:
     """Load or extract the CLIP visual feature bank.
@@ -72,7 +73,7 @@ def ensure_visual_features(
 
     Args:
         feature_path: Path to the ``.pt`` feature bank file.
-        device:       Compute device string (e.g. ``"cuda"`` or ``"cpu"``).
+        encoder_cfg:  Encoder configuration (type, model_name, layer_indices).
         dataset_dir:  Root directory containing ``training_images/`` and
                       ``test_images/`` subdirectories.
 
@@ -94,11 +95,16 @@ def ensure_visual_features(
     # Re-extract from scratch
     # ------------------------------------------------------------------
     logger.warning("Visual features not found. Running offline extraction...")
+    logger.info(
+        f"Encoder: type={encoder_cfg.type!r} model={encoder_cfg.model_name!r} "
+        f"layer_indices={encoder_cfg.layer_indices}"
+    )
 
     encoder = VisualEncoder(
-        encoder_type="clip",
-        model_name="openai/clip-vit-base-patch32",
-        device=device,
+        encoder_type=encoder_cfg.type,
+        model_name=encoder_cfg.model_name,
+        device="cpu",  # extraction runs on CPU to avoid GPU OOM during setup
+        layer_indices=encoder_cfg.layer_indices,
     )
 
     feature_dict: dict[tuple[str, str], dict[str, torch.Tensor]] = {}
@@ -142,9 +148,9 @@ def ensure_visual_features(
     torch.save(
         {
             "features": feature_dict,
-            "encoder_type": "clip",
-            "model_name": "openai/clip-vit-base-patch32",
-            "layer_indices": {"S1": 3, "S2": 7, "S3": 11},
+            "encoder_type": encoder_cfg.type,
+            "model_name": encoder_cfg.model_name,
+            "layer_indices": encoder_cfg.layer_indices,
         },
         path,
     )
@@ -364,6 +370,17 @@ def train(
         os.environ.get("DEVICE", "cuda"),
         help="Compute device (overridden by DEVICE env var)",
     ),
+    # ---- Encoder ----------------------------------------------------------
+    encoder_type: str = typer.Option(
+        "clip", help="Visual encoder type: 'clip' or 'ijepa'"
+    ),
+    encoder_model_name: str = typer.Option(
+        "openai/clip-vit-base-patch32", help="HuggingFace model identifier for the visual encoder"
+    ),
+    encoder_s1_layer: int = typer.Option(3, help="Transformer layer index for S1 (early) features"),
+    encoder_s2_layer: int = typer.Option(7, help="Transformer layer index for S2 (mid) features"),
+    encoder_s3_layer: int = typer.Option(11, help="Transformer layer index for S3 (late) features"),
+    # ---- Training ---------------------------------------------------------
     epochs: int = typer.Option(100, help="Training epochs"),
     batch_size: int = typer.Option(256, help="Batch size"),
     eval_every: int = typer.Option(5, help="Evaluate every N epochs"),
@@ -385,12 +402,18 @@ def train(
     if protocol not in ("intra", "inter"):
         raise typer.BadParameter(f"protocol must be 'intra' or 'inter', got {protocol!r}")
 
+    encoder_cfg = EncoderConfig(
+        type=encoder_type,
+        model_name=encoder_model_name,
+        layer_indices={"S1": encoder_s1_layer, "S2": encoder_s2_layer, "S3": encoder_s3_layer},
+    )
     cfg = Config(
         protocol=protocol,
         subject=subject,
         dataset_dir=dataset_dir,
         feature_path=feature_path,
         device=device,
+        encoder=encoder_cfg,
         epochs=epochs,
         batch_size=batch_size,
         eval_every=eval_every,
@@ -408,7 +431,9 @@ def train(
     )
     logger.info(
         f"Protocol={cfg.protocol!r} subject={cfg.subject} device={cfg.device!r} "
-        f"epochs={cfg.epochs} batch_size={cfg.batch_size} lr={cfg.lr}"
+        f"epochs={cfg.epochs} batch_size={cfg.batch_size} lr={cfg.lr} "
+        f"encoder={cfg.encoder.type!r} model={cfg.encoder.model_name!r} "
+        f"layer_indices={cfg.encoder.layer_indices}"
     )
 
     _device = torch.device(
@@ -417,7 +442,7 @@ def train(
     logger.info(f"Device: {_device}")
 
     # Load the CLIP feature bank once — shared across all subject folds
-    feature_lookup = ensure_visual_features(cfg.feature_path, cfg.device, cfg.dataset_dir)
+    feature_lookup = ensure_visual_features(cfg.feature_path, cfg.encoder, cfg.dataset_dir)
 
     if cfg.protocol == "intra":
         run_intra_subject(cfg, feature_lookup, _device)

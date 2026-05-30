@@ -71,6 +71,7 @@ class VisualEncoder(nn.Module):
         model_name: str | None = None,
         device: str | torch.device = "cpu",
         encoder_layers_path: str | None = None,
+        layer_indices: dict[str, int] | None = None,
     ) -> None:
         """
         Args:
@@ -85,6 +86,11 @@ class VisualEncoder(nn.Module):
 
                                      VisualEncoder("ijepa",
                                                    encoder_layers_path="encoder.layer")
+            layer_indices:       Optional mapping overriding which transformer layers
+                                 to tap for S1/S2/S3, e.g.
+                                 ``{"S1": 3, "S2": 7, "S3": 11}``.
+                                 When provided, these values take precedence over the
+                                 per-encoder defaults in ``_ENCODER_CONFIGS``.
         """
         super().__init__()
 
@@ -100,12 +106,21 @@ class VisualEncoder(nn.Module):
         self.device = torch.device(device) if isinstance(device, str) else device
         self._encoder_layers_path = encoder_layers_path
 
+        # Apply per-encoder config defaults first, then override with caller values.
         self._s1_idx: int = cfg["s1_layer"]
         self._s2_idx: int = cfg["s2_layer"]
         self._s3_idx: int = cfg["s3_layer"]
+        if layer_indices:
+            if "S1" in layer_indices:
+                self._s1_idx = layer_indices["S1"]
+            if "S2" in layer_indices:
+                self._s2_idx = layer_indices["S2"]
+            if "S3" in layer_indices:
+                self._s3_idx = layer_indices["S3"]
 
         self._hooks: list = []
         self._intermediate: dict[str, torch.Tensor] = {}
+        self._layer_indices_overridden: bool = bool(layer_indices)
 
         logger.info(
             f"Loading {encoder_type.upper()} encoder from '{self._model_name}' "
@@ -243,9 +258,10 @@ class VisualEncoder(nn.Module):
         num_layers = len(self._transformer_layers)
 
         # If the actual depth differs from the config default, recompute the
-        # S1/S2/S3 indices to keep the ~25 / ~65 / ~98 % depth ratios.
+        # S1/S2/S3 indices to keep the ~25 / ~65 / ~98 % depth ratios —
+        # unless the caller already supplied explicit layer_indices.
         cfg_num_layers = _ENCODER_CONFIGS[self.encoder_type]["num_layers"]
-        if num_layers != cfg_num_layers:
+        if num_layers != cfg_num_layers and not self._layer_indices_overridden:
             logger.warning(
                 f"Actual layer count ({num_layers}) differs from config default "
                 f"({cfg_num_layers}). Recomputing S1/S2/S3 indices proportionally."

@@ -138,6 +138,19 @@ def get_benchmark_split(
 # ---------------------------------------------------------------------------
 # SUPAEEG training config & helpers
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class EncoderConfig:
+    """Visual encoder settings, mirroring conf/model/supaeeg.yaml encoder block."""
+
+    type: str = "clip"
+    model_name: str = "openai/clip-vit-base-patch32"
+    layer_indices: dict[str, int] = field(
+        default_factory=lambda: {"S1": 3, "S2": 7, "S3": 11}
+    )
+
+
 @dataclass
 class Config:
     """All runtime hyperparameters for SUPAEEG training."""
@@ -148,6 +161,7 @@ class Config:
     dataset_dir: str = "data/things_eeg"
     feature_path: str = "data/vision_encoder/clip/visual_features_clip.pt"
     device: str = "cuda"
+    encoder: EncoderConfig = field(default_factory=EncoderConfig)
     epochs: int = 100
     batch_size: int = 256
     eval_every: int = 5
