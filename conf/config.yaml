@@ -44,11 +44,11 @@ lr: 3e-4
 weight_decay: 1e-4
 
 # --- Output ----------------------------------------------------------------
-checkpoint_dir: outputs/supaeeg
+# checkpoints and metrics.csv go here (set at runtime by Hydra)
 
 # --- Hydra -----------------------------------------------------------------
 hydra:
   run:
-    dir: .          # keep cwd at project root; no date-stamped subdir
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   job:
-    chdir: false
+    chdir: false   # keep CWD at project root so relative data paths work

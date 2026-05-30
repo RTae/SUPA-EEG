@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import csv
 import os
 from pathlib import Path
 from typing import Any
 
 import hydra
 import torch
+from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from src.dataset import ThingsEEGDataset
 from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup, validate_features
@@ -172,7 +175,6 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         weight_decay=cfg.weight_decay,
         warmup_epochs=cfg.warmup_epochs,
         grad_clip=cfg.grad_clip,
-        checkpoint_dir=cfg.checkpoint_dir,
     )
 
 
@@ -185,6 +187,7 @@ def run_intra_subject(
     config: Config,
     feature_lookup: VisualFeatureLookup,
     device: torch.device,
+    output_dir: str,
 ) -> dict[int, dict[str, float]]:
     """Train and evaluate one model per subject (intra-subject protocol).
 
@@ -195,6 +198,7 @@ def run_intra_subject(
         config:         Runtime configuration.
         feature_lookup: Pre-loaded CLIP feature bank (shared across folds).
         device:         Compute device.
+        output_dir:     Hydra run directory for checkpoints and metrics CSV.
 
     Returns:
         Mapping of subject_id → {``'top1'``: float, ``'top5'``: float}.
@@ -239,6 +243,17 @@ def run_intra_subject(
         best_top1 = 0.0
         best_top5 = 0.0
 
+        metrics_path = os.path.join(output_dir, f"metrics_sub{subject_id:02d}.csv")
+        metrics_file = open(metrics_path, "w", newline="")
+        csv_writer = csv.DictWriter(
+            metrics_file, fieldnames=["epoch", "train_loss", "top1", "top5"]
+        )
+        csv_writer.writeheader()
+        metrics_file.flush()
+
+        tb_dir = os.path.join(output_dir, f"tb_sub{subject_id:02d}")
+        writer = SummaryWriter(log_dir=tb_dir)
+
         for epoch in range(1, config.epochs + 1):
             mean_loss = train_one_epoch(
                 model, train_loader, optimizer, feature_lookup, device,
@@ -246,9 +261,14 @@ def run_intra_subject(
                 grad_clip=config.grad_clip,
             )
             scheduler.step()
+            lr_now = scheduler.get_last_lr()[0]
             logger.info(
                 f"Sub{subject_id:02d} | epoch {epoch}/{config.epochs} | loss={mean_loss:.4f}"
             )
+            writer.add_scalar("train/loss", mean_loss, epoch)
+            writer.add_scalar("train/lr", lr_now, epoch)
+
+            row: dict[str, Any] = {"epoch": epoch, "train_loss": round(mean_loss, 6), "top1": "", "top5": ""}
 
             if epoch % config.eval_every == 0:
                 top1, top5 = evaluate(model, test_loader, feature_lookup, device)
@@ -256,6 +276,10 @@ def run_intra_subject(
                     f"Sub{subject_id:02d} | eval epoch {epoch} | "
                     f"Top-1: {top1:.4f} | Top-5: {top5:.4f}"
                 )
+                row["top1"] = round(top1, 6)
+                row["top5"] = round(top5, 6)
+                writer.add_scalar("eval/top1", top1, epoch)
+                writer.add_scalar("eval/top5", top5, epoch)
                 if top1 > best_top1:
                     best_top1 = top1
                     best_top5 = top5
@@ -265,8 +289,15 @@ def run_intra_subject(
                         epoch,
                         top1,
                         top5,
-                        path=f"{config.checkpoint_dir}/supaeeg_intra_sub{subject_id:02d}.pt",
+                        path=os.path.join(output_dir, f"supaeeg_intra_sub{subject_id:02d}.pt"),
                     )
+
+            csv_writer.writerow(row)
+            metrics_file.flush()
+
+        metrics_file.close()
+        writer.close()
+        logger.info(f"Sub{subject_id:02d} | metrics saved to {metrics_path}")
 
         all_results[subject_id] = {"top1": best_top1, "top5": best_top5}
 
@@ -280,6 +311,7 @@ def run_inter_subject(
     config: Config,
     feature_lookup: VisualFeatureLookup,
     device: torch.device,
+    output_dir: str,
 ) -> dict[int, dict[str, float]]:
     """Leave-one-subject-out (LOSO) cross-subject training.
 
@@ -291,6 +323,7 @@ def run_inter_subject(
         config:         Runtime configuration.
         feature_lookup: Pre-loaded CLIP feature bank (shared across folds).
         device:         Compute device.
+        output_dir:     Hydra run directory for checkpoints and metrics CSV.
 
     Returns:
         Mapping of test_subject_id → {``'top1'``: float, ``'top5'``: float}.
@@ -340,6 +373,17 @@ def run_inter_subject(
         best_top1 = 0.0
         best_top5 = 0.0
 
+        metrics_path = os.path.join(output_dir, f"metrics_loso_sub{test_subject:02d}.csv")
+        metrics_file = open(metrics_path, "w", newline="")
+        csv_writer = csv.DictWriter(
+            metrics_file, fieldnames=["epoch", "train_loss", "top1", "top5"]
+        )
+        csv_writer.writeheader()
+        metrics_file.flush()
+
+        tb_dir = os.path.join(output_dir, f"tb_loso_sub{test_subject:02d}")
+        writer = SummaryWriter(log_dir=tb_dir)
+
         for epoch in range(1, config.epochs + 1):
             mean_loss = train_one_epoch(
                 model, train_loader, optimizer, feature_lookup, device,
@@ -347,10 +391,15 @@ def run_inter_subject(
                 grad_clip=config.grad_clip,
             )
             scheduler.step()
+            lr_now = scheduler.get_last_lr()[0]
             logger.info(
                 f"LOSO test=Sub{test_subject:02d} | epoch {epoch}/{config.epochs} | "
                 f"loss={mean_loss:.4f}"
             )
+            writer.add_scalar("train/loss", mean_loss, epoch)
+            writer.add_scalar("train/lr", lr_now, epoch)
+
+            row: dict[str, Any] = {"epoch": epoch, "train_loss": round(mean_loss, 6), "top1": "", "top5": ""}
 
             if epoch % config.eval_every == 0:
                 top1, top5 = evaluate(model, test_loader, feature_lookup, device)
@@ -358,6 +407,10 @@ def run_inter_subject(
                     f"LOSO test=Sub{test_subject:02d} | eval epoch {epoch} | "
                     f"Top-1: {top1:.4f} | Top-5: {top5:.4f}"
                 )
+                row["top1"] = round(top1, 6)
+                row["top5"] = round(top5, 6)
+                writer.add_scalar("eval/top1", top1, epoch)
+                writer.add_scalar("eval/top5", top5, epoch)
                 if top1 > best_top1:
                     best_top1 = top1
                     best_top5 = top5
@@ -367,8 +420,15 @@ def run_inter_subject(
                         epoch,
                         top1,
                         top5,
-                        path=f"{config.checkpoint_dir}/supaeeg_loso_sub{test_subject:02d}.pt",
+                        path=os.path.join(output_dir, f"supaeeg_loso_sub{test_subject:02d}.pt"),
                     )
+
+            csv_writer.writerow(row)
+            metrics_file.flush()
+
+        metrics_file.close()
+        writer.close()
+        logger.info(f"LOSO sub{test_subject:02d} | metrics saved to {metrics_path}")
 
         all_results[test_subject] = {"top1": best_top1, "top5": best_top5}
 
@@ -418,10 +478,14 @@ def train(cfg: DictConfig) -> None:
 
     feature_lookup = ensure_visual_features(config.feature_path, config.encoder, config.dataset_dir)
 
+    output_dir = HydraConfig.get().runtime.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Output dir: {output_dir}")
+
     if config.protocol == "intra":
-        run_intra_subject(config, feature_lookup, _device)
+        run_intra_subject(config, feature_lookup, _device, output_dir)
     else:
-        run_inter_subject(config, feature_lookup, _device)
+        run_inter_subject(config, feature_lookup, _device, output_dir)
 
 
 if __name__ == "__main__":

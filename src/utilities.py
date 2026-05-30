@@ -177,7 +177,6 @@ class Config:
     weight_decay: float = 1e-4
     warmup_epochs: int = 10
     grad_clip: float = 1.0
-    checkpoint_dir: str = "outputs/supaeeg"
 
 
 def train_one_epoch(
