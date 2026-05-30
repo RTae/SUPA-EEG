@@ -123,7 +123,9 @@ python train.py --help
 ```
 
 Outputs (checkpoints, logs) are written to `outputs/supaeeg/`. The best checkpoint
-(by Top-1 retrieval accuracy) is saved as `supaeeg_best.pt` in that directory.
+(by Top-1 retrieval accuracy) is saved per subject: `supaeeg_intra_sub{id:02d}.pt`
+for intra-subject runs and `supaeeg_loso_sub{id:02d}.pt` for leave-one-subject-out
+runs.
 
 ## Configuration
 
