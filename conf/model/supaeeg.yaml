@@ -6,6 +6,15 @@ dataset_dir: data/things_eeg
 feature_path: data/vision_encoder/clip/visual_features_clip.pt
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python src/train.py
 
+# ---- Visual encoder ------------------------------------------------------
+encoder:
+  type: clip                              # "clip" or "ijepa"
+  model_name: openai/clip-vit-base-patch32
+  layer_indices:
+    S1: 3    # early  – local edges & colours
+    S2: 7    # mid    – spatial structure
+    S3: 11   # late   – high-level semantics
+
 # ---- Training ------------------------------------------------------------
 epochs: 100
 batch_size: 256
