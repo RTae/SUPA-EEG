@@ -432,8 +432,6 @@ def train(
     logger.info(
         f"Protocol={cfg.protocol!r} subject={cfg.subject} device={cfg.device!r} "
         f"epochs={cfg.epochs} batch_size={cfg.batch_size} lr={cfg.lr} "
-        f"encoder={cfg.encoder.type!r} model={cfg.encoder.model_name!r} "
-        f"layer_indices={cfg.encoder.layer_indices}"
     )
 
     _device = torch.device(
