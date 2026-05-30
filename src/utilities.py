@@ -62,7 +62,7 @@ def category2wnid(category: str, language: str, img_dir: str | None = None) -> s
 
 
 def get_device() -> torch.device:
-    """Return the best available device (NPU > CUDA > MPS > CPU)."""
+    """Return the best available device (CUDA > MPS > CPU)."""
     if torch.cuda.is_available():
         return torch.device("cuda")
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
