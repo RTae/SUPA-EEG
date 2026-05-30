@@ -11,3 +11,5 @@ __pycache__/
 EEG-ImageNet.pth
 data/things_eeg
 **plot**
+
+*.pt
