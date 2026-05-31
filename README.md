@@ -94,8 +94,7 @@ flowchart LR
 
 ```text
 conf/
-└── model/
-    └── supaeeg.yaml          # hyperparameter reference
+└── config.yaml               # all hyperparameters and Hydra settings
 src/
 ├── utilities.py              # Config / EncoderConfig dataclasses + training helpers
 ├── encoders/
@@ -224,52 +223,53 @@ Hydra). The best checkpoint (by Top-1 retrieval accuracy) is saved per subject:
 
 ## Configuration
 
-All options can be passed as CLI flags to `train.py`. The table below lists every
-flag with its default value.
+All options are set in `conf/config.yaml` and can be overridden on the command line
+as Hydra key=value pairs, e.g. `python train.py subject=2 epochs=500`.
 
 ### Data & device
 
-| Flag | Description | Default |
-|------|-------------|-------|
-| `--dataset-dir` | THINGS-EEG2 root | `data/things_eeg` |
-| `--feature-path` | Visual feature bank `.pt` file | `data/vision_encoder/clip/visual_features_clip.pt` |
-| `--device` | Compute device (`DEVICE` env var overrides) | `cuda` |
+| Key | Description | Default |
+|-----|-------------|---------|
+| `dataset_dir` | THINGS-EEG2 root | `data/things_eeg` |
+| `feature_path` | Visual feature bank `.pt` file | `data/vision_encoder/clip/visual_features_clip.pt` |
+| `device` | Compute device (`DEVICE` env var overrides) | `cuda` |
 
 ### Protocol
 
-| Flag | Description | Default |
-|------|-------------|-------|
-| `--protocol` | `intra` (per-subject) or `inter` (LOSO) | `intra` |
-| `--subject` | Subject index 1–10; `-1` = all subjects (intra only) | `1` |
+| Key | Description | Default |
+|-----|-------------|---------|
+| `protocol` | `intra` (per-subject) or `inter` (LOSO) | `intra` |
+| `subject` | Subject index 1–10; `-1` = all subjects (intra only) | `1` |
 
 ### Visual encoder
 
-| Flag | Description | Default |
-|------|-------------|-------|
-| `--encoder-type` | `clip` or `ijepa` | `clip` |
-| `--encoder-model-name` | HuggingFace model identifier | `openai/clip-vit-base-patch32` |
-| `--encoder-s1-layer` | Transformer layer index for S1 (early features) | `3` |
-| `--encoder-s2-layer` | Transformer layer index for S2 (mid features) | `7` |
-| `--encoder-s3-layer` | Transformer layer index for S3 (late features) | `11` |
+| Key | Description | Default |
+|-----|-------------|---------|
+| `encoder.type` | `clip` or `ijepa` | `clip` |
+| `encoder.model_name` | HuggingFace model identifier | `openai/clip-vit-base-patch32` |
+| `encoder.layer_indices.S1` | Transformer layer index for S1 (early features) | `3` |
+| `encoder.layer_indices.S2` | Transformer layer index for S2 (mid features) | `7` |
+| `encoder.layer_indices.S3` | Transformer layer index for S3 (late features) | `11` |
 
 ### Training
 
-| Flag | Description | Default |
-|------|-------------|-------|
-| `--epochs` | Training epochs | `100` |
-| `--batch-size` | Batch size | `256` |
-| `--eval-every` | Evaluate every N epochs | `5` |
-| `--lambda-reg` | Gaussian regulariser weight | `0.1` |
-| `--beta-l1` | Channel-attention L1 sparsity weight | `0.01` |
-| `--tau` | InfoNCE temperature | `0.07` |
-| `--d-model` | Token embedding dim | `256` |
-| `--nhead` | Transformer attention heads | `8` |
-| `--num-layers` | Transformer depth | `4` |
-| `--dim-feedforward` | FFN hidden size | `512` |
-| `--dropout` | Dropout | `0.1` |
-| `--lr` | Learning rate | `3e-4` |
-| `--weight-decay` | Weight decay | `1e-4` |
-| `--checkpoint-dir` | Checkpoint output directory | `outputs/supaeeg` |
+| Key | Description | Default |
+|-----|-------------|---------|
+| `epochs` | Training epochs | `100` |
+| `batch_size` | Batch size | `256` |
+| `eval_every` | Evaluate every N epochs | `5` |
+| `lambda_reg` | Gaussian regulariser weight | `0.1` |
+| `beta_l1` | Channel-attention L1 sparsity weight | `0.01` |
+| `tau` | InfoNCE temperature | `0.07` |
+| `warmup_epochs` | Linear LR warmup epochs before cosine decay | `10` |
+| `grad_clip` | Max gradient norm (0 = disabled) | `1.0` |
+| `d_model` | Token embedding dim | `256` |
+| `nhead` | Transformer attention heads | `8` |
+| `num_layers` | Transformer depth | `4` |
+| `dim_feedforward` | FFN hidden size | `512` |
+| `dropout` | Dropout | `0.1` |
+| `lr` | Learning rate | `3e-4` |
+| `weight_decay` | Weight decay | `1e-4` |
 
 ## Implementation References
 
@@ -277,7 +277,7 @@ flag with its default value.
 |-----------|------|------|
 | CLI entry | `train.py` | Typer entry, protocol dispatch, feature extraction |
 | Config dataclasses | `src/utilities.py` | `Config`, `EncoderConfig`; training helpers |
-| Hyperparameter reference | `conf/model/supaeeg.yaml` | YAML mirror of all defaults |
+| Hyperparameter reference | `conf/config.yaml` | YAML source of all defaults (Hydra config) |
 | EEG tokeniser | `src/encoders/eegnet_encoder.py` | Temporal → depthwise → separable conv → token sequence |
 | Visual targets | `src/encoders/visual_encoder.py` | Frozen CLIP/I-JEPA encoder + `VisualFeatureLookup` |
 | Full model | `src/models/supaeeg.py` | `SUPAEEG`, `MultiScaleEncoder`, `ChannelAttention` |
