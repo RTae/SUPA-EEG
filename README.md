@@ -3,30 +3,97 @@
 Zero-shot visual decoding from EEG using the [THINGS-EEG2](https://osf.io/anp5v/) dataset.
 SUPAEEG aligns multi-scale EEG embeddings to frozen CLIP features via contrastive learning.
 
-## How it works
+## Model Architecture
+### Training Pipeline
+
+```mermaid
+flowchart TD
+    subgraph OFFLINE["Offline — frozen CLIP features  (run once)"]
+        S1["S1 · CLIP layer 3\nlocal edges (768-d)"]
+        S2["S2 · CLIP layer 7\nspatial structure (768-d)"]
+        S3["S3 · CLIP layer 11\nobject semantics (768-d)"]
+    end
+
+    subgraph INPUT["Input"]
+        EEG["EEG signal\n(batch, 17, 100)"]
+    end
+
+    subgraph CHANNEL["C3 — Channel filter · αk = softmax(Linear(ck))"]
+        CA1["α1 × EEG\nc1 · occipital emphasis"]
+        CA2["α2 × EEG\nc2 · parieto-occipital"]
+        CA3["α3 × EEG\nc3 · broader network"]
+    end
+
+    subgraph TOKENIZER["ST tokenizer — EEGNet conv · (batch, N_t, 256)"]
+        T1["weighted EEG_1 → tokens"]
+        T2["weighted EEG_2 → tokens"]
+        T3["weighted EEG_3 → tokens"]
+    end
+
+    subgraph ENCODER["C2 — Shared transformer · 4 layers · 8 heads · d=256"]
+        E1["[c1, tokens] → z1\n(batch, 256)"]
+        E2["[c2, tokens] → z2\n(batch, 256)"]
+        E3["[c3, tokens] → z3\n(batch, 256)"]
+    end
+
+    subgraph PROJ["Scale-specific projection · Linear 256→512→768"]
+        P1["z1  (batch, 768)"]
+        P2["z2  (batch, 768)"]
+        P3["z3  (batch, 768)"]
+    end
+
+    subgraph LOSS["C1 — Training loss"]
+        L["InfoNCE(z1,S1) + InfoNCE(z2,S2) + InfoNCE(z3,S3)\n+ λ · SIGReg(z1,z2,z3)  +  β · L1(α1,α2,α3)"]
+    end
+
+    EEG --> CA1 & CA2 & CA3
+    CA1 --> T1
+    CA2 --> T2
+    CA3 --> T3
+    T1 --> E1
+    T2 --> E2
+    T3 --> E3
+    E1 --> P1
+    E2 --> P2
+    E3 --> P3
+    P1 & P2 & P3 --> L
+    S1 -.->|stop-grad| L
+    S2 -.->|stop-grad| L
+    S3 -.->|stop-grad| L
+```
+
+### Inference Pipeline
 
 ```mermaid
 flowchart LR
-    A["EEG\n(B, 17, 100)"] --> CA1["ChannelAttention\nscale-1 c1"]
-    A --> CA2["ChannelAttention\nscale-2 c2"]
-    A --> CA3["ChannelAttention\nscale-3 c3"]
-    CA1 --> ENC["EEGNetEncoder\n(shared)"]
-    CA2 --> ENC
-    CA3 --> ENC
-    ENC --> TF["TransformerEncoder\n(shared, 4 layers)"]
-    TF --> P1["proj 256→768  z1"]
-    TF --> P2["proj 256→768  z2"]
-    TF --> P3["proj 256→768  z3"]
-    P1 --> L["InfoNCE vs CLIP S1/S2/S3\n+ SigReg + L1 sparsity"]
-    P2 --> L
-    P3 --> L
+    EEG["EEG signal\n(batch, 17, 100)"]
+
+    subgraph MODEL["Learned encoder — no image model needed"]
+        CF["Channel filter\nfrozen α1, α2, α3"]
+        TOK["EEGNet tokenizer\n→ (batch, N_t, 256)"]
+        ENC["Shared transformer\nfrozen c1, c2, c3"]
+        P["Projection heads\n256 → 768 per scale"]
+        CAT["concat(z1, z2, z3)\nℓ2-normalise\n→ (batch, 2304)"]
+    end
+
+    subgraph GALLERY["Image gallery · 200 test concepts"]
+        G["concat(S1, S2, S3)\nℓ2-normalise\n→ (200, 2304)"]
+    end
+
+    RET["Cosine similarity\n200-way ranking\nTop-1 / Top-5"]
+
+    EEG --> CF --> TOK --> ENC --> P --> CAT
+    CAT -->|query| RET
+    G -->|gallery| RET
 ```
 
-Three learned scale prototype vectors (c1, c2, c3) each gate the EEG channels via soft
-attention, then a shared EEGNet tokeniser and transformer encoder produce per-scale
-embeddings that are aligned to the corresponding CLIP depth level (S1 early / S2 mid /
-S3 late). At inference, `embed()` concatenates and ℓ2-normalises [z1, z2, z3] into a
-2304-d descriptor.
+---
+
+## What Each Diagram Shows
+
+**Training** — the full three-contribution pipeline with tensor shapes at every step, stop-grad CLIP targets on the right, and the three-term loss at the bottom.
+
+**Inference** — the clean left-to-right path showing that only the learned EEG encoder runs. No CLIP, no feature bank. The image gallery is pre-computed S1/S2/S3 concatenations, also computed offline, compared via cosine similarity.
 
 ## Project Structure
 
