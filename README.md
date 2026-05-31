@@ -196,19 +196,19 @@ Manual sources:
 
 ```bash
 # Single subject — intra-subject protocol (default)
-python train.py --subject 1
+python train.py subject=1
 
 # All subjects, intra protocol
-python train.py --subject -1
+python train.py subject=-1
 
 # Leave-one-subject-out (LOSO) inter-subject protocol
-python train.py --protocol inter
+python train.py protocol=inter
 
 # Override hyperparameters
-python train.py --epochs 50 --lr 1e-4 --batch-size 128
+python train.py epochs=50 lr=1e-4 batch_size=128
 
 # Custom encoder depth taps
-python train.py --encoder-s1-layer 2 --encoder-s2-layer 6 --encoder-s3-layer 10
+python train.py encoder.layer_indices.S1=2 encoder.layer_indices.S2=6 encoder.layer_indices.S3=10
 
 # Force CPU
 DEVICE=cpu python train.py
@@ -217,10 +217,10 @@ DEVICE=cpu python train.py
 python train.py --help
 ```
 
-Outputs (checkpoints, logs) are written to `outputs/supaeeg/`. The best checkpoint
-(by Top-1 retrieval accuracy) is saved per subject: `supaeeg_intra_sub{id:02d}.pt`
-for intra-subject runs and `supaeeg_loso_sub{id:02d}.pt` for leave-one-subject-out
-runs.
+Outputs (checkpoints, logs) are written to `outputs/<date>/<time>/` (managed by
+Hydra). The best checkpoint (by Top-1 retrieval accuracy) is saved per subject:
+`supaeeg_intra_sub{id:02d}.pt` for intra-subject runs and
+`supaeeg_loso_sub{id:02d}.pt` for leave-one-subject-out runs.
 
 ## Configuration
 
