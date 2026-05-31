@@ -1,29 +1,3 @@
-"""SUPAEEG: Scale-Unified Parieto-occipital Architecture
-
-Full model definition and supporting classes. Loss functions live in
-``src/trainer/loss.py``.
-
-Architecture overview
----------------------
-EEG signal (batch, 17, 100)
-  │
-  ├─ ChannelAttention (scale-1)  ─┐
-  ├─ ChannelAttention (scale-2)   ├─ EEGNetEncoder (shared weights)
-  └─ ChannelAttention (scale-3)  ─┘
-           │
-  Shared TransformerEncoder
-           │
-  Scale-specific projection heads (256 → 768)
-           │
-  z1, z2, z3  (batch, 768)  ──► InfoNCE vs CLIP S1/S2/S3 targets
-
-Training targets S1/S2/S3 come from a frozen VisualFeatureLookup;
-gradients never flow through that lookup.
-
-At inference, embed() concatenates and ℓ2-normalises [z1, z2, z3]
-to produce a (batch, 2304) descriptor.
-"""
-
 from __future__ import annotations
 
 import torch
