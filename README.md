@@ -286,5 +286,5 @@ as Hydra key=value pairs, e.g. `python train.py subject=2 epochs=500`.
 
 ## Dataset Explorer
 
-Open `viz_thingseeg.ipynb` in Jupyter to inspect EEG samples, image concepts, and
+Open `viz_thingeeg.ipynb` in Jupyter to inspect EEG samples, image concepts, and
 feature distributions interactively.
