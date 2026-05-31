@@ -1,7 +1,6 @@
-# SUPAEEG — Scale-Unified Parieto-occipital Architecture
+# SUPA-EEG : Scale-Unified Parieto-occipital Architecture
 
-Zero-shot visual decoding from EEG using the [THINGS-EEG2](https://osf.io/anp5v/) dataset.
-SUPAEEG aligns multi-scale EEG embeddings to frozen CLIP features via contrastive learning.
+Zero-shot visual decoding from EEG using the [THINGS-EEG2](https://osf.io/anp5v/) dataset. SUPA-EEG aligns multi-scale EEG embeddings to frozen CLIP features via contrastive learning.
 
 ## Model Architecture
 ### Training Pipeline
@@ -87,10 +86,6 @@ flowchart LR
     G -->|gallery| RET
 ```
 
----
-
-## What Each Diagram Shows
-
 **Training** — the full three-contribution pipeline with tensor shapes at every step, stop-grad CLIP targets on the right, and the three-term loss at the bottom.
 
 **Inference** — the clean left-to-right path showing that only the learned EEG encoder runs. No CLIP, no feature bank. The image gallery is pre-computed S1/S2/S3 concatenations, also computed offline, compared via cosine similarity.
@@ -121,6 +116,39 @@ data/
 └── vision_encoder/
     └── clip/
         └── visual_features_clip.pt   # pre-extracted CLIP S1/S2/S3 lookup table
+```
+
+
+## Training Pipeline
+
+```mermaid
+flowchart TD
+    CONF["conf/config.yaml"]
+    TRAIN["train.py"]
+    DS["dataset.py\nThingsEEGDataset"]
+    VE["vision_encoder.py\nVisualFeatureLookup"]
+    EEG_ENC["eegnet_encoder.py\nEEGNetEncoder"]
+    SUPAEEG["supaeeg.py\nSUPAEEG"]
+    LOSS["loss.py\ncompute_loss"]
+    METRICS["metrics.py\nretrieve_all"]
+    OUT["checkpoints · CSV · TensorBoard"]
+
+    CONF --> TRAIN
+    TRAIN --> DS
+    TRAIN --> VE
+    TRAIN --> SUPAEEG
+    SUPAEEG --> EEG_ENC
+    DS -->|eeg batch| TRAIN
+    VE -->|S1 S2 S3| TRAIN
+    TRAIN -->|forward| SUPAEEG
+    SUPAEEG -->|z1 z2 z3| TRAIN
+    TRAIN --> LOSS
+    LOSS -->|total loss| TRAIN
+    TRAIN -->|embed| SUPAEEG
+    SUPAEEG -->|2304-d| TRAIN
+    TRAIN --> METRICS
+    METRICS -->|top1 top5| TRAIN
+    TRAIN --> OUT
 ```
 
 ## Setup
