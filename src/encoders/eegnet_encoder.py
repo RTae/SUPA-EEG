@@ -1,14 +1,3 @@
-"""EEGNet-style spatiotemporal tokenizer for EEG signals.
-
-Implements a depthwise-separable convolutional backbone that converts raw EEG
-channel × time tensors into a sequence of spatiotemporal tokens ready for
-downstream transformer processing.
-
-Reference architecture:
-    Lawhern et al. (2018) "EEGNet: A Compact Convolutional Neural Network for
-    EEG-based Brain–Computer Interfaces"
-"""
-
 from __future__ import annotations
 
 import torch
