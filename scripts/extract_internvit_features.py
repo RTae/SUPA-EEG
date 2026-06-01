@@ -89,18 +89,22 @@ def extract_layer_features(
             intermediate[lid] = hidden.mean(dim=1).detach().float().cpu()
         return hook
 
-    # Find transformer layers
-    # InternViT stores layers at model.encoder.layers or model.vision_model.encoder.layers
-    try:
-        layers = model.encoder.layers
-    except AttributeError:
-        try:
-            layers = model.vision_model.encoder.layers
-        except AttributeError:
-            raise AttributeError(
-                "Cannot find transformer layers. "
-                "Check model structure with: print(model)"
-            )
+    def find_layers(m):
+        """Return the transformer layer list by probing known attribute paths."""
+        for path in ("encoder.layers", "vision_model.encoder.layers"):
+            obj = m
+            for attr in path.split("."):
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if obj is not None:
+                return obj
+        raise AttributeError(
+            "Cannot find transformer layers. "
+            "Check model structure with: print(model)"
+        )
+
+    layers = find_layers(model)
 
     for lid in layer_ids:
         hooks.append(layers[lid].register_forward_hook(make_hook(lid)))
