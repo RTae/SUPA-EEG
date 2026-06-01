@@ -155,6 +155,9 @@ def ensure_internvit_features(
 
     features: dict = {}
     for image_dir in (train_img_dir, test_img_dir):
+        if not os.path.isdir(image_dir):
+            logger.warning(f"Image directory not found, skipping: {image_dir}")
+            continue
         features.update(
             extract_directory(image_dir, model, processor, layer_ids, _device, batch_size)
         )
