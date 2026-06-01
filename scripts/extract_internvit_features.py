@@ -239,5 +239,63 @@ def main() -> None:
     logger.info("Extraction complete.")
 
 
+def ensure_internvit_features(
+    internvit_dir: str,
+    layer_ids: list[int],
+    train_img_dir: str,
+    test_img_dir: str,
+    metadata_path: str,
+    device: str = "cpu",
+    batch_size: int = 64,
+) -> None:
+    """Check if InternViT features exist. Extract if missing.
+
+    Called automatically at the start of training.
+    If ANY required file is missing, runs full extraction for both splits.
+
+    Args:
+        internvit_dir:  Output directory for .npy files
+        layer_ids:      e.g. [20, 24, 28, 32, 36]
+        train_img_dir:  data/things_eeg/training_images
+        test_img_dir:   data/things_eeg/test_images
+        metadata_path:  data/things_eeg/image_metadata.npy
+        device:         device for InternViT extraction
+        batch_size:     images per batch during extraction
+    """
+    required = [
+        os.path.join(internvit_dir, f"image_{split}_layer{lid}.npy")
+        for split in ("train", "test")
+        for lid in layer_ids
+    ]
+    missing = [f for f in required if not os.path.isfile(f)]
+
+    if not missing:
+        logger.info(f"InternViT features found ({len(required)} files). Skipping extraction.")
+        return
+
+    logger.warning(
+        f"{len(missing)}/{len(required)} InternViT feature files missing. "
+        "Running offline extraction — this may take 10-30 minutes."
+    )
+    for f in missing:
+        logger.warning(f"  Missing: {f}")
+
+    metadata         = np.load(metadata_path, allow_pickle=True).item()
+    processor, model = load_internvit(MODEL_NAME, torch.device(device))
+
+    extract_split("train", train_img_dir, metadata, model, processor,
+                  layer_ids, torch.device(device), batch_size, internvit_dir)
+    extract_split("test",  test_img_dir,  metadata, model, processor,
+                  layer_ids, torch.device(device), batch_size, internvit_dir)
+
+    still_missing = [f for f in required if not os.path.isfile(f)]
+    if still_missing:
+        raise FileNotFoundError(
+            f"Extraction completed but {len(still_missing)} files still missing: "
+            f"{still_missing}"
+        )
+    logger.info("InternViT feature extraction complete. All files verified.")
+
+
 if __name__ == "__main__":
     main()
