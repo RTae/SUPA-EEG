@@ -384,12 +384,13 @@ def make_model(
     from src.models.supaeeg import SUPAEEG  # local import avoids circular deps
 
     return SUPAEEG(
-        n_channels=17,
-        n_timepoints=100,
+        n_channels=config.n_channels,
+        n_timepoints=config.n_timepoints,
         eeg_feature_dim=config.eeg_feature_dim,
         image_input_dim=config.image_input_dim,
         image_mid_dim=config.image_mid_dim,
         feature_dim=config.feature_dim,
+        dropout=config.dropout,
     ).to(device)
 
 
@@ -408,6 +409,5 @@ def make_optimizer(model: Any, config: Config) -> AdamW:
         lr=config.lr,
         weight_decay=config.weight_decay,
     )
-
 
 

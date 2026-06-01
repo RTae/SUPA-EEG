@@ -34,10 +34,13 @@ mmd_start: 0.9
 mmd_end: 0.5
 
 # --- Architecture ----------------------------------------------------------
+n_channels:       17
+n_timepoints:     100
 feature_dim:      512
 eeg_feature_dim:  1024
 image_input_dim:  3200
 image_mid_dim:    1024
+dropout:          0.3
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
