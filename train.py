@@ -14,15 +14,13 @@ from torch.utils.data import ConcatDataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from src.dataset import ThingsEEGDataset
-from src.encoders.visual_encoder import VisualEncoder, VisualFeatureLookup, validate_features
+from src.encoders.vision_encoder import InternViTFeatureLookup
 from src.utilities import (
     Config,
-    EncoderConfig,
     evaluate,
     log_results_table,
     make_model,
     make_optimizer,
-    make_scheduler,
     save_checkpoint,
     train_one_epoch,
 )
@@ -30,7 +28,7 @@ from src.utilities import (
 
 # ---------------------------------------------------------------------------
 # Collate function
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
     """Custom collate for ThingsEEGDataset batches.
 
@@ -39,106 +37,30 @@ def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
         (eeg_tensor, image_tensor, subject_index, repetition_index,
          data_index, image_concept, image_file)
 
-    Only ``eeg_tensor`` (index 0), ``image_concept`` (index 5), and
-    ``image_file`` (index 6) are used.  The rest are discarded.
+    The collate also derives:
+      concept_indices: data_index (0-based concept index)
+      image_indices:   repetition_index % n_imgs_per_concept
+                       (maps to InternViTFeatureLookup image axis)
 
     Args:
         batch: List of tuples from the dataset.
 
     Returns:
-        Dict with keys ``'eeg'``, ``'image_concepts'``, ``'image_files'``.
+        Dict with keys 'eeg', 'image_concepts', 'image_files',
+        'concept_indices', 'image_indices'.
     """
-    eeg_tensors = torch.stack([item[0] for item in batch], dim=0)
-    image_concepts = [item[5] for item in batch]
-    image_files = [item[6] for item in batch]
+    eeg_tensors     = torch.stack([item[0] for item in batch], dim=0)
+    image_concepts  = [item[5] for item in batch]
+    image_files     = [item[6] for item in batch]
+    concept_indices = [item[4] for item in batch]          # data_index
+    image_indices   = [item[3] for item in batch]          # repetition_index
     return {
-        "eeg": eeg_tensors,
-        "image_concepts": image_concepts,
-        "image_files": image_files,
+        "eeg":             eeg_tensors,
+        "image_concepts":  image_concepts,
+        "image_files":     image_files,
+        "concept_indices": concept_indices,
+        "image_indices":   image_indices,
     }
-
-
-# ---------------------------------------------------------------------------
-# Visual feature bank
-# ---------------------------------------------------------------------------
-def ensure_visual_features(
-    feature_path: str,
-    encoder_cfg: EncoderConfig,
-    dataset_dir: str,
-) -> VisualFeatureLookup:
-    """Load or extract the CLIP visual feature bank.
-
-    Step 1 — If the feature file already exists, load and return it.
-    Step 2 — Otherwise, run offline CLIP extraction over all training and
-              test images, save the result, and return it.
-    Step 3 — Validate that the loaded features contain at least one entry
-              with correct S1/S2/S3 shapes.
-
-    Args:
-        feature_path: Path to the ``.pt`` feature bank file.
-        encoder_cfg:  Encoder configuration (type, model_name, layer_indices).
-        dataset_dir:  Root directory containing ``training_images/`` and
-                      ``test_images/`` subdirectories.
-
-    Returns:
-        Populated VisualFeatureLookup.
-
-    Raises:
-        ValueError: If the loaded features fail shape validation.
-    """
-    path = feature_path
-
-    if os.path.isfile(path):
-        logger.info("Visual features found. Loading from disk...")
-        lookup = VisualFeatureLookup(path)
-        validate_features(lookup)
-        return lookup
-
-    # ------------------------------------------------------------------
-    # Re-extract from scratch
-    # ------------------------------------------------------------------
-    logger.warning("Visual features not found. Running offline extraction...")
-    logger.info(
-        f"Encoder: type={encoder_cfg.type!r} model={encoder_cfg.model_name!r} "
-        f"layer_indices={encoder_cfg.layer_indices}"
-    )
-
-    encoder = VisualEncoder(
-        encoder_type=encoder_cfg.type,
-        model_name=encoder_cfg.model_name,
-        device="cpu",  # extraction runs on CPU to avoid GPU OOM during setup
-        layer_indices=encoder_cfg.layer_indices,
-    )
-
-    from scripts.extract_visual_features import extract_features  # local import — only needed during extraction
-
-    feature_dict: dict[tuple[str, str], dict[str, torch.Tensor]] = {}
-
-    image_base = Path(dataset_dir)
-    splits = [image_base / "training_images", image_base / "test_images"]
-
-    for split_dir in splits:
-        if not split_dir.is_dir():
-            logger.warning(f"Image directory not found, skipping: {split_dir}")
-            continue
-        split_features = extract_features(encoder=encoder, image_dir=split_dir)
-        feature_dict.update(split_features)
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(
-        {
-            "features": feature_dict,
-            "encoder_type": encoder_cfg.type,
-            "model_name": encoder_cfg.model_name,
-            "layer_indices": encoder_cfg.layer_indices,
-        },
-        path,
-    )
-    logger.info(f"Visual features saved to {path}")
-
-    lookup = VisualFeatureLookup(path)
-    validate_features(lookup)
-    return lookup
 
 
 # ---------------------------------------------------------------------------
@@ -147,33 +69,34 @@ def ensure_visual_features(
 
 def _cfg_to_config(cfg: DictConfig) -> Config:
     """Convert a Hydra DictConfig into the Config dataclass used by the runners."""
-    encoder_cfg = EncoderConfig(
-        type=cfg.encoder.type,
-        model_name=cfg.encoder.model_name,
-        layer_indices=OmegaConf.to_container(cfg.encoder.layer_indices, resolve=True),
-    )
     return Config(
         protocol=cfg.protocol,
         subject=cfg.subject,
         all_subjects=list(OmegaConf.to_container(cfg.all_subjects, resolve=True)),
         dataset_dir=cfg.dataset_dir,
-        feature_path=cfg.feature_path,
         device=cfg.device,
-        encoder=encoder_cfg,
         epochs=cfg.epochs,
         batch_size=cfg.batch_size,
         eval_every=cfg.eval_every,
-        lambda_reg=cfg.lambda_reg,
-        tau=cfg.tau,
-        n_channels=cfg.model.n_channels,
-        n_timepoints=cfg.model.n_timepoints,
-        feature_dim=cfg.model.feature_dim,
-        d_visual=cfg.model.d_visual,
-        dropout=cfg.model.dropout,
+        n_channels=17,
+        n_timepoints=100,
+        feature_dim=cfg.feature_dim,
+        eeg_feature_dim=cfg.eeg_feature_dim,
+        image_input_dim=cfg.image_input_dim,
+        image_mid_dim=cfg.image_mid_dim,
+        dropout=0.3,
         lr=cfg.lr,
         weight_decay=cfg.weight_decay,
-        warmup_epochs=cfg.warmup_epochs,
         grad_clip=cfg.grad_clip,
+        stage1_epochs=cfg.stage1_epochs,
+        stage2_lr=cfg.stage2_lr,
+        mmd_start=cfg.mmd_start,
+        mmd_end=cfg.mmd_end,
+        internvit_dir=cfg.internvit_dir,
+        layer_ids=list(OmegaConf.to_container(cfg.layer_ids, resolve=True)),
+        train_img_dir=cfg.train_img_dir,
+        test_img_dir=cfg.test_img_dir,
+        metadata_path=cfg.metadata_path,
     )
 
 
@@ -184,7 +107,8 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
 
 def run_intra_subject(
     config: Config,
-    feature_lookup: VisualFeatureLookup,
+    train_internvit: InternViTFeatureLookup,
+    test_internvit: InternViTFeatureLookup,
     device: torch.device,
     output_dir: str,
 ) -> dict[int, dict[str, float]]:
@@ -194,13 +118,14 @@ def run_intra_subject(
     ``config.all_subjects``; otherwise trains a single subject.
 
     Args:
-        config:         Runtime configuration.
-        feature_lookup: Pre-loaded CLIP feature bank (shared across folds).
-        device:         Compute device.
-        output_dir:     Hydra run directory for checkpoints and metrics CSV.
+        config:          Runtime configuration.
+        train_internvit: InternViTFeatureLookup for the training split.
+        test_internvit:  InternViTFeatureLookup for the test split.
+        device:          Compute device.
+        output_dir:      Hydra run directory for checkpoints and metrics CSV.
 
     Returns:
-        Mapping of subject_id → {``'top1'``: float, ``'top5'``: float}.
+        Mapping of subject_id → {'top1': float, 'top5': float}.
     """
     subjects = (
         [config.subject] if config.subject != -1 else config.all_subjects
@@ -236,16 +161,16 @@ def run_intra_subject(
             num_workers=0,
         )
 
-        model = make_model(config, device)
+        model     = make_model(config, device)
         optimizer = make_optimizer(model, config)
-        scheduler = make_scheduler(optimizer, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
         metrics_path = os.path.join(output_dir, f"metrics_sub{subject_id:02d}.csv")
         metrics_file = open(metrics_path, "w", newline="")
         csv_writer = csv.DictWriter(
-            metrics_file, fieldnames=["epoch", "train_loss", "top1", "top5"]
+            metrics_file,
+            fieldnames=["epoch", "total", "infonce", "mmd", "mmd_weight", "top1", "top5"],
         )
         csv_writer.writeheader()
         metrics_file.flush()
@@ -254,23 +179,31 @@ def run_intra_subject(
         writer = SummaryWriter(log_dir=tb_dir)
 
         for epoch in range(1, config.epochs + 1):
-            mean_loss = train_one_epoch(
-                model, train_loader, optimizer, feature_lookup, device,
-                lambda_reg=config.lambda_reg, tau=config.tau,
-                grad_clip=config.grad_clip,
+            components = train_one_epoch(
+                model, train_loader, optimizer, train_internvit, device, epoch, config,
             )
-            scheduler.step()
-            lr_now = scheduler.get_last_lr()[0]
             logger.info(
-                f"Sub{subject_id:02d} | epoch {epoch}/{config.epochs} | loss={mean_loss:.4f}"
+                f"Sub{subject_id:02d} | epoch {epoch}/{config.epochs} | "
+                f"total={components['total']:.4f} | infonce={components['infonce']:.4f} | "
+                f"mmd={components['mmd']:.4f} | mmd_w={components['mmd_weight']:.3f}"
             )
-            writer.add_scalar("train/loss", mean_loss, epoch)
-            writer.add_scalar("train/lr", lr_now, epoch)
+            writer.add_scalar("train/total",      components["total"],      epoch)
+            writer.add_scalar("train/infonce",    components["infonce"],    epoch)
+            writer.add_scalar("train/mmd",        components["mmd"],        epoch)
+            writer.add_scalar("train/mmd_weight", components["mmd_weight"], epoch)
 
-            row: dict[str, Any] = {"epoch": epoch, "train_loss": round(mean_loss, 6), "top1": "", "top5": ""}
+            row: dict[str, Any] = {
+                "epoch":      epoch,
+                "total":      round(components["total"],      6),
+                "infonce":    round(components["infonce"],    6),
+                "mmd":        round(components["mmd"],        6),
+                "mmd_weight": round(components["mmd_weight"], 6),
+                "top1": "",
+                "top5": "",
+            }
 
             if epoch % config.eval_every == 0:
-                top1, top5 = evaluate(model, test_loader, feature_lookup, device)
+                top1, top5 = evaluate(model, test_loader, test_internvit, device)
                 logger.info(
                     f"Sub{subject_id:02d} | eval epoch {epoch} | "
                     f"Top-1: {top1:.4f} | Top-5: {top5:.4f}"
@@ -283,11 +216,7 @@ def run_intra_subject(
                     best_top1 = top1
                     best_top5 = top5
                     save_checkpoint(
-                        model,
-                        optimizer,
-                        epoch,
-                        top1,
-                        top5,
+                        model, optimizer, epoch, top1, top5,
                         path=os.path.join(output_dir, f"supaeeg_intra_sub{subject_id:02d}.pt"),
                     )
 
@@ -308,7 +237,8 @@ def run_intra_subject(
 
 def run_inter_subject(
     config: Config,
-    feature_lookup: VisualFeatureLookup,
+    train_internvit: InternViTFeatureLookup,
+    test_internvit: InternViTFeatureLookup,
     device: torch.device,
     output_dir: str,
 ) -> dict[int, dict[str, float]]:
@@ -319,13 +249,14 @@ def run_inter_subject(
     A fresh model and optimiser are created for every fold.
 
     Args:
-        config:         Runtime configuration.
-        feature_lookup: Pre-loaded CLIP feature bank (shared across folds).
-        device:         Compute device.
-        output_dir:     Hydra run directory for checkpoints and metrics CSV.
+        config:          Runtime configuration.
+        train_internvit: InternViTFeatureLookup for the training split.
+        test_internvit:  InternViTFeatureLookup for the test split.
+        device:          Compute device.
+        output_dir:      Hydra run directory for checkpoints and metrics CSV.
 
     Returns:
-        Mapping of test_subject_id → {``'top1'``: float, ``'top5'``: float}.
+        Mapping of test_subject_id → {'top1': float, 'top5': float}.
     """
     all_results: dict[int, dict[str, float]] = {}
 
@@ -366,16 +297,16 @@ def run_inter_subject(
             num_workers=0,
         )
 
-        model = make_model(config, device)
+        model     = make_model(config, device)
         optimizer = make_optimizer(model, config)
-        scheduler = make_scheduler(optimizer, config)
         best_top1 = 0.0
         best_top5 = 0.0
 
         metrics_path = os.path.join(output_dir, f"metrics_loso_sub{test_subject:02d}.csv")
         metrics_file = open(metrics_path, "w", newline="")
         csv_writer = csv.DictWriter(
-            metrics_file, fieldnames=["epoch", "train_loss", "top1", "top5"]
+            metrics_file,
+            fieldnames=["epoch", "total", "infonce", "mmd", "mmd_weight", "top1", "top5"],
         )
         csv_writer.writeheader()
         metrics_file.flush()
@@ -384,24 +315,31 @@ def run_inter_subject(
         writer = SummaryWriter(log_dir=tb_dir)
 
         for epoch in range(1, config.epochs + 1):
-            mean_loss = train_one_epoch(
-                model, train_loader, optimizer, feature_lookup, device,
-                lambda_reg=config.lambda_reg, tau=config.tau,
-                grad_clip=config.grad_clip,
+            components = train_one_epoch(
+                model, train_loader, optimizer, train_internvit, device, epoch, config,
             )
-            scheduler.step()
-            lr_now = scheduler.get_last_lr()[0]
             logger.info(
                 f"LOSO test=Sub{test_subject:02d} | epoch {epoch}/{config.epochs} | "
-                f"loss={mean_loss:.4f}"
+                f"total={components['total']:.4f} | infonce={components['infonce']:.4f} | "
+                f"mmd={components['mmd']:.4f} | mmd_w={components['mmd_weight']:.3f}"
             )
-            writer.add_scalar("train/loss", mean_loss, epoch)
-            writer.add_scalar("train/lr", lr_now, epoch)
+            writer.add_scalar("train/total",      components["total"],      epoch)
+            writer.add_scalar("train/infonce",    components["infonce"],    epoch)
+            writer.add_scalar("train/mmd",        components["mmd"],        epoch)
+            writer.add_scalar("train/mmd_weight", components["mmd_weight"], epoch)
 
-            row: dict[str, Any] = {"epoch": epoch, "train_loss": round(mean_loss, 6), "top1": "", "top5": ""}
+            row: dict[str, Any] = {
+                "epoch":      epoch,
+                "total":      round(components["total"],      6),
+                "infonce":    round(components["infonce"],    6),
+                "mmd":        round(components["mmd"],        6),
+                "mmd_weight": round(components["mmd_weight"], 6),
+                "top1": "",
+                "top5": "",
+            }
 
             if epoch % config.eval_every == 0:
-                top1, top5 = evaluate(model, test_loader, feature_lookup, device)
+                top1, top5 = evaluate(model, test_loader, test_internvit, device)
                 logger.info(
                     f"LOSO test=Sub{test_subject:02d} | eval epoch {epoch} | "
                     f"Top-1: {top1:.4f} | Top-5: {top5:.4f}"
@@ -414,11 +352,7 @@ def run_inter_subject(
                     best_top1 = top1
                     best_top5 = top5
                     save_checkpoint(
-                        model,
-                        optimizer,
-                        epoch,
-                        top1,
-                        top5,
+                        model, optimizer, epoch, top1, top5,
                         path=os.path.join(output_dir, f"supaeeg_loso_sub{test_subject:02d}.pt"),
                     )
 
@@ -453,7 +387,7 @@ def train(cfg: DictConfig) -> None:
 
     All options are controlled via conf/config.yaml or CLI overrides, e.g.::
 
-        python train.py subject=2 epochs=500
+        python train.py subject=2 epochs=60
         python train.py protocol=inter lr=1e-4
     """
     config = _cfg_to_config(cfg)
@@ -475,16 +409,37 @@ def train(cfg: DictConfig) -> None:
         _device = torch.device(config.device)
     logger.info(f"Device: {_device}")
 
-    feature_lookup = ensure_visual_features(config.feature_path, config.encoder, config.dataset_dir)
+    # Ensure InternViT features are present (no-op if already extracted)
+    from scripts.ensure_internvit_features import ensure_internvit_features
+    ensure_internvit_features(
+        internvit_dir  = config.internvit_dir,
+        layer_ids      = config.layer_ids,
+        train_img_dir  = config.train_img_dir,
+        test_img_dir   = config.test_img_dir,
+        metadata_path  = config.metadata_path,
+        device         = config.device,
+        batch_size     = 64,
+    )
+
+    train_internvit = InternViTFeatureLookup(
+        feature_dir=config.internvit_dir,
+        layer_ids=config.layer_ids,
+        split="train",
+    )
+    test_internvit = InternViTFeatureLookup(
+        feature_dir=config.internvit_dir,
+        layer_ids=config.layer_ids,
+        split="test",
+    )
 
     output_dir = HydraConfig.get().runtime.output_dir
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output dir: {output_dir}")
 
     if config.protocol == "intra":
-        run_intra_subject(config, feature_lookup, _device, output_dir)
+        run_intra_subject(config, train_internvit, test_internvit, _device, output_dir)
     else:
-        run_inter_subject(config, feature_lookup, _device, output_dir)
+        run_inter_subject(config, train_internvit, test_internvit, _device, output_dir)
 
 
 if __name__ == "__main__":
