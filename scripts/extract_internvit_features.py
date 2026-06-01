@@ -10,8 +10,6 @@ Output:
     internvit_features.npy   dict {(concept, img_file): ndarray(n_layers, 3200) float16}
 """
 
-from __future__ import annotations
-
 import os
 
 import hydra
@@ -20,7 +18,7 @@ import torch
 from omegaconf import DictConfig
 from PIL import Image
 from tqdm import tqdm
-from transformers import AutoModel, AutoImageProcessor
+from transformers import AutoModel, CLIPImageProcessor
 from loguru import logger
 
 
@@ -28,18 +26,20 @@ OUTPUT_DIM = 3200   # InternViT-6B hidden dim (architectural constant)
 
 
 def load_internvit(model_name: str, device: torch.device):
-    """Load frozen InternViT encoder with forward hooks on target layers."""
+    """Load frozen InternViT encoder (bfloat16, following the official HF example)."""
     logger.info(f"Loading InternViT from {model_name}...")
-    processor = AutoImageProcessor.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
-        model_name,
-        trust_remote_code=True,
-        low_cpu_mem_usage=False,   # prevents meta-tensor init that breaks .item() calls
+    processor = CLIPImageProcessor.from_pretrained(model_name, trust_remote_code=True)
+    model = (
+        AutoModel.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16,
+            trust_remote_code=True,
+        )
+        .to(device)
+        .eval()
     )
-    model.eval()
     for p in model.parameters():
         p.requires_grad = False
-    model = model.to(device)
     logger.info(
         f"InternViT loaded. Parameters: {sum(p.numel() for p in model.parameters()):,} (all frozen)"
     )
@@ -96,7 +96,7 @@ def extract_layer_features(
         hooks.append(layers[lid].register_forward_hook(make_hook(lid)))
 
     inputs = processor(images=images, return_tensors="pt")
-    pixel_values = inputs["pixel_values"].to(device)
+    pixel_values = inputs["pixel_values"].to(dtype=torch.bfloat16, device=device)
 
     with torch.no_grad():
         model(pixel_values=pixel_values)
