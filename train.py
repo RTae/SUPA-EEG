@@ -37,8 +37,7 @@ def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
 
     The collate also derives:
       concept_indices: data_index (0-based concept index)
-      image_indices:   repetition_index % n_imgs_per_concept
-                       (maps to InternViTFeatureLookup image axis)
+      image_indices:   repetition_index (0-based repetition index)
 
     Args:
         batch: List of tuples from the dataset.
