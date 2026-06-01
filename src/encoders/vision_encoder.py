@@ -198,3 +198,57 @@ class InternViTFeatureLookup:
 
     def __len__(self) -> int:
         return len(self.features)
+
+
+# ---------------------------------------------------------------------------
+# Feature guard (called at training startup)
+# ---------------------------------------------------------------------------
+
+def ensure_internvit_features(
+    internvit_dir: str,
+    layer_ids: list[int],
+    train_img_dir: str,
+    test_img_dir: str,
+    model_name: str = "OpenGVLab/InternViT-6B-448px-V1-5",
+    device: str = "cpu",
+    batch_size: int = 64,
+) -> None:
+    """Check if InternViT features exist; extract if missing.
+
+    Called automatically at the start of training (no-op if the file is present).
+
+    Args:
+        internvit_dir:  Directory for the output ``.npy`` file.
+        layer_ids:      e.g. ``[20, 24, 28, 32, 36]``
+        train_img_dir:  ``data/things_eeg/training_images``
+        test_img_dir:   ``data/things_eeg/test_images``
+        model_name:     HuggingFace model ID.
+        device:         Device for InternViT extraction.
+        batch_size:     Images per batch during extraction.
+    """
+    out_path = os.path.join(internvit_dir, "internvit_features.npy")
+
+    if os.path.isfile(out_path):
+        logger.info(f"InternViT features found at {out_path}. Skipping extraction.")
+        return
+
+    logger.warning(
+        f"InternViT feature file not found: {out_path}\n"
+        "Running offline extraction — this may take 10-30 minutes."
+    )
+
+    _device = torch.device(device)
+    processor, model = load_internvit(model_name, _device)
+
+    features: dict = {}
+    for image_dir in (train_img_dir, test_img_dir):
+        features.update(
+            extract_directory(image_dir, model, processor, layer_ids, _device, batch_size)
+        )
+
+    os.makedirs(internvit_dir, exist_ok=True)
+    np.save(out_path, features)
+
+    if not os.path.isfile(out_path):
+        raise FileNotFoundError(f"Extraction completed but file still missing: {out_path}")
+    logger.info(f"InternViT features saved to {out_path} ({len(features):,} images).")

@@ -404,7 +404,7 @@ def train(cfg: DictConfig) -> None:
     logger.info(f"Device: {_device}")
 
     # Ensure InternViT features are present (no-op if already extracted)
-    from scripts.extract_internvit_features import ensure_internvit_features
+    from src.encoders.vision_encoder import ensure_internvit_features
     ensure_internvit_features(
         internvit_dir  = config.internvit_dir,
         layer_ids      = config.layer_ids,
