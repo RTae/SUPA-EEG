@@ -166,13 +166,12 @@ class Config:
     batch_size: int = 256
     eval_every: int = 5
     lambda_reg: float = 0.1
-    beta_l1: float = 0.01
     tau: float = 0.07
-    d_model: int = 256
-    nhead: int = 8
-    num_layers: int = 4
-    dim_feedforward: int = 512
-    dropout: float = 0.1
+    n_channels: int = 17
+    n_timepoints: int = 100
+    feature_dim: int = 1024
+    d_visual: int = 768
+    dropout: float = 0.3
     lr: float = 3e-4
     weight_decay: float = 1e-4
     warmup_epochs: int = 10
@@ -186,7 +185,6 @@ def train_one_epoch(
     feature_lookup: Any,
     device: torch.device,
     lambda_reg: float = 0.1,
-    beta_l1: float = 0.01,
     tau: float = 0.07,
     grad_clip: float = 1.0,
 ) -> float:
@@ -199,7 +197,6 @@ def train_one_epoch(
         feature_lookup: VisualFeatureLookup used to retrieve CLIP targets.
         device:         Compute device.
         lambda_reg:     Gaussian regulariser weight.
-        beta_l1:        Channel-attention L1 sparsity weight.
         tau:            InfoNCE temperature.
 
     Returns:
@@ -221,9 +218,7 @@ def train_one_epoch(
 
         loss, components = compute_loss(
             z1, z2, z3, S1, S2, S3,
-            model.scale_encoder,
             lambda_reg=lambda_reg,
-            beta_l1=beta_l1,
             tau=tau,
         )
         optimizer.zero_grad()
@@ -384,11 +379,11 @@ def make_model(
     from src.models.supaeeg import SUPAEEG  # local import avoids circular deps
 
     return SUPAEEG(
-        d_model=config.d_model,
-        nhead=config.nhead,
-        num_layers=config.num_layers,
-        dim_feedforward=config.dim_feedforward,
-        dropout=config.dropout,
+        n_channels=17,
+        n_timepoints=100,
+        feature_dim=1024,
+        d_visual=768,
+        dropout=0.3,
     ).to(device)
 
 

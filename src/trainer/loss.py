@@ -45,24 +45,6 @@ def sigreg_loss(
     return total  # type: ignore[return-value]
 
 
-def l1_sparsity_loss(scale_encoder: "MultiScaleEncoder") -> torch.Tensor:  # type: ignore[name-defined]
-    """L1 sparsity penalty on channel attention weights.
-
-    Encourages each scale to rely on a sparse subset of EEG channels.
-
-    Args:
-        scale_encoder: The MultiScaleEncoder whose ``last_alpha`` attributes to penalise.
-
-    Returns:
-        Scalar loss tensor.
-    """
-    return (
-        scale_encoder.channel_attn_1.last_alpha.abs().sum()  # type: ignore[union-attr]
-        + scale_encoder.channel_attn_2.last_alpha.abs().sum()  # type: ignore[union-attr]
-        + scale_encoder.channel_attn_3.last_alpha.abs().sum()  # type: ignore[union-attr]
-    )
-
-
 def compute_loss(
     z1: torch.Tensor,
     z2: torch.Tensor,
@@ -70,35 +52,29 @@ def compute_loss(
     S1: torch.Tensor,
     S2: torch.Tensor,
     S3: torch.Tensor,
-    scale_encoder: "MultiScaleEncoder",  # type: ignore[name-defined]
     lambda_reg: float = 0.1,
-    beta_l1: float = 0.01,
     tau: float = 0.07,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    """Full SUPAEEG training objective.
-
-    Combines symmetric InfoNCE (per depth scale) with a Gaussian regulariser
-    and an L1 channel-sparsity penalty.
+    """Full SUPAEEG training objective without L1 sparsity.
 
     Args:
-        z1, z2, z3:    EEG scale embeddings, each ``(batch, 768)``.
-        S1, S2, S3:    CLIP visual targets, each ``(batch, 768)``.
-        scale_encoder: MultiScaleEncoder holding the channel attention weights.
-        lambda_reg:    Weight for the Gaussian regulariser.  Default: 0.1.
-        beta_l1:       Weight for the L1 sparsity penalty.  Default: 0.01.
-        tau:           InfoNCE temperature.  Default: 0.07.
+        z1, z2, z3:  EEG scale embeddings each (batch, 768)
+        S1, S2, S3:  CLIP visual targets each (batch, 768)
+        lambda_reg:  SIGReg weight
+        tau:         InfoNCE temperature
 
     Returns:
-        ``(total_loss, components)`` where ``components`` contains
-        ``'total'``, ``'infonce'``, ``'sigreg'``, ``'l1'`` as floats.
+        (total_loss, components_dict)
     """
-    infonce = info_nce_loss(z1, S1, tau) + info_nce_loss(z2, S2, tau) + info_nce_loss(z3, S3, tau)
+    infonce = (
+        info_nce_loss(z1, S1, tau)
+        + info_nce_loss(z2, S2, tau)
+        + info_nce_loss(z3, S3, tau)
+    )
     sigreg = sigreg_loss(z1, z2, z3)
-    l1 = l1_sparsity_loss(scale_encoder)
-    total = infonce + lambda_reg * sigreg + beta_l1 * l1
+    total = infonce + lambda_reg * sigreg
     return total, {
         "total": total.item(),
         "infonce": infonce.item(),
         "sigreg": sigreg.item(),
-        "l1": l1.item(),
     }

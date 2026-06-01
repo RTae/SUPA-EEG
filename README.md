@@ -98,12 +98,12 @@ conf/
 src/
 ├── utilities.py              # Config / EncoderConfig dataclasses + training helpers
 ├── encoders/
-│   ├── eegnet_encoder.py     # EEGNet spatiotemporal tokeniser  (B,17,100) → (B,N_t,256)
+│   ├── eegnet_encoder.py     # EEGProject-style MLP encoder  (B,17,100) -> (B,1024)
 │   └── visual_encoder.py     # Frozen CLIP/I-JEPA encoder + VisualFeatureLookup
 ├── models/
-│   └── supaeeg.py            # SUPAEEG, MultiScaleEncoder, ChannelAttention
+│   └── supaeeg.py            # SUPAEEG with 3 projection heads (z1,z2,z3)
 └── trainer/
-    ├── loss.py               # info_nce_loss, sigreg_loss, l1_sparsity_loss, compute_loss
+    ├── loss.py               # info_nce_loss, sigreg_loss, compute_loss
     └── metrics.py            # retrieve_all, retrieve_topk
 train.py                      # Typer CLI entrypoint
 data/
@@ -259,15 +259,14 @@ as Hydra key=value pairs, e.g. `python train.py subject=2 epochs=500`.
 | `batch_size` | Batch size | `256` |
 | `eval_every` | Evaluate every N epochs | `5` |
 | `lambda_reg` | Gaussian regulariser weight | `0.1` |
-| `beta_l1` | Channel-attention L1 sparsity weight | `0.01` |
 | `tau` | InfoNCE temperature | `0.07` |
 | `warmup_epochs` | Linear LR warmup epochs before cosine decay | `10` |
 | `grad_clip` | Max gradient norm (0 = disabled) | `1.0` |
-| `d_model` | Token embedding dim | `256` |
-| `nhead` | Transformer attention heads | `8` |
-| `num_layers` | Transformer depth | `4` |
-| `dim_feedforward` | FFN hidden size | `512` |
-| `dropout` | Dropout | `0.1` |
+| `model.n_channels` | EEG channel count | `17` |
+| `model.n_timepoints` | EEG time samples per trial | `100` |
+| `model.feature_dim` | MLP hidden/output dimension | `1024` |
+| `model.d_visual` | Projection output dimension per scale | `768` |
+| `model.dropout` | MLP dropout | `0.3` |
 | `lr` | Learning rate | `3e-4` |
 | `weight_decay` | Weight decay | `1e-4` |
 
@@ -278,10 +277,10 @@ as Hydra key=value pairs, e.g. `python train.py subject=2 epochs=500`.
 | CLI entry | `train.py` | Typer entry, protocol dispatch, feature extraction |
 | Config dataclasses | `src/utilities.py` | `Config`, `EncoderConfig`; training helpers |
 | Hyperparameter reference | `conf/config.yaml` | YAML source of all defaults (Hydra config) |
-| EEG tokeniser | `src/encoders/eegnet_encoder.py` | Temporal → depthwise → separable conv → token sequence |
+| EEG encoder | `src/encoders/eegnet_encoder.py` | Flatten -> Linear -> residual MLP -> LayerNorm |
 | Visual targets | `src/encoders/visual_encoder.py` | Frozen CLIP/I-JEPA encoder + `VisualFeatureLookup` |
-| Full model | `src/models/supaeeg.py` | `SUPAEEG`, `MultiScaleEncoder`, `ChannelAttention` |
-| Loss functions | `src/trainer/loss.py` | `compute_loss`, `info_nce_loss`, `sigreg_loss`, `l1_sparsity_loss` |
+| Full model | `src/models/supaeeg.py` | `SUPAEEG` (single backbone + 3 projection heads) |
+| Loss functions | `src/trainer/loss.py` | `compute_loss`, `info_nce_loss`, `sigreg_loss` |
 | Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
 
 ## Dataset Explorer

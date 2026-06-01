@@ -27,17 +27,17 @@ epochs: 100
 batch_size: 256
 eval_every: 5
 lambda_reg: 0.1     # Gaussian regulariser weight
-beta_l1: 0.01       # channel-attention L1 sparsity weight
 tau: 0.07           # InfoNCE temperature
 warmup_epochs: 10   # linear LR warmup before cosine decay
 grad_clip: 1.0      # max gradient norm (0 = disabled)
 
 # --- Architecture ----------------------------------------------------------
-d_model: 256
-nhead: 8
-num_layers: 4
-dim_feedforward: 512
-dropout: 0.1
+model:
+  n_channels: 17
+  n_timepoints: 100
+  feature_dim: 1024
+  d_visual: 768
+  dropout: 0.3
 
 # --- Optimiser -------------------------------------------------------------
 lr: 3e-4

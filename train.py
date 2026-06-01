@@ -164,13 +164,12 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         batch_size=cfg.batch_size,
         eval_every=cfg.eval_every,
         lambda_reg=cfg.lambda_reg,
-        beta_l1=cfg.beta_l1,
         tau=cfg.tau,
-        d_model=cfg.d_model,
-        nhead=cfg.nhead,
-        num_layers=cfg.num_layers,
-        dim_feedforward=cfg.dim_feedforward,
-        dropout=cfg.dropout,
+        n_channels=cfg.model.n_channels,
+        n_timepoints=cfg.model.n_timepoints,
+        feature_dim=cfg.model.feature_dim,
+        d_visual=cfg.model.d_visual,
+        dropout=cfg.model.dropout,
         lr=cfg.lr,
         weight_decay=cfg.weight_decay,
         warmup_epochs=cfg.warmup_epochs,
@@ -257,7 +256,7 @@ def run_intra_subject(
         for epoch in range(1, config.epochs + 1):
             mean_loss = train_one_epoch(
                 model, train_loader, optimizer, feature_lookup, device,
-                lambda_reg=config.lambda_reg, beta_l1=config.beta_l1, tau=config.tau,
+                lambda_reg=config.lambda_reg, tau=config.tau,
                 grad_clip=config.grad_clip,
             )
             scheduler.step()
@@ -387,7 +386,7 @@ def run_inter_subject(
         for epoch in range(1, config.epochs + 1):
             mean_loss = train_one_epoch(
                 model, train_loader, optimizer, feature_lookup, device,
-                lambda_reg=config.lambda_reg, beta_l1=config.beta_l1, tau=config.tau,
+                lambda_reg=config.lambda_reg, tau=config.tau,
                 grad_clip=config.grad_clip,
             )
             scheduler.step()
