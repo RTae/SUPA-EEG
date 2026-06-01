@@ -215,11 +215,9 @@ def train_one_epoch(
     n_batches = 0
     for batch in train_loader:
         eeg: torch.Tensor = batch["eeg"].to(device)
-        concept_indices: list[int] = batch["concept_indices"]
-        image_indices: list[int] = batch["image_indices"]
 
         image_layers = internvit_lookup.retrieve_batch(
-            concept_indices, image_indices
+            batch["image_concepts"], batch["image_files"]
         ).to(device)
 
         zE, zI = model(eeg, image_layers)
@@ -267,13 +265,17 @@ def evaluate(
 
     model.eval()
     concept_embeddings: dict[str, list[torch.Tensor]] = defaultdict(list)
+    concept_to_file: dict[str, str] = {}
 
     with torch.no_grad():
         for batch in test_loader:
             eeg = batch["eeg"].to(device)
             zE = model.embed(eeg)  # (batch, 512), l2-normalised
-            for i, concept in enumerate(batch["image_concepts"]):
+            for i, (concept, img_file) in enumerate(
+                zip(batch["image_concepts"], batch["image_files"])
+            ):
                 concept_embeddings[concept].append(zE[i].cpu())
+                concept_to_file[concept] = img_file
 
     concept_order = sorted(concept_embeddings.keys())
 
@@ -289,7 +291,9 @@ def evaluate(
     ).numpy()  # (200, 512)
 
     # Build image gallery from InternViT lookup
-    gallery = internvit_lookup.retrieve_all_test_concepts()  # (200, n_layers, 3200)
+    gallery = internvit_lookup.retrieve_batch(
+        concept_order, [concept_to_file[c] for c in concept_order]
+    )  # (200, n_layers, 3200)
     with torch.no_grad():
         image_features = torch.cat(
             [

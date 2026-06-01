@@ -7,16 +7,7 @@ Usage:
 
 Output:
   data/things_eeg/image_feature/internvit_multilevel_20_24_28_32_36/
-    image_train_layer20.npy   (1654, 10, 3200) float16
-    image_train_layer24.npy   ...
-    image_train_layer28.npy
-    image_train_layer32.npy
-    image_train_layer36.npy
-    image_test_layer20.npy    (200, 1, 3200)   float16
-    image_test_layer24.npy    ...
-    image_test_layer28.npy
-    image_test_layer32.npy
-    image_test_layer36.npy
+    internvit_features.npy   dict {(concept, img_file): ndarray(n_layers, 3200) float16}
 """
 
 from __future__ import annotations
@@ -112,110 +103,77 @@ def extract_layer_features(
     return {lid: intermediate[lid].numpy() for lid in layer_ids}
 
 
-def get_ordered_image_paths(
+def extract_directory(
     image_dir: str,
-    metadata: dict,
-    split: str,
-) -> list[tuple[str, str, str]]:
-    """Return ordered list of image paths matching metadata ordering.
-
-    Args:
-        image_dir: path to training_images or test_images
-        metadata:  loaded image_metadata.npy dict
-        split:     'train' or 'test'
-
-    Returns:
-        List of (concept, image_file, full_path) tuples
-        in the same order as metadata
-    """
-    concepts  = metadata[f"{split}_img_concepts"]
-    img_files = metadata[f"{split}_img_files"]
-
-    result = []
-    for concept, img_file in zip(concepts, img_files):
-        path = os.path.join(image_dir, concept, img_file)
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"Image not found: {path}")
-        result.append((concept, img_file, path))
-    return result
-
-
-def extract_split(
-    split: str,
-    image_dir: str,
-    metadata: dict,
     model,
     processor,
     layer_ids: list[int],
     device: torch.device,
     batch_size: int,
-    output_dir: str,
-) -> None:
-    """Extract features for one split (train or test) and save per layer.
+) -> dict:
+    """Extract InternViT features for all images in a concept-organised directory.
 
-    Output arrays:
-      train: (n_concepts, n_images_per_concept, 3200) float16
-      test:  (n_concepts, 1, 3200) float16
+    Expected layout::
+
+        <image_dir>/<concept>/<image_file>
+
+    Args:
+        image_dir:  Root directory containing concept sub-folders.
+        model:      Frozen InternViT model.
+        processor:  HuggingFace image processor.
+        layer_ids:  Transformer layer indices to extract.
+        device:     Torch device.
+        batch_size: Images per forward pass.
+
+    Returns:
+        dict mapping ``(concept, img_file)`` to ``ndarray(n_layers, 3200)`` float16.
     """
-    image_paths = get_ordered_image_paths(image_dir, metadata, split)
-    n_samples   = len(image_paths)
+    entries: list[tuple[str, str, str]] = []
+    for concept in sorted(os.listdir(image_dir)):
+        concept_dir = os.path.join(image_dir, concept)
+        if not os.path.isdir(concept_dir):
+            continue
+        for img_file in sorted(os.listdir(concept_dir)):
+            img_path = os.path.join(concept_dir, img_file)
+            if os.path.isfile(img_path) and img_file.lower().endswith(
+                (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+            ):
+                entries.append((concept, img_file, img_path))
 
-    concepts = metadata[f"{split}_img_concepts"]
+    logger.info(f"Scanning {image_dir}: {len(entries)} images found.")
+    features: dict = {}
 
-    # Determine concept grouping
-    # train: 1654 concepts x 10 images = 16540 total
-    # test:  200  concepts x 1  image  = 200   total
-    unique_concepts = list(dict.fromkeys(concepts))   # ordered unique
-    n_concepts      = len(unique_concepts)
-    n_imgs_per      = n_samples // n_concepts
-    logger.info(
-        f"Split={split} | n_concepts={n_concepts} | "
-        f"n_imgs_per_concept={n_imgs_per} | total={n_samples}"
-    )
-
-    # Accumulate all features
-    all_features: dict[int, list[np.ndarray]] = {lid: [] for lid in layer_ids}
-
-    for start in tqdm(range(0, n_samples, batch_size), desc=f"Extracting {split}"):
-        end         = min(start + batch_size, n_samples)
-        batch_paths = [image_paths[i][2] for i in range(start, end)]
-        images      = [Image.open(p).convert("RGB") for p in batch_paths]
-
+    for start in tqdm(range(0, len(entries), batch_size), desc=f"Extracting {image_dir}"):
+        batch_entries = entries[start : start + batch_size]
+        images = [Image.open(e[2]).convert("RGB") for e in batch_entries]
         feats = extract_layer_features(model, processor, images, layer_ids, device)
-        for lid in layer_ids:
-            all_features[lid].append(feats[lid])
+        # feats: {lid: (n_batch, 3200)}
+        for i, (concept, img_file, _) in enumerate(batch_entries):
+            features[(concept, img_file)] = np.stack(
+                [feats[lid][i] for lid in layer_ids]
+            ).astype(np.float16)  # (n_layers, 3200)
 
-    os.makedirs(output_dir, exist_ok=True)
-    for lid in layer_ids:
-        arr = np.concatenate(all_features[lid], axis=0)  # (n_samples, 3200)
-        # reshape to (n_concepts, n_imgs_per, 3200)
-        arr = arr.reshape(n_concepts, n_imgs_per, OUTPUT_DIM)
-        arr = arr.astype(np.float16)
-
-        out_path = os.path.join(output_dir, f"image_{split}_layer{lid}.npy")
-        np.save(out_path, arr)
-        logger.info(f"Saved {out_path} shape={arr.shape} dtype={arr.dtype}")
+    return features
 
 
 @hydra.main(config_path="../conf", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
-    device     = torch.device(cfg.device)
-    layer_ids  = list(cfg.layer_ids)
+    device    = torch.device(cfg.device)
+    layer_ids = list(cfg.layer_ids)
     logger.info(f"Device: {device} | Layers: {layer_ids}")
 
-    metadata         = np.load(cfg.metadata_path, allow_pickle=True).item()
     processor, model = load_internvit(cfg.internvit_model, device)
 
-    extract_split(
-        "train", cfg.train_img_dir, metadata,
-        model, processor, layer_ids,
-        device, cfg.batch_size, cfg.internvit_dir,
-    )
-    extract_split(
-        "test", cfg.test_img_dir, metadata,
-        model, processor, layer_ids,
-        device, cfg.batch_size, cfg.internvit_dir,
-    )
+    features: dict = {}
+    for image_dir in (cfg.train_img_dir, cfg.test_img_dir):
+        features.update(
+            extract_directory(image_dir, model, processor, layer_ids, device, cfg.batch_size)
+        )
+
+    os.makedirs(cfg.internvit_dir, exist_ok=True)
+    out_path = os.path.join(cfg.internvit_dir, "internvit_features.npy")
+    logger.info(f"Saving {len(features):,} entries → {out_path}")
+    np.save(out_path, features)
     logger.info("Extraction complete.")
 
 
@@ -224,7 +182,6 @@ def ensure_internvit_features(
     layer_ids: list[int],
     train_img_dir: str,
     test_img_dir: str,
-    metadata_path: str,
     model_name: str = "OpenGVLab/InternViT-6B-448px-V1-5",
     device: str = "cpu",
     batch_size: int = 64,
@@ -232,50 +189,41 @@ def ensure_internvit_features(
     """Check if InternViT features exist. Extract if missing.
 
     Called automatically at the start of training.
-    If ANY required file is missing, runs full extraction for both splits.
 
     Args:
-        internvit_dir:  Output directory for .npy files
+        internvit_dir:  Directory for the output .npy file
         layer_ids:      e.g. [20, 24, 28, 32, 36]
         train_img_dir:  data/things_eeg/training_images
         test_img_dir:   data/things_eeg/test_images
-        metadata_path:  data/things_eeg/image_metadata.npy
+        model_name:     HuggingFace model ID
         device:         device for InternViT extraction
         batch_size:     images per batch during extraction
     """
-    required = [
-        os.path.join(internvit_dir, f"image_{split}_layer{lid}.npy")
-        for split in ("train", "test")
-        for lid in layer_ids
-    ]
-    missing = [f for f in required if not os.path.isfile(f)]
+    out_path = os.path.join(internvit_dir, "internvit_features.npy")
 
-    if not missing:
-        logger.info(f"InternViT features found ({len(required)} files). Skipping extraction.")
+    if os.path.isfile(out_path):
+        logger.info(f"InternViT features found at {out_path}. Skipping extraction.")
         return
 
     logger.warning(
-        f"{len(missing)}/{len(required)} InternViT feature files missing. "
+        f"InternViT feature file not found: {out_path}\n"
         "Running offline extraction — this may take 10-30 minutes."
     )
-    for f in missing:
-        logger.warning(f"  Missing: {f}")
 
-    metadata         = np.load(metadata_path, allow_pickle=True).item()
     processor, model = load_internvit(model_name, torch.device(device))
 
-    extract_split("train", train_img_dir, metadata, model, processor,
-                  layer_ids, torch.device(device), batch_size, internvit_dir)
-    extract_split("test",  test_img_dir,  metadata, model, processor,
-                  layer_ids, torch.device(device), batch_size, internvit_dir)
-
-    still_missing = [f for f in required if not os.path.isfile(f)]
-    if still_missing:
-        raise FileNotFoundError(
-            f"Extraction completed but {len(still_missing)} files still missing: "
-            f"{still_missing}"
+    features: dict = {}
+    for image_dir in (train_img_dir, test_img_dir):
+        features.update(
+            extract_directory(image_dir, model, processor, layer_ids, torch.device(device), batch_size)
         )
-    logger.info("InternViT feature extraction complete. All files verified.")
+
+    os.makedirs(internvit_dir, exist_ok=True)
+    np.save(out_path, features)
+
+    if not os.path.isfile(out_path):
+        raise FileNotFoundError(f"Extraction completed but file still missing: {out_path}")
+    logger.info(f"InternViT features saved to {out_path} ({len(features):,} images).")
 
 
 if __name__ == "__main__":

@@ -95,8 +95,7 @@ data/
     ├── image_metadata.npy
     └── image_feature/
         └── internvit_multilevel_20_24_28_32_36/
-            ├── train_layer20.npy … train_layer36.npy   # (1654, 10, 3200) float16
-            └── test_layer20.npy  … test_layer36.npy    # (200,  1,  3200) float16
+            └── internvit_features.npy   # dict {(concept, img_file): ndarray(n_layers, 3200)} float16
 ```
 
 ## Setup

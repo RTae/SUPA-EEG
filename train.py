@@ -1,8 +1,5 @@
-from __future__ import annotations
-
 import csv
 import os
-from pathlib import Path
 from typing import Any
 
 import hydra
@@ -108,8 +105,7 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
 
 def run_intra_subject(
     config: Config,
-    train_internvit: InternViTFeatureLookup,
-    test_internvit: InternViTFeatureLookup,
+    internvit_lookup: InternViTFeatureLookup,
     device: torch.device,
     output_dir: str,
 ) -> dict[int, dict[str, float]]:
@@ -120,8 +116,7 @@ def run_intra_subject(
 
     Args:
         config:          Runtime configuration.
-        train_internvit: InternViTFeatureLookup for the training split.
-        test_internvit:  InternViTFeatureLookup for the test split.
+        internvit_lookup: InternViTFeatureLookup (concept+file keyed).
         device:          Compute device.
         output_dir:      Hydra run directory for checkpoints and metrics CSV.
 
@@ -204,7 +199,7 @@ def run_intra_subject(
             }
 
             if epoch % config.eval_every == 0:
-                top1, top5 = evaluate(model, test_loader, test_internvit, device)
+                top1, top5 = evaluate(model, test_loader, internvit_lookup, device)
                 logger.info(
                     f"Sub{subject_id:02d} | eval epoch {epoch} | "
                     f"Top-1: {top1:.4f} | Top-5: {top5:.4f}"
@@ -238,8 +233,7 @@ def run_intra_subject(
 
 def run_inter_subject(
     config: Config,
-    train_internvit: InternViTFeatureLookup,
-    test_internvit: InternViTFeatureLookup,
+    internvit_lookup: InternViTFeatureLookup,
     device: torch.device,
     output_dir: str,
 ) -> dict[int, dict[str, float]]:
@@ -251,8 +245,7 @@ def run_inter_subject(
 
     Args:
         config:          Runtime configuration.
-        train_internvit: InternViTFeatureLookup for the training split.
-        test_internvit:  InternViTFeatureLookup for the test split.
+        internvit_lookup: InternViTFeatureLookup (concept+file keyed).
         device:          Compute device.
         output_dir:      Hydra run directory for checkpoints and metrics CSV.
 
@@ -317,7 +310,7 @@ def run_inter_subject(
 
         for epoch in range(1, config.epochs + 1):
             components = train_one_epoch(
-                model, train_loader, optimizer, train_internvit, device, epoch, config,
+                model, train_loader, optimizer, internvit_lookup, device, epoch, config,
             )
             logger.info(
                 f"LOSO test=Sub{test_subject:02d} | epoch {epoch}/{config.epochs} | "
@@ -340,7 +333,7 @@ def run_inter_subject(
             }
 
             if epoch % config.eval_every == 0:
-                top1, top5 = evaluate(model, test_loader, test_internvit, device)
+                top1, top5 = evaluate(model, test_loader, internvit_lookup, device)
                 logger.info(
                     f"LOSO test=Sub{test_subject:02d} | eval epoch {epoch} | "
                     f"Top-1: {top1:.4f} | Top-5: {top5:.4f}"
@@ -417,21 +410,13 @@ def train(cfg: DictConfig) -> None:
         layer_ids      = config.layer_ids,
         train_img_dir  = config.train_img_dir,
         test_img_dir   = config.test_img_dir,
-        metadata_path  = config.metadata_path,
         model_name     = config.internvit_model,
         device         = config.device,
         batch_size     = 64,
     )
 
-    train_internvit = InternViTFeatureLookup(
-        feature_dir=config.internvit_dir,
-        layer_ids=config.layer_ids,
-        split="train",
-    )
-    test_internvit = InternViTFeatureLookup(
-        feature_dir=config.internvit_dir,
-        layer_ids=config.layer_ids,
-        split="test",
+    internvit_lookup = InternViTFeatureLookup(
+        feature_path=os.path.join(config.internvit_dir, "internvit_features.npy"),
     )
 
     output_dir = HydraConfig.get().runtime.output_dir
@@ -439,9 +424,9 @@ def train(cfg: DictConfig) -> None:
     logger.info(f"Output dir: {output_dir}")
 
     if config.protocol == "intra":
-        run_intra_subject(config, train_internvit, test_internvit, _device, output_dir)
+        run_intra_subject(config, internvit_lookup, _device, output_dir)
     else:
-        run_inter_subject(config, train_internvit, test_internvit, _device, output_dir)
+        run_inter_subject(config, internvit_lookup, _device, output_dir)
 
 
 if __name__ == "__main__":
