@@ -31,7 +31,11 @@ def load_internvit(model_name: str, device: torch.device):
     """Load frozen InternViT encoder with forward hooks on target layers."""
     logger.info(f"Loading InternViT from {model_name}...")
     processor = AutoImageProcessor.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        low_cpu_mem_usage=False,   # prevents meta-tensor init that breaks .item() calls
+    )
     model.eval()
     for p in model.parameters():
         p.requires_grad = False
