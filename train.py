@@ -92,6 +92,7 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         stage2_lr=cfg.stage2_lr,
         mmd_start=cfg.mmd_start,
         mmd_end=cfg.mmd_end,
+        internvit_model=cfg.internvit_model,
         internvit_dir=cfg.internvit_dir,
         layer_ids=list(OmegaConf.to_container(cfg.layer_ids, resolve=True)),
         train_img_dir=cfg.train_img_dir,
@@ -417,6 +418,7 @@ def train(cfg: DictConfig) -> None:
         train_img_dir  = config.train_img_dir,
         test_img_dir   = config.test_img_dir,
         metadata_path  = config.metadata_path,
+        model_name     = config.internvit_model,
         device         = config.device,
         batch_size     = 64,
     )

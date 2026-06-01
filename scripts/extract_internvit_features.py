@@ -21,28 +21,19 @@ Output:
 
 from __future__ import annotations
 
-import argparse
 import os
-from pathlib import Path
 
+import hydra
 import numpy as np
 import torch
+from omegaconf import DictConfig
 from PIL import Image
 from tqdm import tqdm
 from transformers import AutoModel, AutoImageProcessor
 from loguru import logger
 
 
-LAYER_IDS     = [20, 24, 28, 32, 36]
-OUTPUT_DIM    = 3200   # InternViT-6B hidden dim
-MODEL_NAME    = "OpenGVLab/InternViT-6B-448px-V1-5"
-OUTPUT_DIR    = "data/things_eeg/image_feature/internvit_multilevel_20_24_28_32_36"
-TRAIN_IMG_DIR = "data/things_eeg/training_images"
-TEST_IMG_DIR  = "data/things_eeg/test_images"
-
-# image_metadata.npy contains concept and file ordering
-# must match the ordering used by ThingsEEGDataset
-METADATA_PATH = "data/things_eeg/image_metadata.npy"
+OUTPUT_DIM = 3200   # InternViT-6B hidden dim (architectural constant)
 
 
 def load_internvit(model_name: str, device: torch.device):
@@ -206,35 +197,24 @@ def extract_split(
         logger.info(f"Saved {out_path} shape={arr.shape} dtype={arr.dtype}")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Extract InternViT multilayer features from THINGS-EEG images"
-    )
-    parser.add_argument("--device",        default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--batch_size",    type=int, default=64)
-    parser.add_argument("--model_name",    default=MODEL_NAME)
-    parser.add_argument("--output_dir",    default=OUTPUT_DIR)
-    parser.add_argument("--train_img_dir", default=TRAIN_IMG_DIR)
-    parser.add_argument("--test_img_dir",  default=TEST_IMG_DIR)
-    parser.add_argument("--metadata_path", default=METADATA_PATH)
-    parser.add_argument("--layer_ids",     nargs="+", type=int, default=LAYER_IDS)
-    args = parser.parse_args()
+@hydra.main(config_path="../conf", config_name="config", version_base=None)
+def main(cfg: DictConfig) -> None:
+    device     = torch.device(cfg.device)
+    layer_ids  = list(cfg.layer_ids)
+    logger.info(f"Device: {device} | Layers: {layer_ids}")
 
-    device = torch.device(args.device)
-    logger.info(f"Device: {device} | Layers: {args.layer_ids}")
-
-    metadata          = np.load(args.metadata_path, allow_pickle=True).item()
-    processor, model  = load_internvit(args.model_name, device)
+    metadata         = np.load(cfg.metadata_path, allow_pickle=True).item()
+    processor, model = load_internvit(cfg.internvit_model, device)
 
     extract_split(
-        "train", args.train_img_dir, metadata,
-        model, processor, args.layer_ids,
-        device, args.batch_size, args.output_dir,
+        "train", cfg.train_img_dir, metadata,
+        model, processor, layer_ids,
+        device, cfg.batch_size, cfg.internvit_dir,
     )
     extract_split(
-        "test", args.test_img_dir, metadata,
-        model, processor, args.layer_ids,
-        device, args.batch_size, args.output_dir,
+        "test", cfg.test_img_dir, metadata,
+        model, processor, layer_ids,
+        device, cfg.batch_size, cfg.internvit_dir,
     )
     logger.info("Extraction complete.")
 
@@ -245,6 +225,7 @@ def ensure_internvit_features(
     train_img_dir: str,
     test_img_dir: str,
     metadata_path: str,
+    model_name: str = "OpenGVLab/InternViT-6B-448px-V1-5",
     device: str = "cpu",
     batch_size: int = 64,
 ) -> None:
@@ -281,7 +262,7 @@ def ensure_internvit_features(
         logger.warning(f"  Missing: {f}")
 
     metadata         = np.load(metadata_path, allow_pickle=True).item()
-    processor, model = load_internvit(MODEL_NAME, torch.device(device))
+    processor, model = load_internvit(model_name, torch.device(device))
 
     extract_split("train", train_img_dir, metadata, model, processor,
                   layer_ids, torch.device(device), batch_size, internvit_dir)
