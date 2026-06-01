@@ -41,7 +41,7 @@ aria2c --dir=data/things_eeg \
   --input-file=/tmp/things_eeg.txt \
   --max-concurrent-downloads=4 --split=4 --min-split-size=10M
 
-aria2c --dir=data/vision_encoder/clip \
+aria2c --dir=data/things_eeg/image_feature/clip \
   --max-concurrent-downloads=4 --split=4 --min-split-size=10M \
   "https://cloud.tsinghua.edu.cn/f/7c0d0012439b49c5a512/?dl=1" -o visual_features_clip.pt
 
