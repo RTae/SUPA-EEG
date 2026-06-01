@@ -166,7 +166,7 @@ class Config:
     mmd_end: float = 0.5
     internvit_model: str = "OpenGVLab/InternViT-6B-448px-V1-5"
     internvit_dir: str = "data/things_eeg/image_feature/internvit_multilevel_20_24_28_32_36"
-    layer_ids: list = field(default_factory=lambda: [20, 24, 28, 32, 36])
+    layer_ids: list[int] = field(default_factory=lambda: [20, 24, 28, 32, 36])
     train_img_dir: str = "data/things_eeg/training_images"
     test_img_dir: str = "data/things_eeg/test_images"
     metadata_path: str = "data/things_eeg/image_metadata.npy"
