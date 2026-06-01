@@ -115,9 +115,8 @@ class InternViTFeatureLookup:
 
 
 # ---------------------------------------------------------------------------
-# Feature guard (called at training startup)
+# Feature guard 
 # ---------------------------------------------------------------------------
-
 def ensure_internvit_features(
     internvit_dir: str,
     layer_ids: list[int],
