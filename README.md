@@ -108,7 +108,10 @@ data/
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create virtualenv and install dependencies
-uv venv && uv sync
+uv venv && uv sync --no-build-isolation
+
+# Install flash-attn separately
+uv add flash-attn --no-build-isolation
 
 # Activate (every session)
 source .venv/bin/activate
