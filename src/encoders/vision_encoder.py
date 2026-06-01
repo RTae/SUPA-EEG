@@ -17,13 +17,19 @@ OUTPUT_DIM = 3200   # InternViT-6B hidden dim (architectural constant)
 def load_internvit(model_name: str, device: torch.device):
     """Load frozen InternViT encoder.
 
-    Loads on CPU with ``torch_dtype=bfloat16`` (avoids 24 GB float32 copy),
-    then moves to ``device``.  ``device_map`` is intentionally omitted —
-    it triggers ``caching_allocator_warmup`` which calls
-    ``model.all_tied_weights_keys`` that InternViT doesn't define.
-    The cached ``modeling_intern_vit.py`` has been patched separately so that
-    ``torch.linspace(..., device='cpu')`` is used in ``InternVisionEncoder.__init__``
-    to avoid meta-tensor errors.
+    Applies two runtime patches to work around incompatibilities between the
+    InternViT custom model and the installed transformers version — without
+    modifying any library or cached files:
+
+    1. **meta-tensor error**: ``InternVisionEncoder.__init__`` calls
+       ``torch.linspace(...).item()``. When ``device_map`` is set, transformers
+       wraps ``__init__`` in ``init_empty_weights()`` making every tensor a meta
+       tensor. Fix: patch ``torch.linspace`` temporarily to always run on CPU.
+
+    2. **all_tied_weights_keys missing**: newer transformers calls
+       ``model.all_tied_weights_keys`` in ``_finalize_model_loading``, but
+       custom remote models don't define it. Fix: add it to ``PreTrainedModel``
+       once if absent.
 
     Args:
         model_name: HuggingFace model ID, e.g. ``OpenGVLab/InternViT-6B-448px-V1-5``
@@ -33,14 +39,37 @@ def load_internvit(model_name: str, device: torch.device):
         ``(processor, model)`` tuple — processor is a ``CLIPImageProcessor``,
         model is frozen bfloat16 on ``device``.
     """
-    logger.info(f"Loading InternViT from {model_name}...")
-    processor = CLIPImageProcessor.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
-        model_name,
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,   # load as bfloat16 on CPU (~12 GB, not 24 GB)
-    )
-    model = model.to(device=device)
+    from transformers import PreTrainedModel
+
+    # Patch 1: provide all_tied_weights_keys on PreTrainedModel if absent.
+    # Newer transformers calls this in _finalize_model_loading; custom remote
+    # models loaded via trust_remote_code (like InternViT) don't define it.
+    if not hasattr(PreTrainedModel, "all_tied_weights_keys"):
+        PreTrainedModel.all_tied_weights_keys = property(
+            lambda self: {k: None for k in (getattr(self, "_tied_weights_keys", None) or [])}
+        )
+
+    # Patch 2: make torch.linspace always produce a CPU tensor so that
+    # InternVisionEncoder.__init__'s .item() call works even when transformers
+    # wraps __init__ in init_empty_weights() (meta-device context) via device_map.
+    _orig_linspace = torch.linspace
+    def _cpu_linspace(*args, **kwargs):
+        kwargs.setdefault("device", "cpu")
+        return _orig_linspace(*args, **kwargs)
+    torch.linspace = _cpu_linspace
+
+    try:
+        logger.info(f"Loading InternViT from {model_name}...")
+        processor = CLIPImageProcessor.from_pretrained(model_name, trust_remote_code=True)
+        model = AutoModel.from_pretrained(
+            model_name,
+            trust_remote_code=True,
+            device_map={"":  str(device)},
+            torch_dtype=torch.bfloat16,
+        )
+    finally:
+        torch.linspace = _orig_linspace  # always restore
+
     model.eval()
     for p in model.parameters():
         p.requires_grad = False
@@ -96,7 +125,7 @@ def ensure_internvit_features(
     test_img_dir: str,
     model_name: str = "OpenGVLab/InternViT-6B-448px-V1-5",
     device: str = "cpu",
-    batch_size: int = 64,
+    batch_size: int = 8,
 ) -> None:
     """Check if InternViT features exist; extract if missing.
 

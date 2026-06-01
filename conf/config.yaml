@@ -19,6 +19,7 @@ layer_ids:        [20, 24, 28, 32, 36]
 train_img_dir:    "data/things_eeg/training_images"
 test_img_dir:     "data/things_eeg/test_images"
 metadata_path:    "data/things_eeg/image_metadata.npy"
+extract_batch_size: 8   # images per InternViT forward pass (6B model, reduce if OOM)
 
 # --- Training --------------------------------------------------------------
 epochs: 60

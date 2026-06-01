@@ -46,7 +46,7 @@ def main(cfg: DictConfig) -> None:
     features: dict = {}
     for image_dir in (cfg.train_img_dir, cfg.test_img_dir):
         features.update(
-            extract_directory(image_dir, model, processor, layer_ids, device, cfg.batch_size)
+            extract_directory(image_dir, model, processor, layer_ids, device, cfg.extract_batch_size)
         )
 
     os.makedirs(cfg.internvit_dir, exist_ok=True)
