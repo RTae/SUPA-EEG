@@ -23,7 +23,8 @@ import torch
 from loguru import logger
 from omegaconf import DictConfig
 
-from src.encoders.vision_encoder import extract_directory, load_internvit
+from src.encoders.vision_encoder import load_internvit
+from src.encoders.utilities import extract_directory
 
 
 # ---------------------------------------------------------------------------
