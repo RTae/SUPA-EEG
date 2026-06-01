@@ -47,6 +47,11 @@ aria2c --dir=data/things_eeg/image_feature/clip \
   --max-concurrent-downloads=4 --split=4 --min-split-size=10M \
   "https://cloud.tsinghua.edu.cn/f/7c0d0012439b49c5a512/?dl=1" -o visual_features_clip.pt
 
+# Vision Encoder Data using a OpenGVLab/InternViT-6B-448px-V1-5
+aria2c --dir=data/things_eeg/image_feature/internvit_multilevel_20_24_28_32_36 \
+  --max-concurrent-downloads=4 --split=4 --min-split-size=10M \
+  "https://cloud.tsinghua.edu.cn/f/bde721733abe4b1a9d4e/?dl=1" -o visual_features_internvit.pt
+
 for i in {01..10}; do
   unzip data/things_eeg/sub-$i.zip -d data/things_eeg/
 done
