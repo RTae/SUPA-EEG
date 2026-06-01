@@ -16,6 +16,10 @@ Output:
 from __future__ import annotations
 
 import os
+import sys
+
+# Ensure project root is on sys.path when the script is run directly
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import hydra
 import numpy as np
