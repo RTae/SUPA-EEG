@@ -8,71 +8,74 @@ from src.encoders.eegnet_encoder import EEGNetEncoder
 
 
 class SUPAEEG(nn.Module):
-    """SUPAEEG with EEGProject backbone.
+    """SUPAEEG: EEGProject + shared encoder alignment.
 
     Architecture:
         EEG (batch, 17, 100)
-          down
-        EEGNetEncoder  MLP  -> (batch, 1024)
-          down
-        |- proj1 Linear(1024->512->768) -> z1  aligned to S1 local
-        |- proj2 Linear(1024->512->768) -> z2  aligned to S2 spatial
-        '- proj3 Linear(1024->512->768) -> z3  aligned to S3 semantic
+          eeg_encoder  -> (batch, 1024)
+          eeg_projector Linear(1024, 512)
+          share_encoder Linear(512, 512)   <- shared with image side
+          l2-normalize  -> zE (batch, 512)
 
-    At inference: embed() -> concat(z1,z2,z3) -> l2-normalise -> (batch, 2304)
+        image_layers (batch, 5, 3200)
+          .float().mean(dim=1) -> (batch, 3200)
+          img_pre_projector Linear(3200, 1024)
+          img_projector     Linear(1024, 512)
+          share_encoder     Linear(512, 512)   <- SAME nn.Module as EEG
+          l2-normalize      -> zI (batch, 512)
 
     Args:
-        n_channels:   int   = 17
-        n_timepoints: int   = 100
-        feature_dim:  int   = 1024   EEGProject hidden dim
-        d_visual:     int   = 768    CLIP feature dim
-        dropout:      float = 0.3
+        n_channels:      int   = 17
+        n_timepoints:    int   = 100
+        eeg_feature_dim: int   = 1024
+        image_input_dim: int   = 3200
+        image_mid_dim:   int   = 1024
+        feature_dim:     int   = 512
+        dropout:         float = 0.3
     """
 
     def __init__(self, n_channels=17, n_timepoints=100,
-                 feature_dim=1024, d_visual=768, dropout=0.3):
+                 eeg_feature_dim=1024, image_input_dim=3200,
+                 image_mid_dim=1024, feature_dim=512, dropout=0.3):
         super().__init__()
-
-        self.eeg_encoder = EEGNetEncoder(
-            n_channels=n_channels,
-            n_timepoints=n_timepoints,
-            feature_dim=feature_dim,
-            dropout=dropout,
+        self.eeg_encoder       = EEGNetEncoder(n_channels, n_timepoints,
+                                               eeg_feature_dim, dropout)
+        self.eeg_projector     = nn.Linear(eeg_feature_dim, feature_dim)
+        self.img_pre_projector = nn.Linear(image_input_dim, image_mid_dim)
+        self.img_projector     = nn.Linear(image_mid_dim, feature_dim)
+        self.share_encoder     = nn.Linear(feature_dim, feature_dim)
+        self.logit_scale       = nn.Parameter(
+            torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
         )
 
-        self.proj1 = nn.Sequential(
-            nn.Linear(feature_dim, 512), nn.GELU(), nn.Linear(512, d_visual)
-        )
-        self.proj2 = nn.Sequential(
-            nn.Linear(feature_dim, 512), nn.GELU(), nn.Linear(512, d_visual)
-        )
-        self.proj3 = nn.Sequential(
-            nn.Linear(feature_dim, 512), nn.GELU(), nn.Linear(512, d_visual)
-        )
+    def encode_eeg(self, eeg: torch.Tensor) -> torch.Tensor:
+        x = self.eeg_encoder(eeg)
+        x = self.eeg_projector(x)
+        x = self.share_encoder(x)
+        return F.normalize(x, dim=1)   # (batch, 512)
 
-    def forward(self, eeg):
-        # eeg: (batch, 17, 100)
-        z = self.eeg_encoder(eeg)   # (batch, 1024)
-        z1 = self.proj1(z)          # (batch, 768)
-        z2 = self.proj2(z)          # (batch, 768)
-        z3 = self.proj3(z)          # (batch, 768)
-        return z1, z2, z3
+    def encode_image(self, image_layers: torch.Tensor) -> torch.Tensor:
+        x = image_layers.float().mean(dim=1)
+        x = self.img_pre_projector(x)
+        x = self.img_projector(x)
+        x = self.share_encoder(x)
+        return F.normalize(x, dim=1)   # (batch, 512)
+
+    def forward(
+        self, eeg: torch.Tensor, image_layers: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.encode_eeg(eeg), self.encode_image(image_layers)
 
     @torch.no_grad()
-    def embed(self, eeg):
-        """Inference only. Returns l2-normalised (batch, 2304) descriptor."""
-        z1, z2, z3 = self.forward(eeg)
-        z = torch.cat([z1, z2, z3], dim=1)
-        return F.normalize(z, dim=1)
+    def embed(self, eeg: torch.Tensor) -> torch.Tensor:
+        """Inference only. Returns l2-normalised (batch, 512) descriptor."""
+        return self.encode_eeg(eeg)
 
 
 if __name__ == "__main__":
     model = SUPAEEG()
-    eeg = torch.randn(4, 17, 100)
-    z1, z2, z3 = model(eeg)
-    assert z1.shape == (4, 768)
-    assert z2.shape == (4, 768)
-    assert z3.shape == (4, 768)
-    emb = model.embed(eeg)
-    assert emb.shape == (4, 2304)
+    zE, zI = model(torch.randn(4, 17, 100), torch.randn(4, 5, 3200))
+    assert zE.shape == (4, 512)
+    assert zI.shape == (4, 512)
+    assert model.embed(torch.randn(4, 17, 100)).shape == (4, 512)
     print("All shapes correct")
