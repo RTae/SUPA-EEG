@@ -26,22 +26,25 @@ OUTPUT_DIM = 3200   # InternViT-6B hidden dim (architectural constant)
 
 
 def load_internvit(model_name: str, device: torch.device):
-    """Load frozen InternViT encoder (bfloat16, following the official HF example)."""
+    """Load frozen InternViT encoder directly to device using device_map."""
     logger.info(f"Loading InternViT from {model_name}...")
     processor = CLIPImageProcessor.from_pretrained(model_name, trust_remote_code=True)
-    model = (
-        AutoModel.from_pretrained(
-            model_name,
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
-        )
-        .to(device)
-        .eval()
+
+    # device_map loads shards directly to the target device — avoids holding a
+    # full float32 copy in CPU RAM (~24 GB), using only ~2-3 GB CPU RAM peak.
+    # Cast to bfloat16 after init to avoid meta tensor issues with torch_dtype.
+    model = AutoModel.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        device_map={"": str(device)},
     )
+    model = model.to(dtype=torch.bfloat16)
+    model.eval()
     for p in model.parameters():
         p.requires_grad = False
     logger.info(
-        f"InternViT loaded. Parameters: {sum(p.numel() for p in model.parameters()):,} (all frozen)"
+        f"InternViT loaded on {device} as bfloat16. "
+        f"Parameters: {sum(p.numel() for p in model.parameters()):,} (all frozen)"
     )
     return processor, model
 
