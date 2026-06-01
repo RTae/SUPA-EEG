@@ -423,10 +423,32 @@ def train(cfg: DictConfig) -> None:
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output dir: {output_dir}")
 
+    # Save a human-readable copy of the config alongside results
+    config_dump_path = os.path.join(output_dir, "config_used.yaml")
+    with open(config_dump_path, "w") as f:
+        f.write(OmegaConf.to_yaml(cfg))
+    logger.info(f"Config saved to {config_dump_path}")
+
     if config.protocol == "intra":
-        run_intra_subject(config, internvit_lookup, _device, output_dir)
+        results = run_intra_subject(config, internvit_lookup, _device, output_dir)
     else:
-        run_inter_subject(config, internvit_lookup, _device, output_dir)
+        results = run_inter_subject(config, internvit_lookup, _device, output_dir)
+
+    # Write summary.txt
+    summary_path = os.path.join(output_dir, "summary.txt")
+    avg_top1 = sum(r["top1"] for r in results.values()) / len(results)
+    avg_top5 = sum(r["top5"] for r in results.values()) / len(results)
+    with open(summary_path, "w") as f:
+        f.write(f"protocol : {config.protocol}\n")
+        f.write(f"epochs   : {config.epochs}\n")
+        f.write(f"device   : {config.device}\n\n")
+        f.write(f"{'subject':<12} {'top1':>8} {'top5':>8}\n")
+        f.write("-" * 30 + "\n")
+        for subj, r in sorted(results.items()):
+            f.write(f"sub-{subj:02d}      {r['top1']:>8.4f} {r['top5']:>8.4f}\n")
+        f.write("-" * 30 + "\n")
+        f.write(f"{'average':<12} {avg_top1:>8.4f} {avg_top5:>8.4f}\n")
+    logger.info(f"Summary saved to {summary_path}")
 
 
 if __name__ == "__main__":
