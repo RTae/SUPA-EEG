@@ -245,7 +245,8 @@ class ThingsEEGDataset(Dataset):
         subject = -1,
         transform: Callable[[Image.Image], Any] | None = None,
         device=torch.device("cpu"),
-        max_subjects: int = 10
+        max_subjects: int = 10,
+        load_images: bool = True,
     ) -> None:
         
         self.max_subjects = max_subjects
@@ -277,7 +278,11 @@ class ThingsEEGDataset(Dataset):
         self.samples_per_subject = num_data * self.number_of_repetitions
 
         logger.info("Loading image data...")
-        self.image_data = self._load_image(image_dir, transform, device)
+        if load_images:
+            self.image_data = self._load_image(image_dir, transform, device)
+        else:
+            self.image_data = None
+            logger.info("Skipping image pixel loading (load_images=False).")
         
         n_concepts = len(np.unique(self.image_meta_data[f'{self.data_type}_img_concepts']))
         
@@ -404,7 +409,7 @@ class ThingsEEGDataset(Dataset):
 
         return (
             self.eeg_data[index],
-            self.image_data[image_concept][image_file],
+            self.image_data[image_concept][image_file] if self.image_data is not None else None,
             subject_index, # index of the subject in the loaded dataset, from 0 to number_of_subjects_loaded-1
             repetition_index, # index of the repetition for the same image and subject, from 0 to number_of_repetitions-1
             data_index, # original index in the whole dataset both eeg and image before flattening the repetitions dimension

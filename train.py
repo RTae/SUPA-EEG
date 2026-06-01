@@ -136,11 +136,13 @@ def run_intra_subject(
             dataset_dir=config.dataset_dir,
             data_type="train",
             subject=subject_id,
+            load_images=False,
         )
         test_dataset = ThingsEEGDataset(
             dataset_dir=config.dataset_dir,
             data_type="test",
             subject=subject_id,
+            load_images=False,
         )
         train_loader = DataLoader(
             train_dataset,
@@ -272,6 +274,7 @@ def run_inter_subject(
                     dataset_dir=config.dataset_dir,
                     data_type="train",
                     subject=s,
+                    load_images=False,
                 )
                 for s in train_subjects
             ]
@@ -280,6 +283,7 @@ def run_inter_subject(
             dataset_dir=config.dataset_dir,
             data_type="test",
             subject=test_subject,
+            load_images=False,
         )
         train_loader = DataLoader(
             train_dataset,
