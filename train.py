@@ -1,4 +1,5 @@
 import csv
+import gc
 import os
 from typing import Any
 
@@ -225,6 +226,11 @@ def run_intra_subject(
 
         all_results[subject_id] = {"top1": best_top1, "top5": best_top5}
 
+        # Free GPU memory before the next subject
+        del model, optimizer, train_loader, test_loader, train_dataset, test_dataset
+        gc.collect()
+        torch.cuda.empty_cache()
+
     avg_top1 = sum(r["top1"] for r in all_results.values()) / len(all_results)
     avg_top5 = sum(r["top5"] for r in all_results.values()) / len(all_results)
     log_results_table(all_results, avg_top1, avg_top5, protocol="intra")
@@ -358,6 +364,11 @@ def run_inter_subject(
         logger.info(f"LOSO sub{test_subject:02d} | metrics saved to {metrics_path}")
 
         all_results[test_subject] = {"top1": best_top1, "top5": best_top5}
+
+        # Free GPU memory before the next fold
+        del model, optimizer, train_loader, test_loader, train_dataset, test_dataset
+        gc.collect()
+        torch.cuda.empty_cache()
 
     avg_top1 = sum(r["top1"] for r in all_results.values()) / len(all_results)
     avg_top5 = sum(r["top5"] for r in all_results.values()) / len(all_results)
