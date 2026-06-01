@@ -293,15 +293,9 @@ def evaluate(
     # Build image gallery from InternViT lookup
     gallery = internvit_lookup.retrieve_batch(
         concept_order, [concept_to_file[c] for c in concept_order]
-    )  # (200, n_layers, 3200)
+    )  # (N_concepts, n_layers, 3200)
     with torch.no_grad():
-        image_features = torch.cat(
-            [
-                model.encode_image(gallery[i].unsqueeze(0).to(device)).cpu()
-                for i in range(len(concept_order))
-            ],
-            dim=0,
-        ).numpy()  # (200, 512)
+        image_features = model.encode_image(gallery.to(device)).cpu().numpy()  # (N_concepts, 512)
 
     top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
     return top1_count / total, top5_count / total
