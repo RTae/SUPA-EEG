@@ -6,8 +6,7 @@ This file is the Hydra entry point and the ``ensure_internvit_features`` guard.
 Usage:
   python scripts/extract_internvit_features.py
   python scripts/extract_internvit_features.py device=cuda:1
-  python scripts/extract_internvit_features.py batch_size=32
-
+  python scripts/extract_internvit_features.py extract_batch_size=32
 Output:
   <internvit_dir>/internvit_features.npy
     dict {(concept, img_file): ndarray(n_layers, 3200) float16}
