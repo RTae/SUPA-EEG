@@ -110,7 +110,10 @@ def extract_directory(
 
     for start in tqdm(range(0, len(entries), batch_size), desc=f"Extracting {os.path.basename(image_dir)}"):
         batch_entries = entries[start : start + batch_size]
-        images = [Image.open(e[2]).convert("RGB") for e in batch_entries]
+        images = []
+        for _, _, img_path in batch_entries:
+            with Image.open(img_path) as im:
+                images.append(im.convert("RGB"))
         feats = extract_layer_features(model, processor, images, layer_ids, device)
         for i, (concept, img_file, _) in enumerate(batch_entries):
             features[(concept, img_file)] = np.stack(
