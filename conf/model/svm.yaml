@@ -1,7 +1,0 @@
-name: svm
-type: simple
-feature_type: freq
-params:
-  kernel: linear
-  C: 1.0
-  probability: true

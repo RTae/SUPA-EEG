@@ -1,9 +1,0 @@
-name: eegnet
-type: deep
-feature_type: time
-epochs: 1000
-optimizer:
-  type: sgd
-  lr: 0.01
-  weight_decay: 0.001
-  momentum: 0.9

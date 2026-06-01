@@ -13,3 +13,5 @@ data/things_eeg
 **plot**
 
 *.pt
+*.log
+outputs/*

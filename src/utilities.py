@@ -1,16 +1,17 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+import os
+from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
-
-# Register the Ascend NPU device type if torch_npu is installed.
-# Importing it is a no-op on non-NPU systems where the package is absent.
-try:  # pragma: no cover - environment-dependent
-    import torch_npu  # noqa: F401
-except ImportError:  # torch_npu not installed; NPU simply won't be available.
-    torch_npu = None
+from loguru import logger
+from torch.optim import AdamW
+from torch.utils.data import DataLoader
 
 # -- EEG channel groups --
 PRE_FRONTAL = ["FP1", "FPZ", "FP2", "AF3", "AF4"]
@@ -61,10 +62,7 @@ def category2wnid(category: str, language: str, img_dir: str | None = None) -> s
 
 
 def get_device() -> torch.device:
-    """Return the best available device (NPU > CUDA > MPS > CPU)."""
-    # Ascend NPU (exposed through torch_npu) registers torch.npu.
-    if hasattr(torch, "npu") and torch.npu.is_available():
-        return torch.device("npu")
+    """Return the best available device (CUDA > MPS > CPU)."""
     if torch.cuda.is_available():
         return torch.device("cuda")
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -137,13 +135,305 @@ def get_benchmark_split(
     return train_idx, test_idx
 
 
+# ---------------------------------------------------------------------------
+# SUPAEEG training config & helpers
+# ---------------------------------------------------------------------------
+
+
 @dataclass
-class Args:
-    """Container mirroring the old argparse namespace so downstream code stays compatible."""
-    dataset_dir: str = "data/"
-    granularity: str = "fine"
-    model: str = "eegnet"
-    batch_size: int = 40
-    subject: int = -1
-    output_dir: str = "output/"
-    pretrained_model: Optional[str] = None
+class EncoderConfig:
+    """Visual encoder settings, mirroring conf/model/supaeeg.yaml encoder block."""
+
+    type: str = "clip"
+    model_name: str = "openai/clip-vit-base-patch32"
+    layer_indices: dict[str, int] = field(
+        default_factory=lambda: {"S1": 3, "S2": 7, "S3": 11}
+    )
+
+
+@dataclass
+class Config:
+    """All runtime hyperparameters for SUPAEEG training."""
+
+    protocol: str = "intra"
+    subject: int = 1
+    all_subjects: list[int] = field(default_factory=lambda: list(range(1, 11)))
+    dataset_dir: str = "data/things_eeg"
+    feature_path: str = "data/vision_encoder/clip/visual_features_clip.pt"
+    device: str = "cuda"
+    encoder: EncoderConfig = field(default_factory=EncoderConfig)
+    epochs: int = 100
+    batch_size: int = 256
+    eval_every: int = 5
+    lambda_reg: float = 0.1
+    beta_l1: float = 0.01
+    tau: float = 0.07
+    d_model: int = 256
+    nhead: int = 8
+    num_layers: int = 4
+    dim_feedforward: int = 512
+    dropout: float = 0.1
+    lr: float = 3e-4
+    weight_decay: float = 1e-4
+    warmup_epochs: int = 10
+    grad_clip: float = 1.0
+
+
+def train_one_epoch(
+    model: Any,
+    train_loader: DataLoader,
+    optimizer: AdamW,
+    feature_lookup: Any,
+    device: torch.device,
+    lambda_reg: float = 0.1,
+    beta_l1: float = 0.01,
+    tau: float = 0.07,
+    grad_clip: float = 1.0,
+) -> float:
+    """Run a single training epoch.
+
+    Args:
+        model:          SUPAEEG model (will be set to train mode).
+        train_loader:   DataLoader for the training split.
+        optimizer:      AdamW optimiser.
+        feature_lookup: VisualFeatureLookup used to retrieve CLIP targets.
+        device:         Compute device.
+        lambda_reg:     Gaussian regulariser weight.
+        beta_l1:        Channel-attention L1 sparsity weight.
+        tau:            InfoNCE temperature.
+
+    Returns:
+        Mean total loss over all batches in the epoch.
+    """
+    from src.trainer.loss import compute_loss  # local import avoids circular deps
+
+    model.train()
+    total_loss = 0.0
+    for batch in train_loader:
+        eeg: torch.Tensor = batch["eeg"].to(device)
+        image_concepts: list[str] = batch["image_concepts"]
+        image_files: list[str] = batch["image_files"]
+
+        z1, z2, z3 = model(eeg)
+
+        S1, S2, S3 = feature_lookup.retrieve_batch(image_concepts, image_files)
+        S1, S2, S3 = S1.to(device), S2.to(device), S3.to(device)
+
+        loss, components = compute_loss(
+            z1, z2, z3, S1, S2, S3,
+            model.scale_encoder,
+            lambda_reg=lambda_reg,
+            beta_l1=beta_l1,
+            tau=tau,
+        )
+        optimizer.zero_grad()
+        loss.backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
+        optimizer.step()
+        total_loss += float(components["total"])
+
+    return total_loss / max(len(train_loader), 1)
+
+
+def evaluate(
+    model: Any,
+    test_loader: DataLoader,
+    feature_lookup: Any,
+    device: torch.device,
+) -> tuple[float, float]:
+    """Zero-shot concept retrieval evaluation on the test set.
+
+    Aggregates per-concept EEG embeddings (averaged over repetitions) and
+    paired CLIP image embeddings, then computes Top-1 and Top-5 retrieval
+    accuracy via the diagonal-retrieval protocol.
+
+    Args:
+        model:          SUPAEEG model.
+        test_loader:    DataLoader over the test split.
+        feature_lookup: VisualFeatureLookup instance.
+        device:         Compute device.
+
+    Returns:
+        Tuple ``(top1, top5)`` accuracy values in [0, 1].
+    """
+    from src.trainer.metrics import retrieve_all  # local import avoids circular deps
+
+    model.eval()
+    concept_embeddings: dict[str, list[torch.Tensor]] = defaultdict(list)
+    concept_to_file: dict[str, str] = {}
+
+    with torch.no_grad():
+        for batch in test_loader:
+            eeg = batch["eeg"].to(device)
+            z = model.embed(eeg)  # (batch, 2304), ℓ2-normalised inside embed()
+            for i, (concept, img_file) in enumerate(
+                zip(batch["image_concepts"], batch["image_files"])
+            ):
+                concept_embeddings[concept].append(z[i].cpu())
+                concept_to_file[concept] = img_file
+
+    concept_order = sorted(concept_embeddings.keys())
+
+    eeg_features = torch.cat(
+        [
+            F.normalize(
+                torch.stack(concept_embeddings[c]).mean(dim=0, keepdim=True),
+                dim=1,
+            )
+            for c in concept_order
+        ],
+        dim=0,
+    ).numpy()  # (N_concepts, 2304)
+
+    image_features = torch.cat(
+        [
+            F.normalize(
+                torch.cat([*feature_lookup.retrieve(c, concept_to_file[c])]).unsqueeze(0),
+                dim=1,
+            )
+            for c in concept_order
+        ],
+        dim=0,
+    ).numpy()  # (N_concepts, 2304)
+
+    top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
+    return top1_count / total, top5_count / total
+
+
+def save_checkpoint(
+    model: Any,
+    optimizer: AdamW,
+    epoch: int,
+    top1: float,
+    top5: float,
+    path: str,
+) -> None:
+    """Persist model and optimiser state to disk.
+
+    Args:
+        model:     SUPAEEG model.
+        optimizer: AdamW optimiser.
+        epoch:     Current training epoch.
+        top1:      Top-1 accuracy at this checkpoint.
+        top5:      Top-5 accuracy at this checkpoint.
+        path:      File path for the checkpoint (``.pt``).
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "epoch": epoch,
+            "top1": top1,
+            "top5": top5,
+        },
+        path,
+    )
+    logger.info(f"Checkpoint saved | top1={top1:.4f} | path={path}")
+
+
+def log_results_table(
+    results: dict[int, dict[str, float]],
+    avg_top1: float,
+    avg_top5: float,
+    protocol: str,
+) -> None:
+    """Log per-subject results in tabular format.
+
+    Matches the Table 1 layout from the Shallow Alignment paper.
+
+    Args:
+        results:  Mapping of subject_id → {``'top1'``: float, ``'top5'``: float}.
+        avg_top1: Average Top-1 accuracy across all subjects.
+        avg_top5: Average Top-5 accuracy across all subjects.
+        protocol: ``"intra"`` or ``"inter"``.
+    """
+    logger.info(f"\n{'=' * 60}")
+    logger.info(f"Protocol: {protocol.upper()}-SUBJECT")
+    logger.info(f"{'Subject':<12} {'Top-1':>8} {'Top-5':>8}")
+    logger.info(f"{'-' * 30}")
+    for subject_id, r in sorted(results.items()):
+        logger.info(
+            f"Sub{subject_id:02d}{'':>8} "
+            f"{r['top1'] * 100:>7.1f}% "
+            f"{r['top5'] * 100:>7.1f}%"
+        )
+    logger.info(f"{'-' * 30}")
+    logger.info(
+        f"{'Avg':<12} "
+        f"{avg_top1 * 100:>7.1f}% "
+        f"{avg_top5 * 100:>7.1f}%"
+    )
+    logger.info(f"{'=' * 60}\n")
+
+
+def make_model(
+    config: Config,
+    device: torch.device,
+) -> Any:
+    """Instantiate a fresh SUPAEEG model from ``config``.
+
+    Args:
+        config: Runtime configuration.
+        device: Compute device.
+
+    Returns:
+        Initialised SUPAEEG model placed on ``device``.
+    """
+    from src.models.supaeeg import SUPAEEG  # local import avoids circular deps
+
+    return SUPAEEG(
+        d_model=config.d_model,
+        nhead=config.nhead,
+        num_layers=config.num_layers,
+        dim_feedforward=config.dim_feedforward,
+        dropout=config.dropout,
+    ).to(device)
+
+
+def make_optimizer(model: Any, config: Config) -> AdamW:
+    """Build an AdamW optimiser from ``config``.
+
+    Args:
+        model:  Model whose parameters will be optimised.
+        config: Runtime configuration.
+
+    Returns:
+        Configured AdamW optimiser.
+    """
+    return AdamW(
+        model.parameters(),
+        lr=config.lr,
+        weight_decay=config.weight_decay,
+    )
+
+
+def make_scheduler(
+    optimizer: AdamW,
+    config: Config,
+) -> Any:
+    """Build a cosine-annealing LR scheduler with optional linear warmup.
+
+    Args:
+        optimizer: The AdamW optimiser to attach the scheduler to.
+        config:    Runtime configuration (uses ``epochs``, ``warmup_epochs``).
+
+    Returns:
+        A ``SequentialLR`` (warmup → cosine) or ``CosineAnnealingLR`` if
+        ``warmup_epochs`` is 0.
+    """
+    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+
+    warmup = min(config.warmup_epochs, config.epochs // 10)
+    if warmup > 0:
+        warmup_sched = LinearLR(
+            optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup
+        )
+        cosine_sched = CosineAnnealingLR(
+            optimizer, T_max=max(config.epochs - warmup, 1), eta_min=1e-6
+        )
+        return SequentialLR(
+            optimizer, schedulers=[warmup_sched, cosine_sched], milestones=[warmup]
+        )
+    return CosineAnnealingLR(optimizer, T_max=config.epochs, eta_min=1e-6)

@@ -25,31 +25,6 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-# ---------------------------------------------------------------------------
-# Per-encoder configuration: which HuggingFace checkpoint to use by default,
-# how many transformer layers it has, and which layer indices correspond to
-# the three depth scales S1 / S2 / S3.
-# ---------------------------------------------------------------------------
-_ENCODER_CONFIGS: dict[str, dict] = {
-    "clip": {
-        "default_model": "openai/clip-vit-base-patch32",
-        "num_layers": 12,
-        # Divide 12 layers into thirds: [0-3] local, [4-7] spatial, [8-11] semantic
-        "s1_layer": 3,
-        "s2_layer": 7,
-        "s3_layer": 11,
-    },
-    "ijepa": {
-        "default_model": "facebook/ijepa_vith14_1k",
-        "num_layers": 32,
-        # Divide 32 layers into thirds: [0-10] local, [11-21] spatial, [22-31] semantic
-        "s1_layer": 10,
-        "s2_layer": 21,
-        "s3_layer": 31,
-    },
-}
-
-
 class VisualEncoder(nn.Module):
     """Frozen CLIP or I-JEPA visual encoder with multi-scale depth tapping.
 
@@ -59,50 +34,45 @@ class VisualEncoder(nn.Module):
     and returns the three CLS-token embeddings.
 
     Args:
-        encoder_type: ``"clip"`` or ``"ijepa"``.
-        model_name:   HuggingFace model identifier.  Defaults to the
-                      canonical checkpoint for the chosen encoder type.
-        device:       Target device for the model weights.
+        encoder_type:        ``"clip"`` or ``"ijepa"``.
+        model_name:          HuggingFace model identifier.
+        device:              Target device for the model weights.
+        encoder_layers_path: Optional dot-separated path to the transformer
+                             layer list inside the model object.  Only needed
+                             if auto-discovery fails for an unusual checkpoint.
+        layer_indices:       Mapping of which transformer layers to tap for
+                             S1/S2/S3, e.g. ``{"S1": 3, "S2": 7, "S3": 11}``.
+                             Defaults come from ``EncoderConfig`` in
+                             ``src/utilities.py``.
     """
+
+    _VALID_ENCODER_TYPES = ("clip", "ijepa")
 
     def __init__(
         self,
         encoder_type: Literal["clip", "ijepa"] = "clip",
-        model_name: str | None = None,
+        model_name: str = "openai/clip-vit-base-patch32",
         device: str | torch.device = "cpu",
         encoder_layers_path: str | None = None,
+        layer_indices: dict[str, int] | None = None,
     ) -> None:
-        """
-        Args:
-            encoder_type:        ``"clip"`` or ``"ijepa"``.
-            model_name:          HuggingFace model identifier.
-            device:              Target device for the model weights.
-            encoder_layers_path: Optional dot-separated path to the transformer
-                                 layer list inside the model object, e.g.
-                                 ``"encoder.layer"`` or ``"ijepa.encoder.layer"``.
-                                 Only needed if auto-discovery fails for an unusual
-                                 checkpoint.  Example::
-
-                                     VisualEncoder("ijepa",
-                                                   encoder_layers_path="encoder.layer")
-        """
         super().__init__()
 
-        if encoder_type not in _ENCODER_CONFIGS:
+        if encoder_type not in self._VALID_ENCODER_TYPES:
             raise ValueError(
-                f"encoder_type must be one of {list(_ENCODER_CONFIGS.keys())}, "
+                f"encoder_type must be one of {list(self._VALID_ENCODER_TYPES)}, "
                 f"got '{encoder_type}'"
             )
 
         self.encoder_type = encoder_type
-        cfg = _ENCODER_CONFIGS[encoder_type]
-        self._model_name = model_name or cfg["default_model"]
+        self._model_name = model_name
         self.device = torch.device(device) if isinstance(device, str) else device
         self._encoder_layers_path = encoder_layers_path
 
-        self._s1_idx: int = cfg["s1_layer"]
-        self._s2_idx: int = cfg["s2_layer"]
-        self._s3_idx: int = cfg["s3_layer"]
+        _li = layer_indices or {}
+        self._s1_idx: int = _li.get("S1", 3)
+        self._s2_idx: int = _li.get("S2", 7)
+        self._s3_idx: int = _li.get("S3", 11)
 
         self._hooks: list = []
         self._intermediate: dict[str, torch.Tensor] = {}
@@ -241,19 +211,6 @@ class VisualEncoder(nn.Module):
         self.model.to(self.device)
 
         num_layers = len(self._transformer_layers)
-
-        # If the actual depth differs from the config default, recompute the
-        # S1/S2/S3 indices to keep the ~25 / ~65 / ~98 % depth ratios.
-        cfg_num_layers = _ENCODER_CONFIGS[self.encoder_type]["num_layers"]
-        if num_layers != cfg_num_layers:
-            logger.warning(
-                f"Actual layer count ({num_layers}) differs from config default "
-                f"({cfg_num_layers}). Recomputing S1/S2/S3 indices proportionally."
-            )
-            self._s1_idx = round(num_layers * 0.25) - 1
-            self._s2_idx = round(num_layers * 0.65) - 1
-            self._s3_idx = num_layers - 1
-
         logger.info(
             f"{self.encoder_type.upper()} loaded | "
             f"total transformer layers: {num_layers} | "
@@ -355,6 +312,30 @@ class VisualEncoder(nn.Module):
 # ---------------------------------------------------------------------------
 # Lookup table – loaded once at training time, never updated
 # ---------------------------------------------------------------------------
+
+def validate_features(lookup: VisualFeatureLookup) -> None:
+    """Validate that the feature bank has at least one entry with correct shapes.
+
+    Args:
+        lookup: The lookup table to validate.
+
+    Raises:
+        ValueError: If the table is empty or if feature shapes are wrong.
+    """
+    if len(lookup) == 0:
+        raise ValueError("Visual feature bank is empty.")
+
+    # Check the first entry
+    first_key = next(iter(lookup._table))  # type: ignore[attr-defined]
+    entry = lookup._table[first_key]  # type: ignore[attr-defined]
+    for scale in ("S1", "S2", "S3"):
+        if scale not in entry:
+            raise ValueError(f"Feature entry missing key '{scale}'.")
+        shape = tuple(entry[scale].shape)
+        if shape != (768,):
+            raise ValueError(
+                f"Expected {scale} shape (768,), got {shape}."
+            )
 
 
 class VisualFeatureLookup:
@@ -460,3 +441,5 @@ class VisualFeatureLookup:
 
     def __contains__(self, key: tuple[str, str]) -> bool:
         return key in self._table
+
+

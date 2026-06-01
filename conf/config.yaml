@@ -1,36 +1,54 @@
-defaults:
-  - model: eegnet
-  - _self_
+# ---------------------------------------------------------------------------
+# SUPAEEG — primary Hydra config
+# Override any key on the CLI: python train.py subject=2 epochs=500
+# ---------------------------------------------------------------------------
 
+# --- Protocol --------------------------------------------------------------
+protocol: intra          # "intra" (per-subject) | "inter" (LOSO)
+subject: 1               # 1–10; -1 = all subjects
+all_subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# --- Data ------------------------------------------------------------------
+dataset_dir: data/things_eeg
+feature_path: data/vision_encoder/clip/visual_features_clip.pt
+device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
+
+# --- Visual encoder --------------------------------------------------------
+encoder:
+  type: clip
+  model_name: openai/clip-vit-base-patch32
+  layer_indices:
+    S1: 3    # early — local edges & colours
+    S2: 7    # mid   — spatial structure
+    S3: 11   # late  — high-level semantics
+
+# --- Training --------------------------------------------------------------
+epochs: 100
+batch_size: 256
+eval_every: 5
+lambda_reg: 0.1     # Gaussian regulariser weight
+beta_l1: 0.01       # channel-attention L1 sparsity weight
+tau: 0.07           # InfoNCE temperature
+warmup_epochs: 10   # linear LR warmup before cosine decay
+grad_clip: 1.0      # max gradient norm (0 = disabled)
+
+# --- Architecture ----------------------------------------------------------
+d_model: 256
+nhead: 8
+num_layers: 4
+dim_feedforward: 512
+dropout: 0.1
+
+# --- Optimiser -------------------------------------------------------------
+lr: 3e-4
+weight_decay: 1e-4
+
+# --- Output ----------------------------------------------------------------
+# checkpoints and metrics.csv go here (set at runtime by Hydra)
+
+# --- Hydra -----------------------------------------------------------------
 hydra:
   run:
-    dir: ${output_dir}/${model.name}/${metric}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   job:
-    chdir: false
-
-dataset_dir: data/
-granularity: fine
-subject: 0
-batch_size: 40
-output_dir: outputs/
-pretrained_model: null
-metric: wt   # evaluation paradigm: wt (Within-Time), ct (Cross-Time), cp (Cross-Participant)
-
-# For general model settings, see configs/model/*.yaml
-diffusion:
-  sd_model: CompVis/stable-diffusion-v1-4
-  image_size: 512
-  num_inference_steps: 50
-  guidance_scale: 7.5
-  seed: 42
-
-blip:
-  model: Salesforce/blip-image-captioning-base
-  generation:
-    max_length: 200
-    num_beams: 20
-    temperature: 0.5
-    top_k: 0
-    top_p: 0.9
-    repetition_penalty: 2.0
-    do_sample: true
+    chdir: false   # keep CWD at project root so relative data paths work

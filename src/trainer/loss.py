@@ -1,50 +1,104 @@
-import logging
+from __future__ import annotations
 
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
+
+def info_nce_loss(zk: torch.Tensor, Sk: torch.Tensor, tau: float = 0.07) -> torch.Tensor:
+    """Symmetric InfoNCE contrastive loss between EEG and visual embeddings.
+
+    Args:
+        zk:  EEG embeddings, shape ``(batch, D)``.
+        Sk:  Visual feature targets, shape ``(batch, D)``.
+        tau: Temperature scaling factor.  Default: 0.07.
+
+    Returns:
+        Scalar loss tensor.
+    """
+    zk = F.normalize(zk, dim=1)
+    Sk = F.normalize(Sk, dim=1)
+    logits = zk @ Sk.T / tau
+    labels = torch.arange(len(zk), device=zk.device)
+    return (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)) / 2
 
 
-def batch_hard_triplet_loss(
-    embeddings: torch.Tensor,
-    labels: torch.Tensor,
-    margin: float,
+def sigreg_loss(
+    z1: torch.Tensor,
+    z2: torch.Tensor,
+    z3: torch.Tensor,
 ) -> torch.Tensor:
-    """Compute batch-hard triplet loss with hardest positive/negative mining."""
-    if embeddings.shape[0] < 2:
-        return embeddings.new_tensor(0.0)
+    """Gaussian regulariser to prevent representation collapse.
 
-    if not embeddings.isfinite().all():
-        n_nan = (~embeddings.isfinite()).any(dim=1).sum().item()
-        logging.warning(f"[triplet] {n_nan}/{embeddings.shape[0]} embeddings contain NaN/Inf — returning 0")
-        return embeddings.new_tensor(0.0)
+    Penalises embeddings whose per-dimension statistics deviate from N(0,1),
+    encouraging the encoder to use all embedding dimensions.
 
-    # Use squared Euclidean distance on L2-normalised embeddings.
-    # Avoid sqrt here: d/dx sqrt(x) explodes at x=0 and can destabilise training
-    # when positives collapse to identical embeddings early in optimisation.
-    sim = (embeddings @ embeddings.t()).clamp(min=-1.0, max=1.0)
-    dist_mat = (2.0 - 2.0 * sim).clamp(min=0.0)
+    Args:
+        z1, z2, z3: Scale embeddings, each ``(batch, D)``.
 
-    same_label = labels.unsqueeze(0) == labels.unsqueeze(1)
-    eye = torch.eye(labels.shape[0], device=labels.device, dtype=torch.bool)
+    Returns:
+        Scalar loss tensor (sum of per-scale KL divergences to N(0,1)).
+    """
+    total = 0.0
+    for zk in (z1, z2, z3):
+        mean_k = zk.mean(dim=0)
+        std_k = zk.std(dim=0) + 1e-8
+        total = total + 0.5 * (mean_k.pow(2) + std_k.pow(2) - std_k.pow(2).log() - 1).sum()
+    return total  # type: ignore[return-value]
 
-    pos_mask = same_label & ~eye
-    neg_mask = ~same_label
 
-    has_pos = pos_mask.any(dim=1)
-    has_neg = neg_mask.any(dim=1)
-    valid = has_pos & has_neg
-    if not valid.any():
-        logging.warning(f"[triplet] no valid triplets in batch — labels={labels.tolist()}")
-        return embeddings.new_tensor(0.0)
+def l1_sparsity_loss(scale_encoder: "MultiScaleEncoder") -> torch.Tensor:  # type: ignore[name-defined]
+    """L1 sparsity penalty on channel attention weights.
 
-    max_dist = dist_mat.max().detach() + 1.0
-    hardest_pos_idx = dist_mat.masked_fill(~pos_mask, -1.0).argmax(dim=1)
-    hardest_neg_idx = dist_mat.masked_fill(~neg_mask, max_dist).argmin(dim=1)
+    Encourages each scale to rely on a sparse subset of EEG channels.
 
-    valid_idx = valid.nonzero(as_tuple=False).squeeze(1)
-    anchors = embeddings[valid_idx]
-    positives = embeddings[hardest_pos_idx[valid_idx]]
-    negatives = embeddings[hardest_neg_idx[valid_idx]]
+    Args:
+        scale_encoder: The MultiScaleEncoder whose ``last_alpha`` attributes to penalise.
 
-    triplet_criterion = nn.TripletMarginLoss(margin=margin, p=2, reduction="mean")
-    return triplet_criterion(anchors, positives, negatives)
+    Returns:
+        Scalar loss tensor.
+    """
+    return (
+        scale_encoder.channel_attn_1.last_alpha.abs().sum()  # type: ignore[union-attr]
+        + scale_encoder.channel_attn_2.last_alpha.abs().sum()  # type: ignore[union-attr]
+        + scale_encoder.channel_attn_3.last_alpha.abs().sum()  # type: ignore[union-attr]
+    )
+
+
+def compute_loss(
+    z1: torch.Tensor,
+    z2: torch.Tensor,
+    z3: torch.Tensor,
+    S1: torch.Tensor,
+    S2: torch.Tensor,
+    S3: torch.Tensor,
+    scale_encoder: "MultiScaleEncoder",  # type: ignore[name-defined]
+    lambda_reg: float = 0.1,
+    beta_l1: float = 0.01,
+    tau: float = 0.07,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    """Full SUPAEEG training objective.
+
+    Combines symmetric InfoNCE (per depth scale) with a Gaussian regulariser
+    and an L1 channel-sparsity penalty.
+
+    Args:
+        z1, z2, z3:    EEG scale embeddings, each ``(batch, 768)``.
+        S1, S2, S3:    CLIP visual targets, each ``(batch, 768)``.
+        scale_encoder: MultiScaleEncoder holding the channel attention weights.
+        lambda_reg:    Weight for the Gaussian regulariser.  Default: 0.1.
+        beta_l1:       Weight for the L1 sparsity penalty.  Default: 0.01.
+        tau:           InfoNCE temperature.  Default: 0.07.
+
+    Returns:
+        ``(total_loss, components)`` where ``components`` contains
+        ``'total'``, ``'infonce'``, ``'sigreg'``, ``'l1'`` as floats.
+    """
+    infonce = info_nce_loss(z1, S1, tau) + info_nce_loss(z2, S2, tau) + info_nce_loss(z3, S3, tau)
+    sigreg = sigreg_loss(z1, z2, z3)
+    l1 = l1_sparsity_loss(scale_encoder)
+    total = infonce + lambda_reg * sigreg + beta_l1 * l1
+    return total, {
+        "total": total.item(),
+        "infonce": infonce.item(),
+        "sigreg": sigreg.item(),
+        "l1": l1.item(),
+    }

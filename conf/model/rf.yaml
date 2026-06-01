@@ -1,5 +1,0 @@
-name: rf
-type: simple
-feature_type: freq
-params:
-  n_estimators: 200

@@ -1,403 +1,290 @@
-# Time-Series Project
+# SUPA-EEG : Scale-Unified Parieto-occipital Architecture
 
-Decode visual perception from EEG recorded while subjects view ImageNet images. The repository is currently documented around one primary workflow:
+Zero-shot visual decoding from EEG using the [THINGS-EEG2](https://osf.io/anp5v/) dataset. SUPA-EEG aligns multi-scale EEG embeddings to frozen CLIP features via contrastive learning.
 
-- **Object classification**: predict the viewed category from EEG.
+## Model Architecture
+### Training Pipeline
 
-## Overview
+```mermaid
+flowchart TD
+    subgraph OFFLINE["Offline — frozen CLIP features  (run once)"]
+        S1["S1 · CLIP layer 3\nlocal edges (768-d)"]
+        S2["S2 · CLIP layer 7\nspatial structure (768-d)"]
+        S3["S3 · CLIP layer 11\nobject semantics (768-d)"]
+    end
 
-| Task | Entrypoint | Output |
-|------|------------|--------|
-| Object classification | `src/object_classification.py` | best checkpoint + `result.txt` |
+    subgraph INPUT["Input"]
+        EEG["EEG signal\n(batch, 17, 100)"]
+    end
 
-All experiment runs are managed with [Hydra](https://hydra.cc/). By default, outputs are written to:
+    subgraph CHANNEL["C3 — Channel filter · αk = softmax(Linear(ck))"]
+        CA1["α1 × EEG\nc1 · occipital emphasis"]
+        CA2["α2 × EEG\nc2 · parieto-occipital"]
+        CA3["α3 × EEG\nc3 · broader network"]
+    end
 
-```text
-outputs/<model>/<metric>/<timestamp>/
+    subgraph TOKENIZER["ST tokenizer — EEGNet conv · (batch, N_t, 256)"]
+        T1["weighted EEG_1 → tokens"]
+        T2["weighted EEG_2 → tokens"]
+        T3["weighted EEG_3 → tokens"]
+    end
+
+    subgraph ENCODER["C2 — Shared transformer · 4 layers · 8 heads · d=256"]
+        E1["[c1, tokens] → z1\n(batch, 256)"]
+        E2["[c2, tokens] → z2\n(batch, 256)"]
+        E3["[c3, tokens] → z3\n(batch, 256)"]
+    end
+
+    subgraph PROJ["Scale-specific projection · Linear 256→512→768"]
+        P1["z1  (batch, 768)"]
+        P2["z2  (batch, 768)"]
+        P3["z3  (batch, 768)"]
+    end
+
+    subgraph LOSS["C1 — Training loss"]
+        L["InfoNCE(z1,S1) + InfoNCE(z2,S2) + InfoNCE(z3,S3)\n+ λ · SIGReg(z1,z2,z3)  +  β · L1(α1,α2,α3)"]
+    end
+
+    EEG --> CA1 & CA2 & CA3
+    CA1 --> T1
+    CA2 --> T2
+    CA3 --> T3
+    T1 --> E1
+    T2 --> E2
+    T3 --> E3
+    E1 --> P1
+    E2 --> P2
+    E3 --> P3
+    P1 & P2 & P3 --> L
+    S1 -.->|stop-grad| L
+    S2 -.->|stop-grad| L
+    S3 -.->|stop-grad| L
 ```
 
-## Models
+### Inference Pipeline
 
-| Model | Config | Feature type | Objective | Notes |
-|-------|--------|--------------|-----------|-------|
-| EEGNet | `eegnet` | time | cross-entropy | Conv baseline on cropped EEG windows |
-| MLP | `mlp` | freq | cross-entropy | DE features, fully connected classifier |
-| RGNN | `rgnn` | freq | cross-entropy | Graph neural network over EEG channels |
-| SVM / RF / KNN / DT / Ridge | `svm` … | freq | sklearn fit/predict | Classical baselines on DE features |
-| Semantic | `semantic` | time | triplet loss | Retrieval-style embedding model |
+```mermaid
+flowchart LR
+    EEG["EEG signal\n(batch, 17, 100)"]
 
-> **Adding a new model:** add the implementation in `src/model/`, create `configs/model/<name>.yaml`, and register it in `src/object_classification.py`.
+    subgraph MODEL["Learned encoder — no image model needed"]
+        CF["Channel filter\nfrozen α1, α2, α3"]
+        TOK["EEGNet tokenizer\n→ (batch, N_t, 256)"]
+        ENC["Shared transformer\nfrozen c1, c2, c3"]
+        P["Projection heads\n256 → 768 per scale"]
+        CAT["concat(z1, z2, z3)\nℓ2-normalise\n→ (batch, 2304)"]
+    end
+
+    subgraph GALLERY["Image gallery · 200 test concepts"]
+        G["concat(S1, S2, S3)\nℓ2-normalise\n→ (200, 2304)"]
+    end
+
+    RET["Cosine similarity\n200-way ranking\nTop-1 / Top-5"]
+
+    EEG --> CF --> TOK --> ENC --> P --> CAT
+    CAT -->|query| RET
+    G -->|gallery| RET
+```
+
+**Training** — the full three-contribution pipeline with tensor shapes at every step, stop-grad CLIP targets on the right, and the three-term loss at the bottom.
+
+**Inference** — the clean left-to-right path showing that only the learned EEG encoder runs. No CLIP, no feature bank. The image gallery is pre-computed S1/S2/S3 concatenations, also computed offline, compared via cosine similarity.
 
 ## Project Structure
 
 ```text
-configs/
-├── config.yaml               # Shared defaults: dataset, subject, metric, outputs
-└── model/                    # Per-model hyperparameters
-    ├── eegnet.yaml
-    ├── mlp.yaml
-    ├── mlp_sd.yaml
-    ├── rgnn.yaml
-    ├── semantic.yaml
-    └── svm.yaml / rf.yaml / knn.yaml / dt.yaml / ridge.yaml
+conf/
+└── config.yaml               # all hyperparameters and Hydra settings
 src/
-├── dataset.py                # EEGImageNetDataset and BalancedBatchSampler
-├── object_classification.py  # Classification training entrypoint
-├── utilities.py              # Splits, device helpers, optimizer builder
-├── preprocessing/
-│   └── de_feat_cal.py        # Differential entropy (DE) feature extraction
-├── trainer/
-│   ├── loss.py               # Training losses
-│   ├── train.py              # Training loops
-│   ├── inference.py          # Inference-only helpers
-│   └── metrics.py            # Evaluation helpers
-└── model/
-    ├── eegnet.py
-    ├── mlp.py
-    ├── rgnn.py
-    ├── semantic.py
-    └── simple_model.py
-scripts/
-└── merge_dataset.py          # Merge split dataset parts into EEG-ImageNet.pth
+├── utilities.py              # Config / EncoderConfig dataclasses + training helpers
+├── encoders/
+│   ├── eegnet_encoder.py     # EEGNet spatiotemporal tokeniser  (B,17,100) → (B,N_t,256)
+│   └── visual_encoder.py     # Frozen CLIP/I-JEPA encoder + VisualFeatureLookup
+├── models/
+│   └── supaeeg.py            # SUPAEEG, MultiScaleEncoder, ChannelAttention
+└── trainer/
+    ├── loss.py               # info_nce_loss, sigreg_loss, l1_sparsity_loss, compute_loss
+    └── metrics.py            # retrieve_all, retrieve_topk
+train.py                      # Typer CLI entrypoint
 data/
-├── EEG-ImageNet.pth          # Merged dataset used by the training scripts
-├── de_feat/                  # Cached DE features
-└── mode/                     # EEG montage files for RGNN
+├── things_eeg/
+│   ├── sub-01/ … sub-10/     # preprocessed_eeg_training.npy / _test.npy
+│   ├── training_images/      # <concept>/<image>.jpg
+│   ├── test_images/          # <concept>/<image>.jpg
+│   └── image_metadata.npy
+└── vision_encoder/
+    └── clip/
+        └── visual_features_clip.pt   # pre-extracted CLIP S1/S2/S3 lookup table
+```
+
+
+## Training Pipeline
+
+```mermaid
+flowchart TD
+    CONF["conf/config.yaml"]
+    TRAIN["train.py"]
+    DS["dataset.py\nThingsEEGDataset"]
+    VE["vision_encoder.py\nVisualFeatureLookup"]
+    EEG_ENC["eegnet_encoder.py\nEEGNetEncoder"]
+    SUPAEEG["supaeeg.py\nSUPAEEG"]
+    LOSS["loss.py\ncompute_loss"]
+    METRICS["metrics.py\nretrieve_all"]
+    OUT["checkpoints · CSV · TensorBoard"]
+
+    CONF --> TRAIN
+    TRAIN --> DS
+    TRAIN --> VE
+    TRAIN --> SUPAEEG
+    SUPAEEG --> EEG_ENC
+    DS -->|eeg batch| TRAIN
+    VE -->|S1 S2 S3| TRAIN
+    TRAIN -->|forward| SUPAEEG
+    SUPAEEG -->|z1 z2 z3| TRAIN
+    TRAIN --> LOSS
+    LOSS -->|total loss| TRAIN
+    TRAIN -->|embed| SUPAEEG
+    SUPAEEG -->|2304-d| TRAIN
+    TRAIN --> METRICS
+    METRICS -->|top1 top5| TRAIN
+    TRAIN --> OUT
 ```
 
 ## Setup
 
-### Prerequisites
-
-1. Install [uv](https://github.com/astral-sh/uv):
+### Install
 
 ```bash
+# Install uv (once)
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtualenv and install dependencies
+uv venv && uv sync
+
+# Activate (every session)
+source .venv/bin/activate
 ```
 
-2. Download the THINGS_EEG2 dataset from the list below and place the files in the `data/things_eeg/` directory (One time setup):
-- [EEG Data](https://osf.io/anp5v/files/osfstorage) Use can choose to download the entire dataset or just the parts needed for visual context (sub-0x mean filltered data and sub stand for subject. _63_channel mean all 63 channels are included)
-- [Image Data Metadata](https://osf.io/y63gw/files/qkgtf)
-- [Train Image Data](https://osf.io/y63gw/files/3v527)
-- [Test Image Data](https://osf.io/y63gw/files/znu7b)
+### Data
 
-Also you need to download a vision encoder for the image features. You can download the CLIP visual features from [here](https://cloud.tsinghua.edu.cn/f/7c0d0012439b49c5a512/?dl=1)
-
-or use the `download_data.sh` script for filltered data and CLIP visual features (Recommended):
+Download filtered EEG data and pre-extracted CLIP features:
 
 ```bash
 bash scripts/download_data.sh
 ```
 
+This fetches:
+- Filtered EEG for subjects 1–10 → `data/things_eeg/sub-XX/`
+- Image metadata, training images, test images
+- CLIP visual feature bank → `data/vision_encoder/clip/visual_features_clip.pt`
 
-### Installation
+Manual sources:
 
-1. Install dependencies and create a virtual environment (One time setup):
+| Item | URL |
+|------|-----|
+| EEG data (filtered) | [OSF — anp5v](https://osf.io/anp5v/files/osfstorage) |
+| Image metadata | [OSF — y63gw/qkgtf](https://osf.io/y63gw/files/qkgtf) |
+| Training images | [OSF — y63gw/3v527](https://osf.io/y63gw/files/3v527) |
+| Test images | [OSF — y63gw/znu7b](https://osf.io/y63gw/files/znu7b) |
+| CLIP features | [Tsinghua Cloud](https://cloud.tsinghua.edu.cn/f/7c0d0012439b49c5a512/?dl=1) |
+
+> If `visual_features_clip.pt` is absent, `train.py` will extract it
+> automatically using the frozen CLIP encoder before training begins.
+
+## Training
+
 ```bash
-uv venv && uv sync
+# Single subject — intra-subject protocol (default)
+python train.py subject=1
+
+# All subjects, intra protocol
+python train.py subject=-1
+
+# Leave-one-subject-out (LOSO) inter-subject protocol
+python train.py protocol=inter
+
+# Override hyperparameters
+python train.py epochs=50 lr=1e-4 batch_size=128
+
+# Custom encoder depth taps
+python train.py encoder.layer_indices.S1=2 encoder.layer_indices.S2=6 encoder.layer_indices.S3=10
+
+# Force CPU
+DEVICE=cpu python train.py
+
+# Show all options
+python train.py --help
 ```
 
-2. Activate the virtual environment (every time you start a new terminal session):
-
-```bash
-source .venv/bin/activate
-```
-
-## Dataset
-
-1. Open `viz.ipynb` in Jupyter to inspect samples, splits, and feature preparation interactively. (Deprecated)
-2. Open `viz_thingseeg.ipynb` in Jupyter to inspect the THINGS_EEG2 dataset interactively.
+Outputs (checkpoints, logs) are written to `outputs/<date>/<time>/` (managed by
+Hydra). The best checkpoint (by Top-1 retrieval accuracy) is saved per subject:
+`supaeeg_intra_sub{id:02d}.pt` for intra-subject runs and
+`supaeeg_loso_sub{id:02d}.pt` for leave-one-subject-out runs.
 
 ## Configuration
 
-Global defaults live in `configs/config.yaml`. Model-specific defaults live in `configs/model/<name>.yaml`.
+All options are set in `conf/config.yaml` and can be overridden on the command line
+as Hydra key=value pairs, e.g. `python train.py subject=2 epochs=500`.
+
+### Data & device
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `dataset_dir` | Dataset directory | `data/` |
-| `granularity` | `coarse`, `fine`, `fine0`-`fine4`, or `all` | `fine` |
-| `model` | Hydra model group | `eegnet` |
-| `batch_size` | Batch size | `40` |
-| `subject` | Raw subject id used by the current run | `0` |
-| `metric` | Benchmark split mode | `wt` |
-| `output_dir` | Root output directory | `outputs/` |
-| `pretrained_model` | Optional checkpoint filename | `null` |
-
-Override any value from the CLI:
-
-```bash
-python src/object_classification.py model=mlp model.optimizer.lr=0.0005 model.epochs=300
-```
-
-## Benchmark Splits
-
-The raw dataset contains 16 subject ids, corresponding to 8 real participants recorded in two sessions.
-
-| Raw subject | RealID (`subject % 8`) | Stage |
-|:-----------:|:----------------------:|:-----:|
-| 0-7         | 0-7                    | 1     |
-| 8-15        | 0-7                    | 2     |
-
-Current implementation status:
-
-| Paradigm | `metric` | Status | Behavior |
-|----------|:--------:|--------|----------|
-| Within-Time | `wt` | implemented | exact upstream 30/20 split inside each 50-sample block |
-| Cross-Time | `ct` | not implemented | placeholder in code |
-| Cross-Participant | `cp` | implemented | subjects 0-9 for training, remaining subjects for testing |
-
-For `wt`, the dataset is first filtered by `subject` and `granularity`, then split with:
-
-```text
-train: i % 50 < 30
-test:  i % 50 >= 30
-```
-
-## Training Pipelines
-
-### How to train a model with DVC:
-
-1. Queue an experiment with `dvc exp run --queue` and the desired overrides:
-```bash
-uv run dvc exp run --queue --set-param model=mlp --set-param subject=-1 --set-param model.feature_type=freq --set-param metric=cp train_mlp
-```
-
-2. Review the experiment queue with `dvc exp show` and run all queued experiments with `dvc exp run --run-all`:
-```bash
-dvc exp show
-```
-```bash
-dvc exp run --run-all
-```
-
-3. Review results with `dvc exp show` and `dvc exp diff`:
-```bash
-dvc exp show
-```
-```bash
-dvc exp diff <exp_id_1> <exp_id_2>
-```
-
-4. Apply the best experiment to the workspace with `dvc exp apply`:
-```bash
-dvc exp apply <best_exp_id>
-```
-
-5. Optionally, push the experiment to the remote DVC storage with `dvc exp push`:
-```bash
-dvc exp push <best_exp_id>
-```
-
-6. Optionally, remove the experiment from the queue with `dvc exp remove`:
-```bash
-dvc exp remove <exp_id>
-
-dvc exp remove --queue --all
-```
-
-### Object Classification Pipeline
-
-The classification entrypoint is `src/object_classification.py`. The high-level flow is:
-
-```mermaid
-flowchart LR
-    A[Hydra config] --> B[Load EEGImageNetDataset]
-    B --> C{model.feature_type}
-    C -->|time| D[Use time-domain features]
-    C -->|freq| E[Use frequency-domain features]
-    D --> F[Apply benchmark split]
-    E --> F
-    F --> G[Build train/test subsets]
-    G --> H{model type}
-    H -->|simple| I[sklearn fit / predict]
-    H -->|deep| J[CrossEntropy training]
-    H -->|semantic| K[BalancedBatchSampler\n+ triplet loss]
-    I --> L[result.txt]
-    J --> L
-    K --> L
-```
-
-Detailed steps:
-
-1. `EEGImageNetDataset` loads `EEG-ImageNet.pth`, filters by `subject` and `granularity`, and returns dataset-local contiguous class ids.
-2. If `model.feature_type=freq`, DE features are computed or loaded from cache. If `model.feature_type=time`, the cropped EEG window is used directly.
-3. `utilities.get_benchmark_split` builds train/test indices for the selected metric.
-4. `torch.utils.data.Subset` objects are created over a dataset that already emits contiguous labels.
-5. Training dispatch depends on `model.type` and `model.name`.
-6. The best checkpoint and summary metrics are written to the Hydra run directory.
-
-Implementation references:
-
-| Stage | Main file | What happens there |
-|------|-----------|--------------------|
-| Experiment entrypoint | `src/object_classification.py` | Hydra config loading, feature routing, split creation, train dispatch |
-| Dataset loading | `src/dataset.py` | subject filtering, granularity filtering, contiguous label generation |
-| Benchmark split | `src/utilities.py` | `wt` split logic and general helper utilities |
-| Frequency features | `src/preprocessing/de_feat_cal.py` | DE feature extraction and cache reuse |
-| Training loops | `src/trainer/train.py` | classifier training and semantic training loops |
-| Evaluation | `src/trainer/metrics.py` | top-k metrics, embedding evaluation, prototype-based scoring |
-| Losses | `src/trainer/loss.py` | triplet loss |
-
-More concrete execution flow:
-
-1. `src/object_classification.py` reads `configs/config.yaml` plus `configs/model/<name>.yaml` and creates the selected model.
-2. `src/dataset.py` constructs `EEGImageNetDataset`, filters records, and exposes labels as contiguous indices local to the filtered dataset.
-3. `src/object_classification.py` decides whether to call the time-domain path directly or to populate `dataset.frequency_feat` via `src/preprocessing/de_feat_cal.py`.
-4. `src/utilities.py` creates the benchmark split indices, which are then wrapped as `Subset` objects in `src/object_classification.py`.
-5. `src/object_classification.py` dispatches to either the sklearn path, the cross-entropy path, or the semantic path.
-6. `src/trainer/train.py` runs optimization, while `src/trainer/metrics.py` evaluates top-1/top-5 or prototype-retrieval accuracy.
-7. Semantic training additionally uses `BalancedBatchSampler` from `src/dataset.py` and `batch_hard_triplet_loss` from `src/trainer/loss.py`.
-
-### Model-Specific Training Behavior
-
-#### Classical Baselines
-
-Models: `svm`, `rf`, `knn`, `dt`, `ridge`
-
-1. Frequency-domain DE features are flattened.
-2. The sklearn wrapper in `src/model/simple_model.py` is fit on the train split.
-3. Evaluation is top-1 accuracy on the test split.
-
-Reference files:
-
-- `src/object_classification.py`
-- `src/model/simple_model.py`
-- `src/preprocessing/de_feat_cal.py`
-
-#### Deep Classifiers
-
-Models: `eegnet`, `mlp`, `rgnn`
-
-1. A PyTorch `DataLoader` is built for train and test subsets.
-2. The model is optimized with cross-entropy.
-3. Each epoch evaluates on the test split with top-1, top-5, and average loss.
-4. The checkpoint with the best top-1 score is saved.
-
-Feature routing:
-
-- `eegnet`: time-domain EEG window
-- `mlp`: DE features
-- `rgnn`: DE features
-
-Reference files:
-
-- `src/object_classification.py`
-- `src/trainer/train.py`
-- `src/trainer/metrics.py`
-- `src/model/eegnet.py`
-- `src/model/mlp.py`
-- `src/model/rgnn.py`
-
-##### DVC commands for running experiments with different overrides and tracking them with DVC:
-
-1. Create a experiment queue with `dvc exp run --queue` and the desired overrides:
-```bash
-# Train MLP on all subjects with DE features and within-time split
-uv run dvc exp run --queue --set-param model=mlp \
-    --set-param subject=-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 \
-    --set-param model.feature_type=freq,time --set-param metric=wt \
-    train_mlp
-```
-```bash
-
-# Train MLP on all subjects with DE features and cross-participant split
-uv run dvc exp run --queue --set-param model=mlp \
-    --set-param subject=-1 \
-    --set-param model.feature_type=freq,time --set-param metric=cp \
-    train_mlp
-```
-
-#### Semantic Training
-
-`SemanticModel` does not train a softmax classifier. It learns an embedding with batch-hard triplet loss.
-
-1. The dataset stays in time-domain mode.
-2. `BalancedBatchSampler` builds batches containing multiple examples from multiple classes.
-3. The model outputs L2-normalized embeddings.
-4. Training uses batch-hard triplet loss.
-5. Evaluation builds class prototypes from the eval split and measures retrieval-style top-1 and top-5 accuracy.
-
-The triplet objective is implemented in `src/trainer/loss.py`, while evaluation logic lives in `src/trainer/metrics.py`.
-
-Reference files:
-
-- `src/object_classification.py`
-- `src/dataset.py`
-- `src/trainer/train.py`
-- `src/trainer/loss.py`
-- `src/trainer/metrics.py`
-- `src/model/semantic.py`
-
-Backbone options are selected with `model.backbone`.
-
-**transformer**: patch-based encoder using a `[CLS]` token
-
-```mermaid
-flowchart LR
-    A["EEG input\nB x C x T"] --> B["PatchEmbed\nConv1d"]
-    B --> C["patch tokens\n+ [CLS] + pos_embed"]
-    C --> D["TransformerEncoder\nx depth"]
-    D --> E["[CLS] token"]
-    E --> F["projection head"]
-    F --> G["L2 embedding"]
-```
-
-**jepa**: transformer backbone plus EMA-updated target encoder
-
-```mermaid
-flowchart LR
-    A["EEG input\nB x C x T"] --> B["PatchEmbed\nConv1d"]
-    B --> C["online encoder"]
-    C --> D["projection head"]
-    D --> E["embedding"]
-    B --> F["target encoder\nEMA copy"]
-    C -->|EMA update| F
-```
-
-**nn**: lightweight Conv1d encoder
-
-```mermaid
-flowchart LR
-    A["EEG input\nB x C x T"] --> B["Conv1d -> BN -> GELU"]
-    B --> C["Conv1d -> BN -> GELU"]
-    C --> D["AdaptiveAvgPool1d(1)"]
-    D --> E["projection head"]
-    E --> F["L2 embedding"]
-```
-
-## Usage
-
-### Object Classification
-
-#### Baseline Models
-
-```bash
-# Default run: EEGNet, subject 0, within-time split
-python src/object_classification.py
-
-# MLP baseline on DE features
-python src/object_classification.py model=mlp
-
-# RGNN baseline
-python src/object_classification.py model=rgnn
-
-# Classical ML baseline
-python src/object_classification.py model=svm
-
-# Override optimizer or epoch count
-python src/object_classification.py model=mlp model.optimizer.lr=0.0005 model.epochs=300
-```
-
-#### Semantic Model
-
-```bash
-# Default semantic backbone: transformer
-python src/object_classification.py model=semantic
-
-# Switch backbone
-python src/object_classification.py model=semantic model.backbone=jepa
-python src/object_classification.py model=semantic model.backbone=nn
-
-# Tune triplet settings
-python src/object_classification.py model=semantic model.triplet_margin=0.25 model.samples_per_class=6
-```
+| `dataset_dir` | THINGS-EEG2 root | `data/things_eeg` |
+| `feature_path` | Visual feature bank `.pt` file | `data/vision_encoder/clip/visual_features_clip.pt` |
+| `device` | Compute device (`DEVICE` env var overrides) | `cuda` |
+
+### Protocol
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `protocol` | `intra` (per-subject) or `inter` (LOSO) | `intra` |
+| `subject` | Subject index 1–10; `-1` = all subjects (intra only) | `1` |
+
+### Visual encoder
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `encoder.type` | `clip` or `ijepa` | `clip` |
+| `encoder.model_name` | HuggingFace model identifier | `openai/clip-vit-base-patch32` |
+| `encoder.layer_indices.S1` | Transformer layer index for S1 (early features) | `3` |
+| `encoder.layer_indices.S2` | Transformer layer index for S2 (mid features) | `7` |
+| `encoder.layer_indices.S3` | Transformer layer index for S3 (late features) | `11` |
+
+### Training
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `epochs` | Training epochs | `100` |
+| `batch_size` | Batch size | `256` |
+| `eval_every` | Evaluate every N epochs | `5` |
+| `lambda_reg` | Gaussian regulariser weight | `0.1` |
+| `beta_l1` | Channel-attention L1 sparsity weight | `0.01` |
+| `tau` | InfoNCE temperature | `0.07` |
+| `warmup_epochs` | Linear LR warmup epochs before cosine decay | `10` |
+| `grad_clip` | Max gradient norm (0 = disabled) | `1.0` |
+| `d_model` | Token embedding dim | `256` |
+| `nhead` | Transformer attention heads | `8` |
+| `num_layers` | Transformer depth | `4` |
+| `dim_feedforward` | FFN hidden size | `512` |
+| `dropout` | Dropout | `0.1` |
+| `lr` | Learning rate | `3e-4` |
+| `weight_decay` | Weight decay | `1e-4` |
+
+## Implementation References
+
+| Component | File | Role |
+|-----------|------|------|
+| CLI entry | `train.py` | Typer entry, protocol dispatch, feature extraction |
+| Config dataclasses | `src/utilities.py` | `Config`, `EncoderConfig`; training helpers |
+| Hyperparameter reference | `conf/config.yaml` | YAML source of all defaults (Hydra config) |
+| EEG tokeniser | `src/encoders/eegnet_encoder.py` | Temporal → depthwise → separable conv → token sequence |
+| Visual targets | `src/encoders/visual_encoder.py` | Frozen CLIP/I-JEPA encoder + `VisualFeatureLookup` |
+| Full model | `src/models/supaeeg.py` | `SUPAEEG`, `MultiScaleEncoder`, `ChannelAttention` |
+| Loss functions | `src/trainer/loss.py` | `compute_loss`, `info_nce_loss`, `sigreg_loss`, `l1_sparsity_loss` |
+| Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
+
+## Dataset Explorer
+
+Open `viz_thingeeg.ipynb` in Jupyter to inspect EEG samples, image concepts, and
+feature distributions interactively.

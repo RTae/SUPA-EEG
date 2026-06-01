@@ -17,7 +17,7 @@ https://cloud.tsinghua.edu.cn/f/f880d1eb0f964ad99c98/?dl=1
   out=sub-03.zip
 https://cloud.tsinghua.edu.cn/f/51bf91e55c5f4efb8609/?dl=1
   out=sub-04.zip
-https://cloud.tsinghua.edu.cn/f/171a344be8fb4f14a6e9/?dl=1
+https://cloud.tsinghua.edu.cn/f/85098648b4604d55968f/?dl=1
   out=sub-05.zip
 https://cloud.tsinghua.edu.cn/f/092caa007a9845d9bc38/?dl=1
   out=sub-06.zip
@@ -33,7 +33,7 @@ https://cloud.tsinghua.edu.cn/f/c67e4ace9fbd46618717/?dl=1
   out=train_images.zip
 https://cloud.tsinghua.edu.cn/f/4b56fa976f5e4a70b249/?dl=1
   out=test_images.zip
-https://cloud.tsinghua.edu.cn/f/153e36193f9f473cb449/?dl=1
+https://cloud.tsinghua.edu.cn/f/bb5a66919a524bb6832d/?dl=1
   out=image_metadata.npy
 EOF
 
