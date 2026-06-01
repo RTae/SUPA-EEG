@@ -425,8 +425,8 @@ def train(cfg: DictConfig) -> None:
         train_img_dir  = config.train_img_dir,
         test_img_dir   = config.test_img_dir,
         model_name     = config.internvit_model,
-        device         = config.device,
-        batch_size     = 64,
+        device         = str(_device),
+        batch_size     = int(cfg.extract_batch_size),
     )
 
     internvit_lookup = InternViTFeatureLookup(
