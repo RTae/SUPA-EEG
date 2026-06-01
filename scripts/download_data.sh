@@ -34,7 +34,7 @@ download "f/bb5a66919a524bb6832d" "$DIR/image_metadata.npy"
 
 # Vision features
 download "f/7c0d0012439b49c5a512" "$DIR/image_feature/clip/visual_features_clip.pt"
-download "f/bde721733abe4b1a9d4e" "$DIR/image_feature/internvit_multilevel_20_24_28_32_36/visual_features_internvit.pt"
+download "f/bde721733abe4b1a9d4e" "$DIR/image_feature/internvit_multilevel_20_24_28_32_36/visual_features_internvit.npy"
 
 # Extract
 for i in {01..10}; do
