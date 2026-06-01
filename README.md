@@ -147,8 +147,7 @@ this automatically on the first run (no-op if already extracted):
 python scripts/extract_internvit_features.py
 
 # Override device or batch size
-python scripts/extract_internvit_features.py device=cuda batch_size=32
-```
+python scripts/extract_internvit_features.py device=cuda extract_batch_size=32
 
 The extracted `.npy` files are written to `internvit_dir` (see config) and are
 not re-extracted on subsequent runs.
