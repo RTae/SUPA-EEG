@@ -176,7 +176,7 @@ def run_intra_subject(
 
         for epoch in range(1, config.epochs + 1):
             components = train_one_epoch(
-                model, train_loader, optimizer, train_internvit, device, epoch, config,
+                model, train_loader, optimizer, internvit_lookup, device, epoch, config,
             )
             logger.info(
                 f"Sub{subject_id:02d} | epoch {epoch}/{config.epochs} | "
