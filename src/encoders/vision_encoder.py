@@ -15,12 +15,15 @@ OUTPUT_DIM = 3200   # InternViT-6B hidden dim (architectural constant)
 # ---------------------------------------------------------------------------
 
 def load_internvit(model_name: str, device: torch.device):
-    """Load frozen InternViT encoder directly to device using device_map.
+    """Load frozen InternViT encoder.
 
-    Uses ``device_map`` to stream shards directly to the target device,
-    avoiding a full float32 copy in CPU RAM (~24 GB). Cast to bfloat16
-    after init to sidestep meta-tensor issues that arise when ``torch_dtype``
-    is passed to ``from_pretrained``.
+    Loads on CPU with ``torch_dtype=bfloat16`` (avoids 24 GB float32 copy),
+    then moves to ``device``.  ``device_map`` is intentionally omitted —
+    it triggers ``caching_allocator_warmup`` which calls
+    ``model.all_tied_weights_keys`` that InternViT doesn't define.
+    The cached ``modeling_intern_vit.py`` has been patched separately so that
+    ``torch.linspace(..., device='cpu')`` is used in ``InternVisionEncoder.__init__``
+    to avoid meta-tensor errors.
 
     Args:
         model_name: HuggingFace model ID, e.g. ``OpenGVLab/InternViT-6B-448px-V1-5``
@@ -28,16 +31,16 @@ def load_internvit(model_name: str, device: torch.device):
 
     Returns:
         ``(processor, model)`` tuple — processor is a ``CLIPImageProcessor``,
-        model is frozen bfloat16 InternViT.
+        model is frozen bfloat16 on ``device``.
     """
     logger.info(f"Loading InternViT from {model_name}...")
     processor = CLIPImageProcessor.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModel.from_pretrained(
         model_name,
         trust_remote_code=True,
-        device_map={"": str(device)},
+        torch_dtype=torch.bfloat16,   # load as bfloat16 on CPU (~12 GB, not 24 GB)
     )
-    model = model.to(dtype=torch.bfloat16)
+    model = model.to(device=device)
     model.eval()
     for p in model.parameters():
         p.requires_grad = False
