@@ -8,6 +8,7 @@ mkdir -p data/things_eeg
 mkdir -p data/vision_encoder/clip
 
 # Write input file for aria2c
+# EEG Data
 cat > /tmp/things_eeg.txt << 'EOF'
 https://cloud.tsinghua.edu.cn/f/3f9f369660834eb49a4d/?dl=1
   out=sub-01.zip
@@ -41,6 +42,7 @@ aria2c --dir=data/things_eeg \
   --input-file=/tmp/things_eeg.txt \
   --max-concurrent-downloads=4 --split=4 --min-split-size=10M
 
+# Vision Encoder Data using a openai/clip-vit-base-patch32
 aria2c --dir=data/things_eeg/image_feature/clip \
   --max-concurrent-downloads=4 --split=4 --min-split-size=10M \
   "https://cloud.tsinghua.edu.cn/f/7c0d0012439b49c5a512/?dl=1" -o visual_features_clip.pt
