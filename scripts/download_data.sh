@@ -4,6 +4,12 @@ set -e
 BASE="https://cloud.tsinghua.edu.cn"
 DIR="data/things_eeg"
 
+if ! command -v aria2c >/dev/null 2>&1; then
+  echo "aria2c is required but was not found in PATH."
+  echo "Install it first, for example: sudo apt-get install aria2"
+  exit 1
+fi
+
 mkdir -p $DIR
 mkdir -p $DIR/image_feature/clip
 mkdir -p $DIR/image_feature/internvit_multilevel_20_24_28_32_36
@@ -11,8 +17,19 @@ mkdir -p $DIR/image_feature/internvit_multilevel_20_24_28_32_36
 download() {
   local url="$BASE/$1/?dl=1"
   local out="$2"
+  local out_dir
+  local out_name
+  out_dir="$(dirname "$out")"
+  out_name="$(basename "$out")"
   echo "Downloading $out..."
-  wget -q --show-progress -O "$out" "$url" || { echo "FAILED: $out"; exit 1; }
+  aria2c \
+    --allow-overwrite=true \
+    --auto-file-renaming=false \
+    --continue=true \
+    --dir "$out_dir" \
+    --out "$out_name" \
+    --summary-interval=0 \
+    "$url" || { echo "FAILED: $out"; exit 1; }
 }
 
 # EEG subjects

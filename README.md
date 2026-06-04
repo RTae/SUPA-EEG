@@ -121,6 +121,7 @@ source .venv/bin/activate
 Download EEG data and images:
 
 ```bash
+sudo apt-get install aria2
 bash scripts/download_data.sh
 ```
 
