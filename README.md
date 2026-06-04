@@ -150,11 +150,11 @@ python scripts/extract_internvit_features.py
 
 # Override device or batch size
 python scripts/extract_internvit_features.py device=cuda extract_batch_size=32
-
+```
 The extracted `.npy` files are written to `internvit_dir` (see config) and are
 not re-extracted on subsequent runs.
 
-## Training
+### Training
 
 All options are controlled via `conf/config.yaml` or Hydra CLI overrides:
 
