@@ -157,6 +157,11 @@ class Config:
     image_input_dim: int = 3200
     image_mid_dim: int = 1024
     dropout: float = 0.3
+    n_subjects: int = 10
+    n_layers: int = 5
+    router_temperature: float = 1.0
+    subject_dropout_rate: float = 0.3
+    layer_dropout_rate: float = 0.1
     lr: float = 1e-4
     weight_decay: float = 1e-4
     grad_clip: float = 1.0
@@ -215,12 +220,13 @@ def train_one_epoch(
     n_batches = 0
     for batch in train_loader:
         eeg: torch.Tensor = batch["eeg"].to(device)
+        subject_ids: torch.Tensor = batch["subject_ids"].to(device)
 
         image_layers = internvit_lookup.retrieve_batch(
             batch["image_concepts"], batch["image_files"]
         ).to(device)
 
-        zE, zI = model(eeg, image_layers)
+        zE, zI = model(eeg, image_layers, subject_ids)
 
         loss, components = compute_loss(
             zE, zI, model.logit_scale,
@@ -295,7 +301,10 @@ def evaluate(
         concept_order, [concept_to_file[c] for c in concept_order]
     )  # (N_concepts, n_layers, 3200)
     with torch.no_grad():
-        image_features = model.encode_image(gallery.to(device)).cpu().numpy()  # (N_concepts, 512)
+        image_features = model.encode_image(
+            gallery.to(device),
+            subject_ids=None,
+        ).cpu().numpy()  # (N_concepts, 512)
 
     top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
     return top1_count / total, top5_count / total
@@ -391,6 +400,11 @@ def make_model(
         image_mid_dim=config.image_mid_dim,
         feature_dim=config.feature_dim,
         dropout=config.dropout,
+        n_subjects=config.n_subjects,
+        n_layers=config.n_layers,
+        router_temperature=config.router_temperature,
+        subject_dropout_rate=config.subject_dropout_rate,
+        layer_dropout_rate=config.layer_dropout_rate,
     ).to(device)
 
 

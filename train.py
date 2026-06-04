@@ -43,16 +43,18 @@ def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
         batch: List of tuples from the dataset.
 
     Returns:
-        Dict with keys 'eeg', 'image_concepts', 'image_files',
-        'concept_indices', 'image_indices'.
+        Dict with keys 'eeg', 'subject_ids', 'image_concepts',
+        'image_files', 'concept_indices', 'image_indices'.
     """
     eeg_tensors     = torch.stack([item[0] for item in batch], dim=0)
     image_concepts  = [item[5] for item in batch]
     image_files     = [item[6] for item in batch]
+    subject_ids     = torch.tensor([item[2] for item in batch], dtype=torch.long)
     concept_indices = [item[4] for item in batch]          # data_index
     image_indices   = [item[3] for item in batch]          # repetition_index
     return {
         "eeg":             eeg_tensors,
+        "subject_ids":     subject_ids,
         "image_concepts":  image_concepts,
         "image_files":     image_files,
         "concept_indices": concept_indices,
@@ -82,6 +84,11 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         image_input_dim=cfg.image_input_dim,
         image_mid_dim=cfg.image_mid_dim,
         dropout=cfg.dropout,
+        n_subjects=cfg.n_subjects,
+        n_layers=cfg.n_layers,
+        router_temperature=cfg.router_temperature,
+        subject_dropout_rate=cfg.subject_dropout_rate,
+        layer_dropout_rate=cfg.layer_dropout_rate,
         lr=cfg.lr,
         weight_decay=cfg.weight_decay,
         grad_clip=cfg.grad_clip,
