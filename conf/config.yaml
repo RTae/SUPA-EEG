@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------
-# SUPAEEG — primary Hydra config
-# Override any key on the CLI: python train.py subject=2 epochs=500
+# SUPAEEG — primary Hydra config (SAMGA pipeline)
+# Override any key on the CLI: python train.py subject=2 epochs=60
 # ---------------------------------------------------------------------------
 
 # --- Protocol --------------------------------------------------------------
@@ -10,37 +10,40 @@ all_subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # --- Data ------------------------------------------------------------------
 dataset_dir: data/things_eeg
-feature_path: data/vision_encoder/clip/visual_features_clip.pt
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
 
-# --- Visual encoder --------------------------------------------------------
-encoder:
-  type: clip
-  model_name: openai/clip-vit-base-patch32
-  layer_indices:
-    S1: 3    # early — local edges & colours
-    S2: 7    # mid   — spatial structure
-    S3: 11   # late  — high-level semantics
+# --- InternViT features ----------------------------------------------------
+internvit_model:  "OpenGVLab/InternViT-6B-448px-V1-5"
+internvit_dir:    "data/things_eeg/image_feature/internvit_multilevel_20_24_28_32_36"
+layer_ids:        [20, 24, 28, 32, 36]
+train_img_dir:    "data/things_eeg/training_images"
+test_img_dir:     "data/things_eeg/test_images"
+metadata_path:    "data/things_eeg/image_metadata.npy"
+extract_batch_size: 128  # images per InternViT forward pass (6B model, reduce if OOM)
 
 # --- Training --------------------------------------------------------------
-epochs: 100
-batch_size: 256
+epochs: 60
+batch_size: 512
 eval_every: 5
-lambda_reg: 0.1     # Gaussian regulariser weight
-beta_l1: 0.01       # channel-attention L1 sparsity weight
-tau: 0.07           # InfoNCE temperature
-warmup_epochs: 10   # linear LR warmup before cosine decay
-grad_clip: 1.0      # max gradient norm (0 = disabled)
+grad_clip: 1.0
+
+# --- Two-stage schedule ----------------------------------------------------
+stage1_epochs: 20
+stage2_lr: 0.00005
+mmd_start: 0.9
+mmd_end: 0.5
 
 # --- Architecture ----------------------------------------------------------
-d_model: 256
-nhead: 8
-num_layers: 4
-dim_feedforward: 512
-dropout: 0.1
+n_channels:       17
+n_timepoints:     100
+feature_dim:      512
+eeg_feature_dim:  1024
+image_input_dim:  3200
+image_mid_dim:    1024
+dropout:          0.3
 
 # --- Optimiser -------------------------------------------------------------
-lr: 3e-4
+lr: 0.0001
 weight_decay: 1e-4
 
 # --- Output ----------------------------------------------------------------

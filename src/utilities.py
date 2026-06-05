@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -141,17 +139,6 @@ def get_benchmark_split(
 
 
 @dataclass
-class EncoderConfig:
-    """Visual encoder settings, mirroring conf/model/supaeeg.yaml encoder block."""
-
-    type: str = "clip"
-    model_name: str = "openai/clip-vit-base-patch32"
-    layer_indices: dict[str, int] = field(
-        default_factory=lambda: {"S1": 3, "S2": 7, "S3": 11}
-    )
-
-
-@dataclass
 class Config:
     """All runtime hyperparameters for SUPAEEG training."""
 
@@ -159,100 +146,117 @@ class Config:
     subject: int = 1
     all_subjects: list[int] = field(default_factory=lambda: list(range(1, 11)))
     dataset_dir: str = "data/things_eeg"
-    feature_path: str = "data/vision_encoder/clip/visual_features_clip.pt"
     device: str = "cuda"
-    encoder: EncoderConfig = field(default_factory=EncoderConfig)
-    epochs: int = 100
-    batch_size: int = 256
+    epochs: int = 60
+    batch_size: int = 512
     eval_every: int = 5
-    lambda_reg: float = 0.1
-    beta_l1: float = 0.01
-    tau: float = 0.07
-    d_model: int = 256
-    nhead: int = 8
-    num_layers: int = 4
-    dim_feedforward: int = 512
-    dropout: float = 0.1
-    lr: float = 3e-4
+    n_channels: int = 17
+    n_timepoints: int = 100
+    feature_dim: int = 512
+    eeg_feature_dim: int = 1024
+    image_input_dim: int = 3200
+    image_mid_dim: int = 1024
+    dropout: float = 0.3
+    lr: float = 1e-4
     weight_decay: float = 1e-4
-    warmup_epochs: int = 10
     grad_clip: float = 1.0
+    stage1_epochs: int = 20
+    stage2_lr: float = 5e-5
+    mmd_start: float = 0.9
+    mmd_end: float = 0.5
+    internvit_model: str = "OpenGVLab/InternViT-6B-448px-V1-5"
+    internvit_dir: str = "data/things_eeg/image_feature/internvit_multilevel_20_24_28_32_36"
+    layer_ids: list[int] = field(default_factory=lambda: [20, 24, 28, 32, 36])
+    train_img_dir: str = "data/things_eeg/training_images"
+    test_img_dir: str = "data/things_eeg/test_images"
+    metadata_path: str = "data/things_eeg/image_metadata.npy"
 
 
 def train_one_epoch(
     model: Any,
     train_loader: DataLoader,
     optimizer: AdamW,
-    feature_lookup: Any,
+    internvit_lookup: Any,
     device: torch.device,
-    lambda_reg: float = 0.1,
-    beta_l1: float = 0.01,
-    tau: float = 0.07,
-    grad_clip: float = 1.0,
-) -> float:
+    epoch: int,
+    config: "Config",
+) -> dict[str, float]:
     """Run a single training epoch.
 
+    Stage transition: at epoch == config.stage1_epochs + 1, share_encoder is
+    frozen and lr is reduced to config.stage2_lr.
+
     Args:
-        model:          SUPAEEG model (will be set to train mode).
-        train_loader:   DataLoader for the training split.
-        optimizer:      AdamW optimiser.
-        feature_lookup: VisualFeatureLookup used to retrieve CLIP targets.
-        device:         Compute device.
-        lambda_reg:     Gaussian regulariser weight.
-        beta_l1:        Channel-attention L1 sparsity weight.
-        tau:            InfoNCE temperature.
+        model:            SUPAEEG model (will be set to train mode).
+        train_loader:     DataLoader for the training split.
+        optimizer:        AdamW optimiser.
+        internvit_lookup: InternViTFeatureLookup for retrieving image features.
+        device:           Compute device.
+        epoch:            Current epoch number (1-indexed).
+        config:           Runtime configuration.
 
     Returns:
-        Mean total loss over all batches in the epoch.
+        Dict with mean loss components over the epoch.
     """
     from src.trainer.loss import compute_loss  # local import avoids circular deps
 
+    # Stage 2 transition
+    if epoch == config.stage1_epochs + 1:
+        for p in model.share_encoder.parameters():
+            p.requires_grad = False
+        for g in optimizer.param_groups:
+            g["lr"] = config.stage2_lr
+        logger.info(
+            f"Stage 2: share_encoder frozen, lr -> {config.stage2_lr}"
+        )
+
     model.train()
-    total_loss = 0.0
+    sums: dict[str, float] = {"total": 0.0, "infonce": 0.0, "mmd": 0.0, "mmd_weight": 0.0}
+    n_batches = 0
     for batch in train_loader:
         eeg: torch.Tensor = batch["eeg"].to(device)
-        image_concepts: list[str] = batch["image_concepts"]
-        image_files: list[str] = batch["image_files"]
 
-        z1, z2, z3 = model(eeg)
+        image_layers = internvit_lookup.retrieve_batch(
+            batch["image_concepts"], batch["image_files"]
+        ).to(device)
 
-        S1, S2, S3 = feature_lookup.retrieve_batch(image_concepts, image_files)
-        S1, S2, S3 = S1.to(device), S2.to(device), S3.to(device)
+        zE, zI = model(eeg, image_layers)
 
         loss, components = compute_loss(
-            z1, z2, z3, S1, S2, S3,
-            model.scale_encoder,
-            lambda_reg=lambda_reg,
-            beta_l1=beta_l1,
-            tau=tau,
+            zE, zI, model.logit_scale,
+            epoch, config.stage1_epochs,
+            config.mmd_start, config.mmd_end,
         )
         optimizer.zero_grad()
         loss.backward()
-        if grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
         optimizer.step()
-        total_loss += float(components["total"])
 
-    return total_loss / max(len(train_loader), 1)
+        for k in sums:
+            sums[k] += float(components[k])
+        n_batches += 1
+
+    n = max(n_batches, 1)
+    return {k: v / n for k, v in sums.items()}
 
 
 def evaluate(
     model: Any,
     test_loader: DataLoader,
-    feature_lookup: Any,
+    internvit_lookup: Any,
     device: torch.device,
 ) -> tuple[float, float]:
     """Zero-shot concept retrieval evaluation on the test set.
 
     Aggregates per-concept EEG embeddings (averaged over repetitions) and
-    paired CLIP image embeddings, then computes Top-1 and Top-5 retrieval
+    paired InternViT image embeddings, then computes Top-1 and Top-5 retrieval
     accuracy via the diagonal-retrieval protocol.
 
     Args:
-        model:          SUPAEEG model.
-        test_loader:    DataLoader over the test split.
-        feature_lookup: VisualFeatureLookup instance.
-        device:         Compute device.
+        model:            SUPAEEG model.
+        test_loader:      DataLoader over the test split.
+        internvit_lookup: InternViTFeatureLookup instance (test split).
+        device:           Compute device.
 
     Returns:
         Tuple ``(top1, top5)`` accuracy values in [0, 1].
@@ -266,11 +270,11 @@ def evaluate(
     with torch.no_grad():
         for batch in test_loader:
             eeg = batch["eeg"].to(device)
-            z = model.embed(eeg)  # (batch, 2304), ℓ2-normalised inside embed()
+            zE = model.embed(eeg)  # (batch, 512), l2-normalised
             for i, (concept, img_file) in enumerate(
                 zip(batch["image_concepts"], batch["image_files"])
             ):
-                concept_embeddings[concept].append(z[i].cpu())
+                concept_embeddings[concept].append(zE[i].cpu())
                 concept_to_file[concept] = img_file
 
     concept_order = sorted(concept_embeddings.keys())
@@ -284,18 +288,14 @@ def evaluate(
             for c in concept_order
         ],
         dim=0,
-    ).numpy()  # (N_concepts, 2304)
+    ).numpy()  # (200, 512)
 
-    image_features = torch.cat(
-        [
-            F.normalize(
-                torch.cat([*feature_lookup.retrieve(c, concept_to_file[c])]).unsqueeze(0),
-                dim=1,
-            )
-            for c in concept_order
-        ],
-        dim=0,
-    ).numpy()  # (N_concepts, 2304)
+    # Build image gallery from InternViT lookup
+    gallery = internvit_lookup.retrieve_batch(
+        concept_order, [concept_to_file[c] for c in concept_order]
+    )  # (N_concepts, n_layers, 3200)
+    with torch.no_grad():
+        image_features = model.encode_image(gallery.to(device)).cpu().numpy()  # (N_concepts, 512)
 
     top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
     return top1_count / total, top5_count / total
@@ -384,10 +384,12 @@ def make_model(
     from src.models.supaeeg import SUPAEEG  # local import avoids circular deps
 
     return SUPAEEG(
-        d_model=config.d_model,
-        nhead=config.nhead,
-        num_layers=config.num_layers,
-        dim_feedforward=config.dim_feedforward,
+        n_channels=config.n_channels,
+        n_timepoints=config.n_timepoints,
+        eeg_feature_dim=config.eeg_feature_dim,
+        image_input_dim=config.image_input_dim,
+        image_mid_dim=config.image_mid_dim,
+        feature_dim=config.feature_dim,
         dropout=config.dropout,
     ).to(device)
 
@@ -409,31 +411,3 @@ def make_optimizer(model: Any, config: Config) -> AdamW:
     )
 
 
-def make_scheduler(
-    optimizer: AdamW,
-    config: Config,
-) -> Any:
-    """Build a cosine-annealing LR scheduler with optional linear warmup.
-
-    Args:
-        optimizer: The AdamW optimiser to attach the scheduler to.
-        config:    Runtime configuration (uses ``epochs``, ``warmup_epochs``).
-
-    Returns:
-        A ``SequentialLR`` (warmup → cosine) or ``CosineAnnealingLR`` if
-        ``warmup_epochs`` is 0.
-    """
-    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
-
-    warmup = min(config.warmup_epochs, config.epochs // 10)
-    if warmup > 0:
-        warmup_sched = LinearLR(
-            optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup
-        )
-        cosine_sched = CosineAnnealingLR(
-            optimizer, T_max=max(config.epochs - warmup, 1), eta_min=1e-6
-        )
-        return SequentialLR(
-            optimizer, schedulers=[warmup_sched, cosine_sched], milestones=[warmup]
-        )
-    return CosineAnnealingLR(optimizer, T_max=config.epochs, eta_min=1e-6)

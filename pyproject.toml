@@ -35,4 +35,6 @@ dependencies = [
     "typer>=0.24.1",
     "pytest>=9.0.3",
     "tensorboard>=2.20.0",
+    "einops>=0.8.2",
+    "flash-attn>=2.8.3",
 ]
