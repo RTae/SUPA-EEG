@@ -25,9 +25,9 @@ from src.utilities import Config, make_model
 # ---------------------------------------------------------------------------
 # HARDCODED CONFIGURATION
 # ---------------------------------------------------------------------------
-CHECKPOINT_PATH = "outputs/model.pt"  # Path to your trained model checkpoint
-SUBJECT = 1                           # Subject ID (1 to 10)
-CONCEPT = "00190_wheelchair"          # Target concept from the test set
+CHECKPOINT_PATH = "intra/supaeeg_intra_sub01.pt"  # Path to your trained model checkpoint
+SUBJECT = 1                                       # Subject ID (1 to 10)
+CONCEPT = "00197_wheelchair"                      # Target concept from the test set
 # ---------------------------------------------------------------------------
 
 def load_config() -> Config:
@@ -76,17 +76,26 @@ def run_inference(subject: int, target_concept: str, checkpoint_path: str) -> di
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model"])
     
-    # Find sample index
+    # Find sample indices for the target concept
     indices = [i for i, c in enumerate(dataset.image_meta_data['test_img_concepts']) if c == target_concept]
     if not indices:
         raise ValueError(f"Concept '{target_concept}' not found in the test dataset split")
-    idx = indices[0]
     
-    eeg_tensor, _, _, _, _, _, target_file = dataset[idx]
+    # Load all EEG trials for this concept
+    eeg_tensors = []
+    target_file = None
+    for idx in indices:
+        eeg_tensor, _, _, _, _, _, img_file = dataset[idx]
+        eeg_tensors.append(eeg_tensor)
+        if target_file is None:
+            target_file = img_file
+            
+    eeg_batch = torch.stack(eeg_tensors).to(device)  # (N_trials, 17, 100)
     
-    # Compute EEG embedding
+    # Compute average EEG embedding
     with torch.no_grad():
-        zE = model.embed(eeg_tensor.unsqueeze(0).to(device)).cpu().numpy()  # (1, 512)
+        zE_trials = model.embed(eeg_batch)  # (N_trials, 512)
+        zE = torch.nn.functional.normalize(zE_trials.mean(dim=0, keepdim=True), dim=1).cpu().numpy()  # (1, 512)
         
     # Get test concept gallery
     concepts = sorted(list(set(dataset.image_meta_data['test_img_concepts'])))
@@ -131,8 +140,6 @@ def run_inference(subject: int, target_concept: str, checkpoint_path: str) -> di
 # ---------------------------------------------------------------------------
 
 class DemoHTTPHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass  # Suppress default server console output
         
     def do_GET(self) -> None:
         url = urllib.parse.urlparse(self.path)
@@ -162,12 +169,27 @@ class DemoHTTPHandler(BaseHTTPRequestHandler):
                     load_images=False,
                     data_average=config.data_average_test
                 )
-                indices = [i for i, c in enumerate(dataset.image_meta_data['test_img_concepts']) if c == CONCEPT]
-                if not indices:
+                
+                # Find the correct concept index in the 200 test set concepts
+                concept_idx = -1
+                for i, c in enumerate(dataset.image_meta_data['test_img_concepts']):
+                    if c == CONCEPT:
+                        concept_idx = i
+                        break
+                if concept_idx == -1:
                     raise ValueError(f"Concept '{CONCEPT}' not found in the test dataset split")
-                idx = indices[0]
-                eeg, _, _, _, _, _, image_file = dataset[idx]
-                eeg_plot = plot_eeg(eeg)
+                
+                # Get the 80 trials for this concept (using the repetitions factor)
+                indices = [concept_idx * dataset.number_of_repetitions + r for r in range(dataset.number_of_repetitions)]
+                
+                # Average the EEG traces across all trials for a clean ERP visualization
+                eeg_traces = [dataset[idx][0] for idx in indices]
+                eeg_average = torch.stack(eeg_traces).mean(dim=0)
+                
+                # Use the target image file from the first trial sample
+                _, _, _, _, _, _, image_file = dataset[indices[0]]
+                
+                eeg_plot = plot_eeg(eeg_average)
                 
                 self.send_json({
                     "image_file": image_file,
@@ -187,7 +209,8 @@ class DemoHTTPHandler(BaseHTTPRequestHandler):
             concept = query.get("concept", [""])[0]
             image_file = query.get("file", [""])[0]
             
-            img_dir = os.path.join("data/things_eeg", "test_images")
+            project_root = os.path.dirname(os.path.abspath(__file__))
+            img_dir = os.path.join(project_root, "data/things_eeg", "test_images")
             img_path = os.path.join(img_dir, concept, image_file)
             
             if os.path.isfile(img_path):
