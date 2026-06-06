@@ -24,13 +24,13 @@ metadata_path:    "data/things_eeg/image_metadata.npy"
 extract_batch_size: 128  # images per InternViT forward pass (6B model, reduce if OOM)
 
 # --- Training --------------------------------------------------------------
-epochs: 25
+epochs: 15
 batch_size: 1024
-eval_every: 5
+eval_every: 1
 grad_clip: 1.0
 
 # --- Two-stage schedule ----------------------------------------------------
-stage1_epochs: 20
+stage1_epochs: 20   # decay over 20 so mmd_w≈0.71 at epoch 10 (peak zone)
 stage2_lr: 0.00001
 mmd_start: 0.9
 mmd_end: 0.5
