@@ -24,13 +24,13 @@ metadata_path:    "data/things_eeg/image_metadata.npy"
 extract_batch_size: 128  # images per InternViT forward pass (6B model, reduce if OOM)
 
 # --- Training --------------------------------------------------------------
-epochs: 40
-batch_size: 512
+epochs: 25
+batch_size: 1024
 eval_every: 5
 grad_clip: 1.0
 
 # --- Two-stage schedule ----------------------------------------------------
-stage1_epochs: 30
+stage1_epochs: 20
 stage2_lr: 0.00001
 mmd_start: 0.9
 mmd_end: 0.5
@@ -53,7 +53,7 @@ layer_dropout_rate: 0.1
 smooth_prob:        0.3
 smooth_kernel_size: 5
 smooth_sigma:       1.0
-early_stop_patience: 3
+early_stop_patience: 2
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
