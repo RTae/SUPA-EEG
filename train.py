@@ -8,7 +8,7 @@ import torch
 from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
-from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 
 from src.dataset import ThingsEEGDataset
@@ -60,6 +60,29 @@ def collate_fn(batch: list[tuple[Any, ...]]) -> dict[str, Any]:
         "concept_indices": concept_indices,
         "image_indices":   image_indices,
     }
+
+
+class _SubjectIDDataset(Dataset):
+    """Wrap a per-subject dataset with its stable global subject ID."""
+
+    def __init__(self, dataset: Dataset, subject_id: int) -> None:
+        self.dataset = dataset
+        self.subject_id = subject_id - 1
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, index: int) -> tuple[Any, ...]:
+        eeg, image, _, repetition_index, data_index, image_concept, image_file = self.dataset[index]
+        return (
+            eeg,
+            image,
+            self.subject_id,
+            repetition_index,
+            data_index,
+            image_concept,
+            image_file,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -280,12 +303,15 @@ def run_inter_subject(
 
         train_dataset = ConcatDataset(
             [
-                ThingsEEGDataset(
-                    dataset_dir=config.dataset_dir,
-                    data_type="train",
-                    subject=s,
-                    load_images=False, # since we already have the vision features, no need to load pixel data
-                    data_average=config.data_average,
+                _SubjectIDDataset(
+                    ThingsEEGDataset(
+                        dataset_dir=config.dataset_dir,
+                        data_type="train",
+                        subject=s,
+                        load_images=False, # since we already have the vision features, no need to load pixel data
+                        data_average=config.data_average,
+                    ),
+                    subject_id=s,
                 )
                 for s in train_subjects
             ]
