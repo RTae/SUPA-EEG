@@ -58,8 +58,15 @@ for i in {01..10}; do
     echo "WARNING: $zip_file not found, skipping."
     continue
   fi
-  echo "Extracting sub-${i}_63.zip..."
-  unzip -q "$zip_file" -d "$DIR" && rm "$zip_file"
+  echo "Extracting sub-${i}_63.zip → $sub_dir ..."
+  tmp_dir="$DIR/.tmp_extract_${i}"
+  mkdir -p "$tmp_dir"
+  unzip -q "$zip_file" -d "$tmp_dir"
+  # rename whatever the zip called its top-level folder to the desired name
+  extracted=$(find "$tmp_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
+  mv "$extracted" "$sub_dir"
+  rm -rf "$tmp_dir"
+  rm "$zip_file"
 done
 
 echo "Done."
