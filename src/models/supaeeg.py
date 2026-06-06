@@ -1,85 +1,8 @@
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.encoders.eegnet_encoder import EEGNetEncoder
-
-
-class GradientReversalFunction(torch.autograd.Function):
-    """Reverses gradients during backward pass.
-    Forward pass: identity (no change to values)
-    Backward pass: multiply gradient by -lambda_grl
-    This trains the encoder to REMOVE subject information.
-    """
-
-    @staticmethod
-    def forward(ctx, x, lambda_grl):
-        ctx.save_for_backward(torch.tensor(lambda_grl))
-        return x.clone()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        lambda_grl = ctx.saved_tensors[0].item()
-        return -lambda_grl * grad_output, None
-
-
-class GradientReversalLayer(nn.Module):
-    """Apply gradient reversal with scheduled lambda.
-
-    lambda_grl controls reversal strength:
-      0.0 = no reversal (GRL off)
-      1.0 = full reversal (standard GRL)
-
-    Scheduled from 0 → lambda_max over training to
-    stabilise early training before adversarial pressure builds.
-
-    Args:
-        lambda_max: float = 1.0  maximum reversal strength
-    """
-
-    def __init__(self, lambda_max: float = 1.0):
-        super().__init__()
-        self.lambda_max = lambda_max
-        self._lambda = 0.0   # current value, updated by set_lambda()
-
-    def set_lambda(self, progress: float) -> None:
-        """Update lambda based on training progress in [0, 1].
-        Uses standard GRL schedule: 2/(1+exp(-10*p)) - 1
-        progress=0 → lambda=0, progress=1 → lambda=lambda_max
-        """
-        self._lambda = self.lambda_max * (
-            2.0 / (1.0 + math.exp(-10.0 * progress)) - 1.0
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return GradientReversalFunction.apply(x, self._lambda)
-
-
-class SubjectClassifier(nn.Module):
-    """2-layer MLP predicting subject ID from EEG features.
-    Trained to predict subject; encoder trained to fool it via GRL.
-    Discarded entirely at inference.
-
-    Args:
-        in_features:  int = 512   input feature dimension
-        n_subjects:   int = 10    number of training subjects
-        hidden_dim:   int = 256   hidden layer size
-    """
-
-    def __init__(self, in_features=512, n_subjects=10, hidden_dim=256):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_features, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(hidden_dim, n_subjects),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """x: (batch, in_features) → (batch, n_subjects) logits"""
-        return self.net(x)
+from src.encoders.eegnet_encoder import TemporalPatchEncoder
 
 
 class SubjectAwareRouter(nn.Module):
@@ -186,50 +109,85 @@ class SubjectAwareRouter(nn.Module):
 
 
 class SUPAEEG(nn.Module):
-    """SUPAEEG: EEGProject + shared encoder alignment.
+    """SUPAEEG with temporal patching and aligned layer routing.
 
-    Architecture:
-        EEG (batch, 17, 100)
-          eeg_encoder  -> (batch, 1024)
-          eeg_projector Linear(1024, 512)
-          share_encoder Linear(512, 512)   <- shared with image side
-          l2-normalize  -> zE (batch, 512)
-
-        image_layers (batch, 5, 3200)
-          .float().mean(dim=1) -> (batch, 3200)
-          img_pre_projector Linear(3200, 1024)
-          img_projector     Linear(1024, 512)
-          share_encoder     Linear(512, 512)   <- SAME nn.Module as EEG
-          l2-normalize      -> zI (batch, 512)
+    Each temporal window of EEG is aligned to a corresponding
+    group of InternViT layers, exploiting the known temporal
+    structure of visual EEG responses.
 
     Args:
-        n_channels:      int   = 17
-        n_timepoints:    int   = 100
-        eeg_feature_dim: int   = 1024
-        image_input_dim: int   = 3200
-        image_mid_dim:   int   = 1024
-        feature_dim:     int   = 512
-        dropout:         float = 0.3
+        n_channels:           int   = 17
+        n_timepoints:         int   = 100
+        n_windows:            int   = 4      temporal patches
+        feature_dim:          int   = 512    per-window embedding dim
+        image_input_dim:      int   = 3200   InternViT feature dim
+        image_mid_dim:        int   = 1024   image projector intermediate
+        n_subjects:           int   = 10
+        n_layers:             int   = 5
+        router_temperature:   float = 1.0
+        subject_dropout_rate: float = 0.3
+        layer_dropout_rate:   float = 0.1
+        dropout:              float = 0.3
     """
 
-    def __init__(self, n_channels=17, n_timepoints=100,
-                 eeg_feature_dim=1024, image_input_dim=3200,
-                 image_mid_dim=1024, feature_dim=512, dropout=0.3,
-                 n_subjects=10, n_layers=5, router_temperature=1.0,
-                 subject_dropout_rate=0.3, layer_dropout_rate=0.1,
-                 use_grl: bool = True, lambda_grl_max: float = 1.0,
-                 grl_hidden_dim: int = 256):
+    # Layer-group assignment for 5 InternViT layers [20, 24, 28, 32, 36].
+    # Indices refer to position in the 5-layer stack (0=layer20 … 4=layer36).
+    # Overlap at layer 28 (index 2) is intentional — it is the most informative.
+    LAYER_GROUPS: list[list[int]] = [
+        [0],       # window 0 (0-25 ms)   early visual  → layer 20
+        [1, 2],    # window 1 (25-50 ms)  mid           → layers 24, 28
+        [2, 3],    # window 2 (50-75 ms)  late-mid      → layers 28, 32
+        [3, 4],    # window 3 (75-100 ms) semantic      → layers 32, 36
+    ]
+
+    def __init__(
+        self,
+        n_channels: int = 17,
+        n_timepoints: int = 100,
+        n_windows: int = 4,
+        feature_dim: int = 512,
+        image_input_dim: int = 3200,
+        image_mid_dim: int = 1024,
+        n_subjects: int = 10,
+        n_layers: int = 5,
+        router_temperature: float = 1.0,
+        subject_dropout_rate: float = 0.3,
+        layer_dropout_rate: float = 0.1,
+        dropout: float = 0.3,
+    ):
         super().__init__()
-        self.eeg_encoder       = EEGNetEncoder(n_channels, n_timepoints,
-                                               eeg_feature_dim, dropout)
-        self.eeg_projector     = nn.Linear(eeg_feature_dim, feature_dim)
-        self.img_pre_projector = nn.Linear(image_input_dim, image_mid_dim)
-        self.img_projector     = nn.Linear(image_mid_dim, feature_dim)
-        self.share_encoder     = nn.Linear(feature_dim, feature_dim)
-        self.logit_scale       = nn.Parameter(
-            torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
+        self.n_windows = n_windows
+        self.feature_dim = feature_dim
+
+        # EEG encoder: n_windows separate MLPs
+        self.eeg_encoder = TemporalPatchEncoder(
+            n_channels=n_channels,
+            n_timepoints=n_timepoints,
+            n_windows=n_windows,
+            feature_dim=feature_dim,
+            dropout=dropout,
         )
-        self.router            = SubjectAwareRouter(
+
+        # per-window EEG projectors (separate weights — each window specialises)
+        self.eeg_projectors = nn.ModuleList([
+            nn.Linear(feature_dim, feature_dim)
+            for _ in range(n_windows)
+        ])
+
+        # shared image pre-projector
+        self.img_pre_projector = nn.Linear(image_input_dim, image_mid_dim)
+
+        # per-window image projectors
+        self.img_projectors = nn.ModuleList([
+            nn.Linear(image_mid_dim, feature_dim)
+            for _ in range(n_windows)
+        ])
+
+        # SHARED encoder — same nn.Linear for both EEG and image, all windows
+        self.share_encoder = nn.Linear(feature_dim, feature_dim)
+
+        # subject-aware router for image layer blending
+        self.router = SubjectAwareRouter(
             n_subjects=n_subjects,
             n_layers=n_layers,
             temperature=router_temperature,
@@ -237,118 +195,129 @@ class SUPAEEG(nn.Module):
             layer_dropout_rate=layer_dropout_rate,
         )
 
-        # Instance normalisation — removes per-trial amplitude scaling
-        # (subject-specific skull thickness / electrode impedance artefacts)
-        # Uses (batch, 1, feature_dim) shape so each sample's features are
-        # normalised independently over the feature/length dimension.
-        self.instance_norm = nn.InstanceNorm1d(1)
+        # learnable temperature
+        self.logit_scale = nn.Parameter(
+            torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
+        )
 
-        # Adversarial subject invariance
-        self.use_grl = use_grl
-        if use_grl:
-            self.grl      = GradientReversalLayer(lambda_max=lambda_grl_max)
-            self.subj_clf = SubjectClassifier(
-                in_features=feature_dim,
-                n_subjects=n_subjects,
-                hidden_dim=grl_hidden_dim,
-            )
-
-    def encode_eeg(
+    def encode_eeg_windows(
         self,
         eeg: torch.Tensor,
-        subject_ids: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Encode EEG into shared embedding space.
+    ) -> list[torch.Tensor]:
+        """Encode EEG into per-window l2-normalised embeddings.
 
         Args:
-            eeg:         (batch, 17, 100)
-            subject_ids: (batch,) int64 0-indexed, or None
+            eeg: (batch, n_channels, n_timepoints)
 
         Returns:
-            zE:          (batch, 512) l2-normalised EEG embedding
-            subj_logits: (batch, n_subjects) or None if not training/no GRL
+            List of n_windows tensors each (batch, feature_dim), l2-normalised.
         """
-        x = self.eeg_encoder(eeg)          # (batch, 1024)
-        x = self.eeg_projector(x)          # (batch, 512)
-        x = self.instance_norm(x.unsqueeze(1)).squeeze(1)  # (batch, 512) normalise amplitude
+        window_feats = self.eeg_encoder(eeg)   # list of (batch, feature_dim)
+        zE_list = []
+        for feat, proj in zip(window_feats, self.eeg_projectors):
+            z = proj(feat)                      # (batch, feature_dim)
+            z = self.share_encoder(z)           # (batch, feature_dim)
+            zE_list.append(F.normalize(z, dim=1))
+        return zE_list
 
-        # GRL branch: adversarial subject prediction
-        subj_logits = None
-        if self.use_grl and self.training and subject_ids is not None:
-            x_grl       = self.grl(x)           # reversed gradients
-            subj_logits = self.subj_clf(x_grl)  # (batch, n_subjects)
-
-        x = self.share_encoder(x)          # (batch, 512)
-        return F.normalize(x, dim=1), subj_logits
-
-    def encode_image(
+    def encode_image_windows(
         self,
         image_layers: torch.Tensor,
         subject_ids: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        """Encode image layers with subject-aware blending.
+    ) -> list[torch.Tensor]:
+        """Encode image into per-window embeddings aligned to layer groups.
 
         Args:
-            image_layers: (batch, n_layers, 3200) float16 or float32
+            image_layers: (batch, n_layers, 3200)
             subject_ids:  (batch,) int64 0-indexed, or None
 
         Returns:
-            (batch, 512) l2-normalised
+            List of n_windows tensors each (batch, feature_dim), l2-normalised.
         """
+        # router weights over all 5 layers: (batch, 5)
         weights = self.router(subject_ids)
-        x = (image_layers.float() * weights.unsqueeze(-1)).sum(dim=1)
-        x = self.img_pre_projector(x)
-        x = self.img_projector(x)
-        x = self.share_encoder(x)
-        return F.normalize(x, dim=1)   # (batch, 512)
+
+        zI_list = []
+        for k, (layer_indices, img_proj) in enumerate(
+            zip(self.LAYER_GROUPS, self.img_projectors)
+        ):
+            group_layers  = image_layers[:, layer_indices, :]   # (batch, g, 3200)
+            group_weights = weights[:, layer_indices]            # (batch, g)
+            # renormalise weights within group
+            group_weights = group_weights / group_weights.sum(dim=1, keepdim=True).clamp_min(1e-8)
+            # weighted mean over assigned layers: (batch, 3200)
+            x = (group_layers.float() * group_weights.unsqueeze(-1)).sum(dim=1)
+            x = self.img_pre_projector(x)   # (batch, image_mid_dim)
+            x = img_proj(x)                 # (batch, feature_dim)
+            x = self.share_encoder(x)       # (batch, feature_dim)
+            zI_list.append(F.normalize(x, dim=1))
+
+        return zI_list
 
     def forward(
         self,
         eeg: torch.Tensor,
         image_layers: torch.Tensor,
         subject_ids: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         """
         Returns:
-            zE:          (batch, 512)
-            zI:          (batch, 512)
-            subj_logits: (batch, n_subjects) or None
+            zE_list: list of n_windows (batch, feature_dim) EEG embeddings
+            zI_list: list of n_windows (batch, feature_dim) image embeddings
         """
-        zE, subj_logits = self.encode_eeg(eeg, subject_ids)
-        zI = self.encode_image(image_layers, subject_ids)
-        return zE, zI, subj_logits
+        return (
+            self.encode_eeg_windows(eeg),
+            self.encode_image_windows(image_layers, subject_ids),
+        )
 
     @torch.no_grad()
     def embed(self, eeg: torch.Tensor) -> torch.Tensor:
-        """Inference only. Returns l2-normalised (batch, 512) descriptor."""
-        zE, _ = self.encode_eeg(eeg, subject_ids=None)
-        return zE
+        """Inference: concat all window embeddings → l2-norm → (batch, n_windows * feature_dim)."""
+        zE_list = self.encode_eeg_windows(eeg)
+        z = torch.cat(zE_list, dim=1)   # (batch, n_windows * feature_dim)
+        return F.normalize(z, dim=1)
+
+    @torch.no_grad()
+    def encode_image_for_eval(
+        self,
+        image_layers: torch.Tensor,
+    ) -> torch.Tensor:
+        """Inference: concat all window image embeddings → l2-norm → (batch, n_windows * feature_dim)."""
+        zI_list = self.encode_image_windows(image_layers, subject_ids=None)
+        z = torch.cat(zI_list, dim=1)
+        return F.normalize(z, dim=1)
 
 
 if __name__ == "__main__":
     model = SUPAEEG()
-    eeg = torch.randn(4, 17, 100)
+    eeg  = torch.randn(4, 17, 100)
     imgs = torch.randn(4, 5, 3200)
     sids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
+    # training
     model.train()
-    zE, zI, subj_logits = model(eeg, imgs, sids)
-    assert zE.shape == (4, 512), f"got {zE.shape}"
-    assert zI.shape == (4, 512), f"got {zI.shape}"
-    assert subj_logits is not None and subj_logits.shape == (4, 10)
+    zE_list, zI_list = model(eeg, imgs, sids)
+    assert len(zE_list) == 4
+    assert len(zI_list) == 4
+    for k in range(4):
+        assert zE_list[k].shape == (4, 512), f"zE[{k}] shape {zE_list[k].shape}"
+        assert zI_list[k].shape == (4, 512), f"zI[{k}] shape {zI_list[k].shape}"
 
+    # inference embed
     model.eval()
     with torch.no_grad():
         emb = model.embed(eeg)
-        assert emb.shape == (4, 512), f"got {emb.shape}"
+        assert emb.shape == (4, 2048), f"embed shape {emb.shape}"
+        img_emb = model.encode_image_for_eval(imgs)
+        assert img_emb.shape == (4, 2048), f"img_emb shape {img_emb.shape}"
 
-        zI_no_sid = model.encode_image(imgs, subject_ids=None)
-        assert zI_no_sid.shape == (4, 512)
+    # smooth augmentation
+    from src.encoders.eeg_augmentation import smooth_eeg
+    smoothed = smooth_eeg(eeg, p=1.0)
+    assert smoothed.shape == eeg.shape
+    assert not torch.allclose(smoothed, eeg)   # should be different
 
-        zI_with_sid = model.encode_image(imgs, subject_ids=sids)
-        assert zI_with_sid.shape == (4, 512)
-        assert torch.allclose(zI_no_sid, zI_with_sid, atol=1e-5), (
-            "inference must use global prior regardless of subject_ids"
-        )
+    smoothed_zero = smooth_eeg(eeg, p=0.0)
+    assert torch.allclose(smoothed_zero, eeg)  # p=0 should be identity
 
-    print("Phase 2 all assertions passed")
+    print("All assertions passed")

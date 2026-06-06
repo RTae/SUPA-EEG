@@ -11,6 +11,8 @@ from loguru import logger
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
+from src.encoders.eeg_augmentation import smooth_eeg
+
 # -- EEG channel groups --
 PRE_FRONTAL = ["FP1", "FPZ", "FP2", "AF3", "AF4"]
 FRONTAL = ["F7", "F5", "F3", "F1", "FZ", "F2", "F4", "F6", "F8"]
@@ -177,10 +179,10 @@ class Config:
     metadata_path: str = "data/things_eeg/image_metadata.npy"
     data_average: bool = True
     data_average_test: bool = False
-    use_grl: bool = True
-    lambda_grl_max: float = 1.0
-    grl_hidden_dim: int = 256
-    lambda_subj: float = 0.1
+    n_windows: int = 4
+    smooth_prob: float = 0.3
+    smooth_kernel_size: int = 5
+    smooth_sigma: float = 1.0
 
 
 def train_one_epoch(
@@ -215,45 +217,39 @@ def train_one_epoch(
     if epoch == config.stage1_epochs + 1:
         for p in model.share_encoder.parameters():
             p.requires_grad = False
-        if config.use_grl and hasattr(model, "subj_clf"):
-            for p in model.subj_clf.parameters():
-                p.requires_grad = False
-            model.grl.set_lambda(0.0)   # disable GRL entirely in stage 2
+        for p in model.img_pre_projector.parameters():
+            p.requires_grad = False
         for g in optimizer.param_groups:
             g["lr"] = config.stage2_lr
         logger.info(
-            "Stage 2: share_encoder frozen, GRL disabled, "
-            f"lr -> {config.stage2_lr}"
+            f"Stage 2: share_encoder + img_pre_projector frozen, lr -> {config.stage2_lr}"
         )
 
     model.train()
-    sums: dict[str, float] = {"total": 0.0, "infonce": 0.0, "mmd": 0.0, "mmd_weight": 0.0, "subj_loss": 0.0}
+    sums: dict[str, float] = {"total": 0.0, "infonce": 0.0, "mmd": 0.0, "mmd_weight": 0.0}
     n_batches = 0
     for batch in train_loader:
         eeg: torch.Tensor = batch["eeg"].to(device)
         subject_ids: torch.Tensor = batch["subject_ids"].to(device)
 
+        # smooth augmentation — training only
+        eeg = smooth_eeg(
+            eeg,
+            kernel_size=config.smooth_kernel_size,
+            sigma=config.smooth_sigma,
+            p=config.smooth_prob,
+        )
+
         image_layers = internvit_lookup.retrieve_batch(
             batch["image_concepts"], batch["image_files"]
         ).to(device)
 
-        # Update GRL lambda based on training progress
-        if hasattr(model, "use_grl") and model.use_grl:
-            progress = (epoch - 1) / max(config.epochs - 1, 1)
-            model.grl.set_lambda(progress)
-
-        zE, zI, subj_logits = model(eeg, image_layers, subject_ids)
-
-        # In stage 2 GRL is disabled; pass None to skip the subject loss term
-        _subj_logits = subj_logits if epoch <= config.stage1_epochs else None
+        zE_list, zI_list = model(eeg, image_layers, subject_ids)
 
         loss, components = compute_loss(
-            zE, zI, model.logit_scale,
+            zE_list, zI_list, model.logit_scale,
             epoch, config.stage1_epochs,
             config.mmd_start, config.mmd_end,
-            subj_logits=_subj_logits,
-            subject_ids=subject_ids,
-            lambda_subj=config.lambda_subj,
         )
         optimizer.zero_grad()
         loss.backward()
@@ -316,17 +312,16 @@ def evaluate(
             for c in concept_order
         ],
         dim=0,
-    ).numpy()  # (200, 512)
+    ).numpy()  # (200, n_windows * feature_dim)
 
     # Build image gallery from InternViT lookup
     gallery = internvit_lookup.retrieve_batch(
         concept_order, [concept_to_file[c] for c in concept_order]
     )  # (N_concepts, n_layers, 3200)
     with torch.no_grad():
-        image_features = model.encode_image(
+        image_features = model.encode_image_for_eval(
             gallery.to(device),
-            subject_ids=None,
-        ).cpu().numpy()  # (N_concepts, 512)
+        ).cpu().numpy()  # (N_concepts, n_windows * feature_dim)
 
     top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
     return top1_count / total, top5_count / total
@@ -428,19 +423,16 @@ def make_model(
     return SUPAEEG(
         n_channels=config.n_channels,
         n_timepoints=config.n_timepoints,
-        eeg_feature_dim=config.eeg_feature_dim,
+        n_windows=config.n_windows,
+        feature_dim=config.feature_dim,
         image_input_dim=config.image_input_dim,
         image_mid_dim=config.image_mid_dim,
-        feature_dim=config.feature_dim,
-        dropout=config.dropout,
         n_subjects=config.n_subjects,
         n_layers=n_layers,
         router_temperature=config.router_temperature,
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
-        use_grl=config.use_grl,
-        lambda_grl_max=config.lambda_grl_max,
-        grl_hidden_dim=config.grl_hidden_dim,
+        dropout=config.dropout,
     ).to(device)
 
 
