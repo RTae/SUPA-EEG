@@ -4,72 +4,10 @@ from typing import Any, Callable
 
 import torch
 from PIL import Image
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset
 import torchvision.transforms.functional as tf
-import random
-from collections import defaultdict
 from loguru import logger
 import numpy as np
-
-class BalancedBatchSampler(Sampler):
-    """
-    In triplet-based semantic training, we want each batch to contain multiple examples of a few classes.
-    This sampler ensures that by grouping dataset indices by class and sampling accordingly.
-    It assumes the dataset already returns contiguous class indices.
-    
-    For example, with num_classes_per_batch=8 and samples_per_class=4, each batch will have 32 samples from 8 classes.
-    """
-
-    def __init__(self, dataset, num_classes_per_batch: int, samples_per_class: int) -> None:
-        super().__init__()
-        self.samples_per_class = samples_per_class
-        self.num_classes_per_batch = num_classes_per_batch
-
-        # Group dataset indices by the labels returned by the dataset.
-        groups: dict[int, list[int]] = defaultdict(list)
-        for idx in range(len(dataset)):
-            _, label = dataset[idx]
-            groups[int(label)].append(idx)
-        self.groups = {k: v for k, v in groups.items() if len(v) >= samples_per_class}
-        self.classes = list(self.groups.keys())
-
-        if len(self.classes) < num_classes_per_batch:
-            raise ValueError(
-                "BalancedBatchSampler requires at least num_classes_per_batch eligible classes"
-            )
-
-        self.class_chunks = {
-            cls: len(indices) // self.samples_per_class for cls, indices in self.groups.items()
-        }
-        self.num_batches = sum(self.class_chunks.values()) // self.num_classes_per_batch
-        if self.num_batches < 1:
-            raise ValueError("BalancedBatchSampler could not form a full batch with the current settings")
-
-    def __iter__(self):
-        remaining_chunks: dict[int, list[list[int]]] = {}
-        for cls, indices in self.groups.items():
-            shuffled = indices.copy()
-            random.shuffle(shuffled)
-            chunks = [
-                shuffled[i : i + self.samples_per_class]
-                for i in range(0, len(shuffled) - self.samples_per_class + 1, self.samples_per_class)
-            ]
-            random.shuffle(chunks)
-            remaining_chunks[cls] = chunks
-
-        eligible_classes = [cls for cls, chunks in remaining_chunks.items() if chunks]
-        while len(eligible_classes) >= self.num_classes_per_batch:
-            batch_classes = random.sample(eligible_classes, k=self.num_classes_per_batch)
-            batch = []
-            for cls in batch_classes:
-                batch.extend(remaining_chunks[cls].pop())
-            random.shuffle(batch)
-            yield batch
-
-            eligible_classes = [cls for cls, chunks in remaining_chunks.items() if chunks]
-
-    def __len__(self) -> int:
-        return self.num_batches
 
 class EEGImageNetDataset(Dataset):
     def __init__(
