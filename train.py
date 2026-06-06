@@ -311,7 +311,11 @@ def run_inter_subject(
     """
     all_results: dict[int, dict[str, float]] = {}
 
-    for test_subject in config.all_subjects:
+    test_subjects = (
+        [config.subject] if config.subject != -1 else config.all_subjects
+    )
+
+    for test_subject in test_subjects:
         train_subjects = [s for s in config.all_subjects if s != test_subject]
         logger.info(
             f"LOSO | test_subject={test_subject} | train_subjects={train_subjects}"
