@@ -142,13 +142,15 @@ def run_intra_subject(
             dataset_dir=config.dataset_dir,
             data_type="train",
             subject=subject_id,
-            load_images=False,
+            load_images=False, # since we already have the vision features, no need to load pixel data
+            data_average=config.data_average,
         )
         test_dataset = ThingsEEGDataset(
             dataset_dir=config.dataset_dir,
             data_type="test",
             subject=subject_id,
-            load_images=False,
+            load_images=False, # since we already have the vision features, no need to load pixel data
+            data_average=False,
         )
         train_loader = DataLoader(
             train_dataset,
@@ -280,7 +282,8 @@ def run_inter_subject(
                     dataset_dir=config.dataset_dir,
                     data_type="train",
                     subject=s,
-                    load_images=False,
+                    load_images=False, # since we already have the vision features, no need to load pixel data
+                    data_average=config.data_average,
                 )
                 for s in train_subjects
             ]
@@ -289,7 +292,8 @@ def run_inter_subject(
             dataset_dir=config.dataset_dir,
             data_type="test",
             subject=test_subject,
-            load_images=False,
+            load_images=False, # since we already have the vision features, no need to load pixel data
+            data_average=False,
         )
         train_loader = DataLoader(
             train_dataset,

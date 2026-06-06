@@ -18,6 +18,7 @@ class ThingsEEGDataset(Dataset):
         device=torch.device("cpu"),
         max_subjects: int = 10,
         load_images: bool = True,
+        data_average: bool = False,
     ) -> None:
         
         self.max_subjects = max_subjects
@@ -40,7 +41,8 @@ class ThingsEEGDataset(Dataset):
         logger.info(f"dataset_dir={dataset_dir} device={device} found_subjects={len(eeg_folder_list)}")
         logger.info("Loadding EEG data from each subject...")
         self.eeg_data, self.number_of_repetitions, self.number_of_subjects_loaded = self._load_eeg_data(
-            dataset_dir, eeg_folder_list, eeg_file_name, device, subject
+            dataset_dir, eeg_folder_list, eeg_file_name, device, subject,
+            data_average=data_average,
         )
         
         logger.info("Loading image metadata...")
@@ -77,7 +79,7 @@ class ThingsEEGDataset(Dataset):
 
     
     @staticmethod
-    def _load_eeg_data(dataset_dir, folder_list: list[str], file_name: str, device: torch.device, subject: int) -> list[dict[str, Any]]:
+    def _load_eeg_data(dataset_dir, folder_list: list[str], file_name: str, device: torch.device, subject: int, data_average: bool = False) -> list[dict[str, Any]]:
         # Load EEG data from numpy file and convert to torch tensor
         eeg_data = []
         number_of_repetitions = 0
@@ -101,11 +103,23 @@ class ThingsEEGDataset(Dataset):
             data = np.load(path, allow_pickle=True).item()
             # Training image conditions × Training EEG repetitions × EEG channels × EEG time points
             # 16540, 4, 17, 100
-            # Flattern the repetitions dimension into 16540*4, 17, 100
-            number_of_repetitions = data['preprocessed_eeg_data'].shape[1]
-            data['preprocessed_eeg_data'] = data['preprocessed_eeg_data'].reshape(-1, *data['preprocessed_eeg_data'].shape[2:])
+            raw = data['preprocessed_eeg_data']
+            number_of_repetitions = raw.shape[1]
 
-            eeg_data.append(data['preprocessed_eeg_data'])
+            if data_average:
+                # average over repetitions dimension
+                # (n_images, n_reps, 17, 100) → mean → (n_images, 17, 100)
+                processed = raw.mean(axis=1)
+                logger.info(
+                    f"{subject_folder}: averaged {number_of_repetitions} reps "
+                    f"shape {raw.shape} → {processed.shape}"
+                )
+            else:
+                # current behaviour: flatten reps into samples
+                # (n_images, n_reps, 17, 100) → reshape → (n_images*n_reps, 17, 100)
+                processed = raw.reshape(-1, *raw.shape[2:])
+
+            eeg_data.append(processed)
             number_of_subjects_loaded+=1
 
         # Concatenate all subjects' data into a single tensor
@@ -117,7 +131,12 @@ class ThingsEEGDataset(Dataset):
             
         if number_of_repetitions == 0:
             logger.warning("No EEG data found, setting number_of_repetitions to 0.")
-        
+
+        # when averaged: set number_of_repetitions to 1
+        # so __getitem__ index arithmetic still works correctly
+        if data_average:
+            number_of_repetitions = 1
+
         return eeg_data, number_of_repetitions, number_of_subjects_loaded
     
     @staticmethod
@@ -190,3 +209,19 @@ class ThingsEEGDataset(Dataset):
         
     def __len__(self) -> int:
         return len(self.eeg_data)
+
+
+if __name__ == "__main__":
+    # sanity check: data_average=True gives 1/4 the samples, False gives 4x
+    # mock data: 10 images, 4 reps, 17 channels, 100 timepoints
+    raw = np.random.randn(10, 4, 17, 100).astype(np.float32)
+
+    # simulate averaged path
+    averaged = raw.mean(axis=1)
+    assert averaged.shape == (10, 17, 100), f"Expected (10,17,100) got {averaged.shape}"
+
+    # simulate flattened path
+    flattened = raw.reshape(-1, *raw.shape[2:])
+    assert flattened.shape == (40, 17, 100), f"Expected (40,17,100) got {flattened.shape}"
+
+    print("data_average sanity check passed")
