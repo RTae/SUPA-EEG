@@ -182,6 +182,7 @@ class Config:
     smooth_prob: float = 0.3
     smooth_kernel_size: int = 5
     smooth_sigma: float = 1.0
+    early_stop_patience: int = 3
 
 
 def train_one_epoch(

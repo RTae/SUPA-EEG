@@ -130,6 +130,7 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         smooth_prob=cfg.smooth_prob,
         smooth_kernel_size=cfg.smooth_kernel_size,
         smooth_sigma=cfg.smooth_sigma,
+        early_stop_patience=cfg.early_stop_patience,
     )
 
 
@@ -200,6 +201,7 @@ def run_intra_subject(
         optimizer = make_optimizer(model, config)
         best_top1 = 0.0
         best_top5 = 0.0
+        no_improve = 0   # early-stop counter (stage 2 only)
 
         metrics_path = os.path.join(output_dir, f"metrics_sub{subject_id:02d}.csv")
         metrics_file = open(metrics_path, "w", newline="")
@@ -250,10 +252,21 @@ def run_intra_subject(
                 if top1 > best_top1:
                     best_top1 = top1
                     best_top5 = top5
+                    no_improve = 0
                     save_checkpoint(
                         model, optimizer, epoch, top1, top5,
                         path=os.path.join(output_dir, f"supaeeg_intra_sub{subject_id:02d}.pt"),
                     )
+                elif epoch > config.stage1_epochs:
+                    no_improve += 1
+                    if no_improve >= config.early_stop_patience:
+                        logger.info(
+                            f"Sub{subject_id:02d} | early stop at epoch {epoch} "
+                            f"(no improvement for {no_improve} eval rounds in stage 2)"
+                        )
+                        csv_writer.writerow(row)
+                        metrics_file.flush()
+                        break
 
             csv_writer.writerow(row)
             metrics_file.flush()
@@ -346,6 +359,7 @@ def run_inter_subject(
         optimizer = make_optimizer(model, config)
         best_top1 = 0.0
         best_top5 = 0.0
+        no_improve = 0   # early-stop counter (stage 2 only)
 
         metrics_path = os.path.join(output_dir, f"metrics_loso_sub{test_subject:02d}.csv")
         metrics_file = open(metrics_path, "w", newline="")
@@ -396,10 +410,21 @@ def run_inter_subject(
                 if top1 > best_top1:
                     best_top1 = top1
                     best_top5 = top5
+                    no_improve = 0
                     save_checkpoint(
                         model, optimizer, epoch, top1, top5,
                         path=os.path.join(output_dir, f"supaeeg_loso_sub{test_subject:02d}.pt"),
                     )
+                elif epoch > config.stage1_epochs:
+                    no_improve += 1
+                    if no_improve >= config.early_stop_patience:
+                        logger.info(
+                            f"LOSO test=Sub{test_subject:02d} | early stop at epoch {epoch} "
+                            f"(no improvement for {no_improve} eval rounds in stage 2)"
+                        )
+                        csv_writer.writerow(row)
+                        metrics_file.flush()
+                        break
 
             csv_writer.writerow(row)
             metrics_file.flush()
