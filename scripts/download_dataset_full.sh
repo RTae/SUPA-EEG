@@ -37,7 +37,7 @@ download() {
 declare -A _URLS=(
   [01]="f/6e4851c36cd64656b051"
   [02]="f/51f23849a3cb40839148"
-  [03]="f/26e1fd5a8eb440c8bf3b"
+  [03]="f/e69ae8a471d04e7eb709"
   [04]="f/e7cfad28adc54e729b2c"
   [05]="f/9af915568c63485a9753"
   [06]="f/cf2c1819a012438fb829"
