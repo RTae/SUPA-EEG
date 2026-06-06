@@ -779,8 +779,6 @@ dependencies = [
     { name = "diffusers" },
     { name = "dvc" },
     { name = "dvc-oss" },
-    { name = "einops" },
-    { name = "flash-attn" },
     { name = "huggingface-hub" },
     { name = "hydra-core" },
     { name = "ipyevents" },
@@ -809,14 +807,20 @@ dependencies = [
     { name = "typer" },
 ]
 
+[package.optional-dependencies]
+flash = [
+    { name = "einops" },
+    { name = "flash-attn" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=1.13.0" },
     { name = "diffusers", specifier = ">=0.37.1" },
     { name = "dvc", specifier = ">=3.67.0" },
     { name = "dvc-oss", specifier = ">=3.0.0" },
-    { name = "einops", specifier = ">=0.8.2" },
-    { name = "flash-attn", specifier = ">=2.8.3" },
+    { name = "einops", marker = "extra == 'flash'", specifier = ">=0.8.2" },
+    { name = "flash-attn", marker = "extra == 'flash'", specifier = ">=2.8.3" },
     { name = "huggingface-hub", specifier = ">=1.8.0" },
     { name = "hydra-core", specifier = ">=1.3.2" },
     { name = "ipyevents", specifier = ">=2.0.4" },
@@ -844,6 +848,7 @@ requires-dist = [
     { name = "transformers", specifier = ">=5.4.0" },
     { name = "typer", specifier = ">=0.24.1" },
 ]
+provides-extras = ["flash"]
 
 [[package]]
 name = "einops"

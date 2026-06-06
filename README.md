@@ -107,11 +107,10 @@ data/
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create virtualenv and install dependencies
-uv venv && uv sync --no-build-isolation
+uv venv && uv sync
 
-# Install flash-attn separately
-uv add flash-attn --no-build-isolation
-uv add einops --no-build-isolation
+# Install flash-attn and einops separately (require --no-build-isolation)
+uv pip install einops flash-attn --no-build-isolation
 
 # Activate (every session)
 source .venv/bin/activate
