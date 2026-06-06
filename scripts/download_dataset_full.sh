@@ -48,7 +48,7 @@ download "f/0127c638be494f878e23" "$DIR/sub-10_63.zip"
 # Extract
 for i in {01..10}; do
   zip_file="$DIR/sub-${i}_63.zip"
-  sub_dir="$DIR/sub-${i}"
+  sub_dir="$DIR/sub-${i}_63"
   if [[ -d "$sub_dir" ]]; then
     echo "Already extracted, skipping: $sub_dir"
     [[ -f "$zip_file" ]] && rm "$zip_file"
