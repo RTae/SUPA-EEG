@@ -253,6 +253,28 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 | Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
 | Feature extraction | `scripts/extract_internvit_features.py` | Offline InternViT feature extraction + `ensure_internvit_features` guard |
 
+## Testing
+
+Test files live alongside the source they test (no separate `tests/` folder required).
+pytest is configured in `pyproject.toml` to discover `test_*.py` files anywhere in the project.
+
+```bash
+# Run all tests
+pytest
+
+# Run a specific test file
+pytest src/test_dataset.py
+pytest src/trainer/test_metrics.py
+pytest src/models/test_supaeeg_router.py
+pytest test_train.py
+
+# Verbose output
+pytest -v
+
+# Stop on first failure
+pytest -x
+```
+
 ## Dataset Explorer
 
 Open `viz_thingeeg.ipynb` in Jupyter to inspect EEG samples, image concepts, and
