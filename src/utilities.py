@@ -394,6 +394,17 @@ def make_model(
     """
     from src.models.supaeeg import SUPAEEG  # local import avoids circular deps
 
+    n_layers = len(config.layer_ids)
+    if n_layers == 0:
+        raise ValueError("config.layer_ids must contain at least one layer")
+    if config.n_layers != n_layers:
+        logger.warning(
+            "config.n_layers (%d) does not match len(config.layer_ids) (%d); "
+            "using len(config.layer_ids) for model construction",
+            config.n_layers,
+            n_layers,
+        )
+
     return SUPAEEG(
         n_channels=config.n_channels,
         n_timepoints=config.n_timepoints,
@@ -403,7 +414,7 @@ def make_model(
         feature_dim=config.feature_dim,
         dropout=config.dropout,
         n_subjects=config.n_subjects,
-        n_layers=config.n_layers,
+        n_layers=n_layers,
         router_temperature=config.router_temperature,
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
@@ -425,5 +436,4 @@ def make_optimizer(model: Any, config: Config) -> AdamW:
         lr=config.lr,
         weight_decay=config.weight_decay,
     )
-
 

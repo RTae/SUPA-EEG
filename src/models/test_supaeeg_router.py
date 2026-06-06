@@ -1,6 +1,7 @@
 import torch
 
 from src.models.supaeeg import SUPAEEG, SubjectAwareRouter
+from src.utilities import Config, make_model
 
 def test_subject_aware_router_ignores_subject_ids_in_eval_mode():
     router = SubjectAwareRouter(n_subjects=10, n_layers=5)
@@ -46,3 +47,12 @@ def test_supaeeg_forward_accepts_subject_ids_in_train_mode():
 
     assert eeg_emb.shape == (4, 512)
     assert image_emb.shape == (4, 512)
+
+
+def test_make_model_derives_n_layers_from_layer_ids():
+    config = Config(n_layers=5, layer_ids=[20, 24, 28])
+
+    model = make_model(config, torch.device("cpu"))
+
+    assert model.router.global_logits.shape == (3,)
+    assert model.router.subject_bias.weight.shape == (config.n_subjects, 3)
