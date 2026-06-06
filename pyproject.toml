@@ -42,3 +42,9 @@ flash = [
     "einops>=0.8.2",
     "flash-attn>=2.8.3",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
