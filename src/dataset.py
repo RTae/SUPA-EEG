@@ -209,19 +209,3 @@ class ThingsEEGDataset(Dataset):
         
     def __len__(self) -> int:
         return len(self.eeg_data)
-
-
-if __name__ == "__main__":
-    # sanity check: data_average=True gives 1/4 the samples, False gives 4x
-    # mock data: 10 images, 4 reps, 17 channels, 100 timepoints
-    raw = np.random.randn(10, 4, 17, 100).astype(np.float32)
-
-    # simulate averaged path
-    averaged = raw.mean(axis=1)
-    assert averaged.shape == (10, 17, 100), f"Expected (10,17,100) got {averaged.shape}"
-
-    # simulate flattened path
-    flattened = raw.reshape(-1, *raw.shape[2:])
-    assert flattened.shape == (40, 17, 100), f"Expected (40,17,100) got {flattened.shape}"
-
-    print("data_average sanity check passed")
