@@ -11,6 +11,8 @@ all_subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 # --- Data ------------------------------------------------------------------
 dataset_dir: data/things_eeg
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
+data_average: true
+data_average_test: false
 
 # --- InternViT features ----------------------------------------------------
 internvit_model:  "OpenGVLab/InternViT-6B-448px-V1-5"
@@ -41,6 +43,11 @@ eeg_feature_dim:  1024
 image_input_dim:  3200
 image_mid_dim:    1024
 dropout:          0.3
+n_subjects:       10
+n_layers:         5
+router_temperature: 1.0
+subject_dropout_rate: 0.3
+layer_dropout_rate: 0.1
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001

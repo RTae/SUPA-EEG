@@ -1,5 +1,5 @@
 [project]
-name = "eeg-imagenet-dataset"
+name = "supa_eeg"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -35,6 +35,17 @@ dependencies = [
     "typer>=0.24.1",
     "pytest>=9.0.3",
     "tensorboard>=2.20.0",
+]
+
+[project.optional-dependencies]
+flash = [
     "einops>=0.8.2",
     "flash-attn>=2.8.3",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+pythonpath = ["."]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
