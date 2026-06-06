@@ -12,6 +12,7 @@ all_subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 dataset_dir: data/things_eeg
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
 data_average: true
+data_average_test: false
 
 # --- InternViT features ----------------------------------------------------
 internvit_model:  "OpenGVLab/InternViT-6B-448px-V1-5"

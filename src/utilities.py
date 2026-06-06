@@ -176,6 +176,7 @@ class Config:
     test_img_dir: str = "data/things_eeg/test_images"
     metadata_path: str = "data/things_eeg/image_metadata.npy"
     data_average: bool = True
+    data_average_test: bool = False
 
 
 def train_one_epoch(

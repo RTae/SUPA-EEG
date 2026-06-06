@@ -102,6 +102,8 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         train_img_dir=cfg.train_img_dir,
         test_img_dir=cfg.test_img_dir,
         metadata_path=cfg.metadata_path,
+        data_average=cfg.data_average,
+        data_average_test=cfg.data_average_test,
     )
 
 
@@ -150,7 +152,7 @@ def run_intra_subject(
             data_type="test",
             subject=subject_id,
             load_images=False, # since we already have the vision features, no need to load pixel data
-            data_average=False,
+            data_average=config.data_average_test,
         )
         train_loader = DataLoader(
             train_dataset,
@@ -293,7 +295,7 @@ def run_inter_subject(
             data_type="test",
             subject=test_subject,
             load_images=False, # since we already have the vision features, no need to load pixel data
-            data_average=False,
+            data_average=config.data_average_test,
         )
         train_loader = DataLoader(
             train_dataset,
