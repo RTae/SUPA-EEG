@@ -215,10 +215,15 @@ def train_one_epoch(
     if epoch == config.stage1_epochs + 1:
         for p in model.share_encoder.parameters():
             p.requires_grad = False
+        if config.use_grl and hasattr(model, "subj_clf"):
+            for p in model.subj_clf.parameters():
+                p.requires_grad = False
+            model.grl.set_lambda(0.0)   # disable GRL entirely in stage 2
         for g in optimizer.param_groups:
             g["lr"] = config.stage2_lr
         logger.info(
-            f"Stage 2: share_encoder frozen, lr -> {config.stage2_lr}"
+            "Stage 2: share_encoder frozen, GRL disabled, "
+            f"lr -> {config.stage2_lr}"
         )
 
     model.train()
@@ -239,11 +244,14 @@ def train_one_epoch(
 
         zE, zI, subj_logits = model(eeg, image_layers, subject_ids)
 
+        # In stage 2 GRL is disabled; pass None to skip the subject loss term
+        _subj_logits = subj_logits if epoch <= config.stage1_epochs else None
+
         loss, components = compute_loss(
             zE, zI, model.logit_scale,
             epoch, config.stage1_epochs,
             config.mmd_start, config.mmd_end,
-            subj_logits=subj_logits,
+            subj_logits=_subj_logits,
             subject_ids=subject_ids,
             lambda_subj=config.lambda_subj,
         )

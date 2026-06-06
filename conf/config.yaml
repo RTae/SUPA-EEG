@@ -51,7 +51,7 @@ layer_dropout_rate: 0.1
 use_grl: true
 lambda_grl_max: 1.0
 grl_hidden_dim: 256
-lambda_subj: 0.1
+lambda_subj: 0.05
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
