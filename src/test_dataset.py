@@ -5,60 +5,13 @@ without touching the filesystem — the static method is exercised directly
 with in-memory numpy arrays via a minimal monkey-patch.
 """
 
-import sys
-import types
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import numpy as np
 import pytest
+import torch
 
-# ---------------------------------------------------------------------------
-# Stub heavy dependencies so the module loads without GPU / image libs.
-# ---------------------------------------------------------------------------
-
-def _stub(name: str) -> types.ModuleType:
-    m = types.ModuleType(name)
-    sys.modules[name] = m
-    return m
-
-
-# torch stubs
-_torch = _stub("torch")
-_torch.device = lambda *a, **kw: None
-_torch.Tensor = object
-
-_torch_utils = _stub("torch.utils")
-_torch_utils_data = _stub("torch.utils.data")
-
-class _FakeDataset:
-    pass
-
-_torch_utils_data.Dataset = _FakeDataset
-_torch_utils.data = _torch_utils_data
-
-# torchvision stub
-_tv = _stub("torchvision")
-_tv_tf = _stub("torchvision.transforms")
-_tv_tf_func = _stub("torchvision.transforms.functional")
-_tv.transforms = _tv_tf
-
-# PIL stub
-_pil = _stub("PIL")
-_pil_image = _stub("PIL.Image")
-_pil_image.Image = object
-_pil.Image = _pil_image
-
-# loguru stub
-_loguru = _stub("loguru")
-_loguru.logger = MagicMock()
-
-# ---------------------------------------------------------------------------
-# Now import the module under test
-# ---------------------------------------------------------------------------
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.dataset import ThingsEEGDataset  # noqa: E402
+from src.dataset import ThingsEEGDataset
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +31,7 @@ def _run_load(raw: np.ndarray, data_average: bool):
     dataset_dir = "/fake"
     folder_list = ["sub-01"]
     file_name = "preprocessed_eeg_training"
-    device = None  # torch.from_numpy(...).float().to(None) — patched below
+    device = torch.device("cpu")
 
     npy_item = _make_npy(raw)
 
@@ -87,19 +40,9 @@ def _run_load(raw: np.ndarray, data_average: bool):
         m.item.return_value = npy_item
         return m
 
-    class FakeTensor:
-        def __init__(self, arr):
-            self._arr = arr
-        def float(self):
-            return self
-        def to(self, device):
-            return self._arr   # return plain ndarray for easy assertion
-
     with patch("os.path.isdir", return_value=True), \
          patch("os.path.isfile", return_value=True), \
-         patch("numpy.load", side_effect=fake_load), \
-         patch("torch.from_numpy", side_effect=lambda a: FakeTensor(a)), \
-         patch("numpy.concatenate", side_effect=lambda arrays, axis: np.concatenate(arrays, axis=axis)):
+         patch("numpy.load", side_effect=fake_load):
 
         return ThingsEEGDataset._load_eeg_data(
             dataset_dir, folder_list, file_name, device, subject=-1,
