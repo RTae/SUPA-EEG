@@ -127,8 +127,14 @@ bash scripts/download_data.sh
 ```
 
 This fetches:
-- Preprocessed EEG for subjects 1–10 → `data/things_eeg/sub-XX/`
+- Preprocessed EEG for subjects 1–10 with only 17 channels `data/things_eeg/sub-XX/`
 - Image metadata, training images (1654 concepts × 10 images), test images (200 concepts × 1 image)
+
+for 63 channels, run
+```bash
+bash scripts/download_dataset_full.sh
+```
+which fetches the full dataset (including 63-channel EEG) but not the vision features (see below).
 
 Manual sources:
 
