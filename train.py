@@ -143,12 +143,16 @@ def run_intra_subject(
             data_type="train",
             subject=subject_id,
             load_images=False,
+            expected_n_channels=config.n_channels,
+            expected_n_timepoints=config.n_timepoints,
         )
         test_dataset = ThingsEEGDataset(
             dataset_dir=config.dataset_dir,
             data_type="test",
             subject=subject_id,
             load_images=False,
+            expected_n_channels=config.n_channels,
+            expected_n_timepoints=config.n_timepoints,
         )
         train_loader = DataLoader(
             train_dataset,
@@ -281,6 +285,8 @@ def run_inter_subject(
                     data_type="train",
                     subject=s,
                     load_images=False,
+                    expected_n_channels=config.n_channels,
+                    expected_n_timepoints=config.n_timepoints,
                 )
                 for s in train_subjects
             ]
@@ -290,6 +296,8 @@ def run_inter_subject(
             data_type="test",
             subject=test_subject,
             load_images=False,
+            expected_n_channels=config.n_channels,
+            expected_n_timepoints=config.n_timepoints,
         )
         train_loader = DataLoader(
             train_dataset,

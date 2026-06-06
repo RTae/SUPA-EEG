@@ -1,50 +1,84 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-BASE="https://cloud.tsinghua.edu.cn"
-DIR="data/things_eeg"
+SOURCE_DIR="${SOURCE_DIR:-data/things_eeg}"
+DEST_DIR="${DEST_DIR:-data/things_eeg_63}"
+if (( $# )); then
+  SUBJECTS=("$@")
+else
+  SUBJECTS=(01 02 03 04 05 06 07 08 09 10)
+fi
 
-if ! command -v aria2c >/dev/null 2>&1; then
-  echo "aria2c is required but was not found in PATH."
-  echo "Install it first, for example: sudo apt-get install aria2"
+declare -A URLS=(
+  [01]="https://osf.io/download/7gxvj/"
+  [02]="https://osf.io/download/ycfq3/"
+  [03]="https://osf.io/download/eqjbv/"
+  [04]="https://osf.io/download/y3ghr/"
+  [05]="https://osf.io/download/2we8r/"
+  [06]="https://osf.io/download/3c7hm/"
+  [07]="https://osf.io/download/k3xm7/"
+  [08]="https://osf.io/download/hr3p5/"
+  [09]="https://osf.io/download/jgh8q/"
+  [10]="https://osf.io/download/d6pmy/"
+)
+
+if command -v aria2c >/dev/null 2>&1; then
+  DOWNLOADER=aria2c
+elif command -v curl >/dev/null 2>&1; then
+  DOWNLOADER=curl
+else
+  echo "Either aria2c or curl is required." >&2
   exit 1
 fi
 
-mkdir -p $DIR
+mkdir -p "$DEST_DIR"
 
-download() {
-  local url="$BASE/$1/?dl=1"
-  local out="$2"
-  local out_dir
-  local out_name
-  out_dir="$(dirname "$out")"
-  out_name="$(basename "$out")"
-  echo "Downloading $out..."
-  aria2c \
-    --allow-overwrite=true \
-    --auto-file-renaming=false \
-    --continue=true \
-    --dir "$out_dir" \
-    --out "$out_name" \
-    --summary-interval=0 \
-    "$url" || { echo "FAILED: $out"; exit 1; }
-}
-
-download "f/6e4851c36cd64656b051" "$DIR/sub-01_63.zip"
-download "f/51f23849a3cb40839148" "$DIR/sub-02_63.zip"
-download "f/26e1fd5a8eb440c8bf3b" "$DIR/sub-03_63.zip"
-download "f/e7cfad28adc54e729b2c" "$DIR/sub-04_63.zip"
-download "f/9af915568c63485a9753" "$DIR/sub-05_63.zip"
-download "f/cf2c1819a012438fb829" "$DIR/sub-06_63.zip"
-download "f/0413846a1de64cc1bab2" "$DIR/sub-07_63.zip"
-download "f/7171774f2b324c9f889d" "$DIR/sub-08_63.zip"
-download "f/9afc6c00192c47528d01" "$DIR/sub-09_63.zip"
-download "f/0127c638be494f878e23" "$DIR/sub-10_63.zip"
-
-# Extract
-for i in {01..08}; do
-  echo "Extracting sub-$i_63.zip..."
-  unzip -q "$DIR/sub-$i_63.zip" -d "$DIR" && rm "$DIR/sub-$i_63.zip"
+for name in image_metadata.npy training_images test_images image_feature; do
+  if [[ ! -e "$DEST_DIR/$name" && ! -L "$DEST_DIR/$name" ]]; then
+    if [[ ! -e "$SOURCE_DIR/$name" ]]; then
+      echo "Missing shared asset: $SOURCE_DIR/$name" >&2
+      exit 1
+    fi
+    ln -s "../$(basename "$SOURCE_DIR")/$name" "$DEST_DIR/$name"
+  fi
 done
 
-echo "Done."
+for subject in "${SUBJECTS[@]}"; do
+  subject="${subject#sub-}"
+  subject="${subject#0}"
+  printf -v subject "%02d" "$subject"
+
+  if [[ -z "${URLS[$subject]:-}" ]]; then
+    echo "Unknown subject: $subject" >&2
+    exit 1
+  fi
+
+  archive="$DEST_DIR/sub-${subject}__63_channels.zip"
+  echo "Downloading full-channel subject $subject..."
+  if [[ "$DOWNLOADER" == "aria2c" ]]; then
+    aria2c \
+      --allow-overwrite=true \
+      --auto-file-renaming=false \
+      --continue=true \
+      --dir "$DEST_DIR" \
+      --out "$(basename "$archive")" \
+      --summary-interval=30 \
+      "${URLS[$subject]}"
+  else
+    curl --fail --location --continue-at - \
+      --output "$archive" "${URLS[$subject]}"
+  fi
+
+  echo "Extracting $archive..."
+  unzip -q -o "$archive" -d "$DEST_DIR"
+  rm "$archive"
+
+  extracted_dir="$DEST_DIR/sub-${subject}__63_channels"
+  subject_dir="$DEST_DIR/sub-${subject}"
+  if [[ -d "$extracted_dir" ]]; then
+    rm -rf "$subject_dir"
+    mv "$extracted_dir" "$subject_dir"
+  fi
+done
+
+echo "Full-channel EEG is ready in $DEST_DIR."

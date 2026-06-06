@@ -18,6 +18,8 @@ class ThingsEEGDataset(Dataset):
         device=torch.device("cpu"),
         max_subjects: int = 10,
         load_images: bool = True,
+        expected_n_channels: int | None = None,
+        expected_n_timepoints: int | None = None,
     ) -> None:
         
         self.max_subjects = max_subjects
@@ -40,7 +42,13 @@ class ThingsEEGDataset(Dataset):
         logger.info(f"dataset_dir={dataset_dir} device={device} found_subjects={len(eeg_folder_list)}")
         logger.info("Loadding EEG data from each subject...")
         self.eeg_data, self.number_of_repetitions, self.number_of_subjects_loaded = self._load_eeg_data(
-            dataset_dir, eeg_folder_list, eeg_file_name, device, subject
+            dataset_dir,
+            eeg_folder_list,
+            eeg_file_name,
+            device,
+            subject,
+            expected_n_channels,
+            expected_n_timepoints,
         )
         
         logger.info("Loading image metadata...")
@@ -65,8 +73,8 @@ class ThingsEEGDataset(Dataset):
             "Number of repetitions : {}\n"
             "Number of images : {}\n"
             "Number of samples per image : {}",
-            self.number_of_subjects_loaded,
             len(self.eeg_data),
+            self.number_of_subjects_loaded,
             num_data,
             self.number_of_repetitions,
             n_concepts,
@@ -77,7 +85,15 @@ class ThingsEEGDataset(Dataset):
 
     
     @staticmethod
-    def _load_eeg_data(dataset_dir, folder_list: list[str], file_name: str, device: torch.device, subject: int) -> list[dict[str, Any]]:
+    def _load_eeg_data(
+        dataset_dir,
+        folder_list: list[str],
+        file_name: str,
+        device: torch.device,
+        subject: int,
+        expected_n_channels: int | None = None,
+        expected_n_timepoints: int | None = None,
+    ) -> list[dict[str, Any]]:
         # Load EEG data from numpy file and convert to torch tensor
         eeg_data = []
         number_of_repetitions = 0
@@ -100,17 +116,60 @@ class ThingsEEGDataset(Dataset):
                 
             data = np.load(path, allow_pickle=True).item()
             # Training image conditions × Training EEG repetitions × EEG channels × EEG time points
-            # 16540, 4, 17, 100
-            # Flattern the repetitions dimension into 16540*4, 17, 100
+            eeg = data["preprocessed_eeg_data"]
+            if eeg.ndim != 4:
+                raise ValueError(
+                    f"Expected 4D EEG data in {path}, got shape {eeg.shape}."
+                )
+            if (
+                expected_n_channels is not None
+                and eeg.shape[2] != expected_n_channels
+                and len(data.get("ch_names", [])) == eeg.shape[2]
+            ):
+                eeg_channel_indices = [
+                    i
+                    for i, name in enumerate(data["ch_names"])
+                    if str(name).lower() != "stim"
+                ]
+                if len(eeg_channel_indices) == expected_n_channels:
+                    logger.info(
+                        f"Dropping non-EEG channel 'stim' from {path}."
+                    )
+                    if eeg_channel_indices == list(range(expected_n_channels)):
+                        eeg = eeg[:, :, :expected_n_channels, :]
+                    else:
+                        eeg = eeg[:, :, eeg_channel_indices, :]
+
+            if expected_n_channels is not None and eeg.shape[2] != expected_n_channels:
+                raise ValueError(
+                    f"Expected {expected_n_channels} EEG channels in {path}, "
+                    f"got shape {eeg.shape}. Check dataset_dir and n_channels."
+                )
+            if expected_n_timepoints is not None and eeg.shape[3] != expected_n_timepoints:
+                raise ValueError(
+                    f"Expected {expected_n_timepoints} EEG timepoints in {path}, "
+                    f"got shape {eeg.shape}. Check dataset preprocessing and n_timepoints."
+                )
+
+            logger.info(
+                f"Loaded {subject_folder} {file_name} EEG shape={eeg.shape}"
+            )
+
+            # Flatten the repetitions dimension while preserving every trial.
             number_of_repetitions = data['preprocessed_eeg_data'].shape[1]
-            data['preprocessed_eeg_data'] = data['preprocessed_eeg_data'].reshape(-1, *data['preprocessed_eeg_data'].shape[2:])
+            data['preprocessed_eeg_data'] = eeg.reshape(-1, *eeg.shape[2:])
 
             eeg_data.append(data['preprocessed_eeg_data'])
             number_of_subjects_loaded+=1
 
         # Concatenate all subjects' data into a single tensor
         if eeg_data:
-            eeg_data = torch.from_numpy(np.concatenate(eeg_data, axis=0)).float().to(device)
+            combined = (
+                eeg_data[0]
+                if len(eeg_data) == 1
+                else np.concatenate(eeg_data, axis=0)
+            )
+            eeg_data = torch.from_numpy(combined).float().to(device)
         else:
             logger.warning("No EEG data found for any subject.")
             eeg_data = None

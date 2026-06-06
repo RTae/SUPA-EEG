@@ -1,0 +1,12 @@
+defaults:
+  - config
+  - _self_
+
+# Full-channel ablation. The SAMGA paper uses 63 channels for inter-subject
+# LOSO, while its intra-subject results use 17 occipital/parietal channels.
+dataset_dir: data/things_eeg_63
+n_channels: 63
+
+hydra:
+  run:
+    dir: outputs/full_channels/${now:%Y-%m-%d}/${now:%H-%M-%S}
