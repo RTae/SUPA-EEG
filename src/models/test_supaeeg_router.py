@@ -1,12 +1,6 @@
-import sys
-from pathlib import Path
-
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from src.models.supaeeg import SUPAEEG, SubjectAwareRouter
-
 
 def test_subject_aware_router_ignores_subject_ids_in_eval_mode():
     router = SubjectAwareRouter(n_subjects=10, n_layers=5)
