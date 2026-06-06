@@ -38,19 +38,36 @@ class SubjectAwareRouter(nn.Module):
 
     def __init__(
         self,
-        n_subjects=10,
-        n_layers=5,
-        temperature=1.0,
-        subject_dropout_rate=0.3,
-        layer_dropout_rate=0.1,
+        n_subjects: int = 10,
+        n_layers: int = 5,
+        temperature: float = 1.0,
+        subject_dropout_rate: float = 0.3,
+        layer_dropout_rate: float = 0.1,
     ):
         super().__init__()
-        self.temperature = temperature
-        self.subject_dropout_rate = subject_dropout_rate
-        self.layer_dropout_rate = layer_dropout_rate
-        self.global_logits = nn.Parameter(
-            torch.tensor([-2.0, -1.0, 0.0, -1.0, -2.0])
-        )
+        if temperature <= 0:
+            raise ValueError(f"temperature must be > 0, got {temperature}")
+        if not (0.0 <= subject_dropout_rate <= 1.0):
+            raise ValueError(
+                f"subject_dropout_rate must be in [0, 1], got {subject_dropout_rate}"
+            )
+        if not (0.0 <= layer_dropout_rate <= 1.0):
+            raise ValueError(
+                f"layer_dropout_rate must be in [0, 1], got {layer_dropout_rate}"
+            )
+
+        self.temperature = float(temperature)
+        self.subject_dropout_rate = float(subject_dropout_rate)
+        self.layer_dropout_rate = float(layer_dropout_rate)
+
+        init_logits = torch.zeros(n_layers, dtype=torch.float32)
+        if n_layers == 5:
+            init_logits = torch.tensor(
+                [-2.0, -1.0, 0.0, -1.0, -2.0],
+                dtype=torch.float32,
+            )
+        self.global_logits = nn.Parameter(init_logits)
+
         self.subject_bias = nn.Embedding(n_subjects, n_layers)
         nn.init.zeros_(self.subject_bias.weight)
 
