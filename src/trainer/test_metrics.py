@@ -1,8 +1,8 @@
 """Unit tests for src/trainer/metrics.py retrieval helpers.
 
-These tests cover the three pure-numpy evaluation functions:
-  - retrieve_topk        (paper-style: square N×N diagonal matching)
-  - retrieve_all         (paper-style: wraps retrieve_topk with cosine similarity)
+These tests cover the two pure-numpy evaluation functions:
+  - retrieve_topk  (paper-style: square N×N diagonal matching)
+  - retrieve_all   (paper-style: wraps retrieve_topk with cosine similarity)
 
 Torch is stubbed out so the tests run without a GPU runtime.
 """
@@ -152,64 +152,3 @@ class TestRetrieveAll:
         assert count_5 >= count_1  # top-5 always ≥ top-1
 
 
-# ---------------------------------------------------------------------------
-# _label_retrieval_counts  (label-indexed rectangular retrieval)
-# ---------------------------------------------------------------------------
-
-class TestLabelRetrievalCounts:
-    def test_all_rank_1(self):
-        # Correct class always has the highest similarity.
-        N_trials, N_classes = 8, 4
-        labels = np.array([i % N_classes for i in range(N_trials)])
-        sim = np.zeros((N_trials, N_classes), dtype=np.float32)
-        sim[np.arange(N_trials), labels] = 1.0
-        count_k, count_1 = _label_retrieval_counts(sim, labels, k=5)
-        assert count_1 == N_trials
-        assert count_k == N_trials
-
-    def test_all_rank_last(self):
-        # Correct class always has the lowest similarity → rank = N_classes (last).
-        N_trials, N_classes = 6, 5
-        labels = np.zeros(N_trials, dtype=int)  # correct = col 0
-        sim = np.ones((N_trials, N_classes), dtype=np.float32) * 2.0
-        sim[np.arange(N_trials), labels] = 0.0  # correct col is minimum
-        # k = N_classes - 1: correct item is rank N_classes, so count = 0
-        count_k, count_1 = _label_retrieval_counts(sim, labels, k=N_classes - 1)
-        assert count_1 == 0
-        assert count_k == 0
-
-    def test_mixed_known_ranks(self):
-        # 3 classes, 6 trials with manually chosen scores; ranks are deterministic.
-        #
-        # Trial | correct col | scores       | rank of correct
-        #   0   |      0      | [3, 2, 1]    |   1   ✓top1, ✓top5
-        #   1   |      1      | [3, 1, 2]    |   3   ✗top1, ✓top5
-        #   2   |      2      | [3, 2, 1]    |   3   ✗top1, ✓top5
-        #   3   |      0      | [2, 3, 1]    |   2   ✗top1, ✓top5, ✓top2
-        #   4   |      1      | [1, 2, 3]    |   2   ✗top1, ✓top5, ✓top2
-        #   5   |      2      | [3, 2, 1]    |   3   ✗top1, ✓top5, ✗top2
-        sim = np.array([
-            [3, 2, 1],
-            [3, 1, 2],
-            [3, 2, 1],
-            [2, 3, 1],
-            [1, 2, 3],
-            [3, 2, 1],
-        ], dtype=np.float32)
-        labels = np.array([0, 1, 2, 0, 1, 2])
-
-        _, count_1 = _label_retrieval_counts(sim, labels, k=1)
-        count_2, _ = _label_retrieval_counts(sim, labels, k=2)
-        count_5, _ = _label_retrieval_counts(sim, labels, k=5)
-
-        assert count_1 == 1  # only trial 0
-        assert count_2 == 3  # trials 0, 3, 4 have rank ≤ 2
-        assert count_5 == 6  # all 6 have rank ≤ 5 (only 3 classes exist)
-
-    def test_single_class_single_trial(self):
-        # 1 class, 1 trial: rank is always 1.
-        sim = np.array([[0.8]], dtype=np.float32)
-        labels = np.array([0])
-        count_k, count_1 = _label_retrieval_counts(sim, labels, k=1)
-        assert count_1 == 1
-        assert count_k == 1
