@@ -179,7 +179,6 @@ class Config:
     metadata_path: str = "data/things_eeg/image_metadata.npy"
     data_average: bool = True
     data_average_test: bool = False
-    n_windows: int = 4
     smooth_prob: float = 0.3
     smooth_kernel_size: int = 5
     smooth_sigma: float = 1.0
@@ -217,12 +216,10 @@ def train_one_epoch(
     if epoch == config.stage1_epochs + 1:
         for p in model.share_encoder.parameters():
             p.requires_grad = False
-        for p in model.img_pre_projector.parameters():
-            p.requires_grad = False
         for g in optimizer.param_groups:
             g["lr"] = config.stage2_lr
         logger.info(
-            f"Stage 2: share_encoder + img_pre_projector frozen, lr -> {config.stage2_lr}"
+            f"Stage 2: share_encoder frozen, lr -> {config.stage2_lr}"
         )
 
     model.train()
@@ -244,10 +241,10 @@ def train_one_epoch(
             batch["image_concepts"], batch["image_files"]
         ).to(device)
 
-        zE_list, zI_list = model(eeg, image_layers, subject_ids)
+        zE, zI = model(eeg, image_layers, subject_ids)
 
         loss, components = compute_loss(
-            zE_list, zI_list, model.logit_scale,
+            zE, zI, model.logit_scale,
             epoch, config.stage1_epochs,
             config.mmd_start, config.mmd_end,
         )
@@ -312,16 +309,17 @@ def evaluate(
             for c in concept_order
         ],
         dim=0,
-    ).numpy()  # (200, n_windows * feature_dim)
+    ).numpy()  # (200, 512)
 
     # Build image gallery from InternViT lookup
     gallery = internvit_lookup.retrieve_batch(
         concept_order, [concept_to_file[c] for c in concept_order]
     )  # (N_concepts, n_layers, 3200)
     with torch.no_grad():
-        image_features = model.encode_image_for_eval(
+        image_features = model.encode_image(
             gallery.to(device),
-        ).cpu().numpy()  # (N_concepts, n_windows * feature_dim)
+            subject_ids=None,
+        ).cpu().numpy()  # (N_concepts, 512)
 
     top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
     return top1_count / total, top5_count / total
@@ -423,16 +421,16 @@ def make_model(
     return SUPAEEG(
         n_channels=config.n_channels,
         n_timepoints=config.n_timepoints,
-        n_windows=config.n_windows,
-        feature_dim=config.feature_dim,
+        eeg_feature_dim=config.eeg_feature_dim,
         image_input_dim=config.image_input_dim,
         image_mid_dim=config.image_mid_dim,
+        feature_dim=config.feature_dim,
+        dropout=config.dropout,
         n_subjects=config.n_subjects,
         n_layers=n_layers,
         router_temperature=config.router_temperature,
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
-        dropout=config.dropout,
     ).to(device)
 
 

@@ -127,7 +127,6 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         metadata_path=cfg.metadata_path,
         data_average=cfg.data_average,
         data_average_test=cfg.data_average_test,
-        n_windows=cfg.n_windows,
         smooth_prob=cfg.smooth_prob,
         smooth_kernel_size=cfg.smooth_kernel_size,
         smooth_sigma=cfg.smooth_sigma,

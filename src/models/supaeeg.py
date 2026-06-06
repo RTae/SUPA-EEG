@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.encoders.eegnet_encoder import TemporalPatchEncoder
+from src.encoders.eegnet_encoder import EEGNetEncoder
 
 
 class SubjectAwareRouter(nn.Module):
@@ -109,85 +109,48 @@ class SubjectAwareRouter(nn.Module):
 
 
 class SUPAEEG(nn.Module):
-    """SUPAEEG with temporal patching and aligned layer routing.
+    """SUPAEEG: EEGProject + shared encoder alignment.
 
-    Each temporal window of EEG is aligned to a corresponding
-    group of InternViT layers, exploiting the known temporal
-    structure of visual EEG responses.
+    Architecture:
+        EEG (batch, 17, 100)
+          eeg_encoder  -> (batch, 1024)
+          eeg_projector Linear(1024, 512)
+          share_encoder Linear(512, 512)   <- shared with image side
+          l2-normalize  -> zE (batch, 512)
+
+        image_layers (batch, 5, 3200)
+          router weights -> weighted mean -> (batch, 3200)
+          img_pre_projector Linear(3200, 1024)
+          img_projector     Linear(1024, 512)
+          share_encoder     Linear(512, 512)   <- SAME nn.Module as EEG
+          l2-normalize      -> zI (batch, 512)
 
     Args:
-        n_channels:           int   = 17
-        n_timepoints:         int   = 100
-        n_windows:            int   = 4      temporal patches
-        feature_dim:          int   = 512    per-window embedding dim
-        image_input_dim:      int   = 3200   InternViT feature dim
-        image_mid_dim:        int   = 1024   image projector intermediate
-        n_subjects:           int   = 10
-        n_layers:             int   = 5
-        router_temperature:   float = 1.0
-        subject_dropout_rate: float = 0.3
-        layer_dropout_rate:   float = 0.1
-        dropout:              float = 0.3
+        n_channels:      int   = 17
+        n_timepoints:    int   = 100
+        eeg_feature_dim: int   = 1024
+        image_input_dim: int   = 3200
+        image_mid_dim:   int   = 1024
+        feature_dim:     int   = 512
+        dropout:         float = 0.3
     """
 
-    # Layer-group assignment for 5 InternViT layers [20, 24, 28, 32, 36].
-    # Indices refer to position in the 5-layer stack (0=layer20 … 4=layer36).
-    # Overlap at layer 28 (index 2) is intentional — it is the most informative.
-    LAYER_GROUPS: list[list[int]] = [
-        [0],       # window 0 (0-25 ms)   early visual  → layer 20
-        [1, 2],    # window 1 (25-50 ms)  mid           → layers 24, 28
-        [2, 3],    # window 2 (50-75 ms)  late-mid      → layers 28, 32
-        [3, 4],    # window 3 (75-100 ms) semantic      → layers 32, 36
-    ]
-
-    def __init__(
-        self,
-        n_channels: int = 17,
-        n_timepoints: int = 100,
-        n_windows: int = 4,
-        feature_dim: int = 512,
-        image_input_dim: int = 3200,
-        image_mid_dim: int = 1024,
-        n_subjects: int = 10,
-        n_layers: int = 5,
-        router_temperature: float = 1.0,
-        subject_dropout_rate: float = 0.3,
-        layer_dropout_rate: float = 0.1,
-        dropout: float = 0.3,
-    ):
+    def __init__(self, n_channels=17, n_timepoints=100,
+                 eeg_feature_dim=1024, image_input_dim=3200,
+                 image_mid_dim=1024, feature_dim=512, dropout=0.3,
+                 n_subjects=10, n_layers=5, router_temperature=1.0,
+                 subject_dropout_rate=0.3, layer_dropout_rate=0.1):
         super().__init__()
-        self.n_windows = n_windows
-        self.feature_dim = feature_dim
-
-        # EEG encoder: n_windows separate MLPs
-        self.eeg_encoder = TemporalPatchEncoder(
-            n_channels=n_channels,
-            n_timepoints=n_timepoints,
-            n_windows=n_windows,
-            feature_dim=feature_dim,
-            dropout=dropout,
-        )
-
-        # per-window EEG projectors (separate weights — each window specialises)
-        self.eeg_projectors = nn.ModuleList([
-            nn.Linear(feature_dim, feature_dim)
-            for _ in range(n_windows)
-        ])
-
-        # shared image pre-projector
+        self.eeg_encoder       = EEGNetEncoder(n_channels, n_timepoints,
+                                               eeg_feature_dim, dropout)
+        self.eeg_projector     = nn.Linear(eeg_feature_dim, feature_dim)
         self.img_pre_projector = nn.Linear(image_input_dim, image_mid_dim)
-
-        # per-window image projectors
-        self.img_projectors = nn.ModuleList([
-            nn.Linear(image_mid_dim, feature_dim)
-            for _ in range(n_windows)
-        ])
-
-        # SHARED encoder — same nn.Linear for both EEG and image, all windows
-        self.share_encoder = nn.Linear(feature_dim, feature_dim)
-
-        # subject-aware router for image layer blending
-        self.router = SubjectAwareRouter(
+        self.img_projector     = nn.Linear(image_mid_dim, feature_dim)
+        self.share_encoder     = nn.Linear(feature_dim, feature_dim)
+        self.logit_scale       = nn.Parameter(
+            torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
+        )
+        self.router            = SubjectAwareRouter(
             n_subjects=n_subjects,
             n_layers=n_layers,
             temperature=router_temperature,
@@ -195,97 +158,45 @@ class SUPAEEG(nn.Module):
             layer_dropout_rate=layer_dropout_rate,
         )
 
-        # learnable temperature
-        self.logit_scale = nn.Parameter(
-            torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
-        )
+    def encode_eeg(self, eeg: torch.Tensor) -> torch.Tensor:
+        x = self.eeg_encoder(eeg)      # (batch, 1024)
+        x = self.eeg_projector(x)      # (batch, 512)
+        x = self.share_encoder(x)      # (batch, 512)
+        return F.normalize(x, dim=1)   # (batch, 512)
 
-    def encode_eeg_windows(
-        self,
-        eeg: torch.Tensor,
-    ) -> list[torch.Tensor]:
-        """Encode EEG into per-window l2-normalised embeddings.
-
-        Args:
-            eeg: (batch, n_channels, n_timepoints)
-
-        Returns:
-            List of n_windows tensors each (batch, feature_dim), l2-normalised.
-        """
-        window_feats = self.eeg_encoder(eeg)   # list of (batch, feature_dim)
-        zE_list = []
-        for feat, proj in zip(window_feats, self.eeg_projectors):
-            z = proj(feat)                      # (batch, feature_dim)
-            z = self.share_encoder(z)           # (batch, feature_dim)
-            zE_list.append(F.normalize(z, dim=1))
-        return zE_list
-
-    def encode_image_windows(
+    def encode_image(
         self,
         image_layers: torch.Tensor,
         subject_ids: torch.Tensor | None = None,
-    ) -> list[torch.Tensor]:
-        """Encode image into per-window embeddings aligned to layer groups.
+    ) -> torch.Tensor:
+        """Encode image layers with subject-aware blending.
 
         Args:
-            image_layers: (batch, n_layers, 3200)
+            image_layers: (batch, n_layers, 3200) float16 or float32
             subject_ids:  (batch,) int64 0-indexed, or None
 
         Returns:
-            List of n_windows tensors each (batch, feature_dim), l2-normalised.
+            (batch, 512) l2-normalised
         """
-        # router weights over all 5 layers: (batch, 5)
         weights = self.router(subject_ids)
-
-        zI_list = []
-        for k, (layer_indices, img_proj) in enumerate(
-            zip(self.LAYER_GROUPS, self.img_projectors)
-        ):
-            group_layers  = image_layers[:, layer_indices, :]   # (batch, g, 3200)
-            group_weights = weights[:, layer_indices]            # (batch, g)
-            # renormalise weights within group
-            group_weights = group_weights / group_weights.sum(dim=1, keepdim=True).clamp_min(1e-8)
-            # weighted mean over assigned layers: (batch, 3200)
-            x = (group_layers.float() * group_weights.unsqueeze(-1)).sum(dim=1)
-            x = self.img_pre_projector(x)   # (batch, image_mid_dim)
-            x = img_proj(x)                 # (batch, feature_dim)
-            x = self.share_encoder(x)       # (batch, feature_dim)
-            zI_list.append(F.normalize(x, dim=1))
-
-        return zI_list
+        x = (image_layers.float() * weights.unsqueeze(-1)).sum(dim=1)
+        x = self.img_pre_projector(x)
+        x = self.img_projector(x)
+        x = self.share_encoder(x)
+        return F.normalize(x, dim=1)   # (batch, 512)
 
     def forward(
         self,
         eeg: torch.Tensor,
         image_layers: torch.Tensor,
         subject_ids: torch.Tensor | None = None,
-    ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
-        """
-        Returns:
-            zE_list: list of n_windows (batch, feature_dim) EEG embeddings
-            zI_list: list of n_windows (batch, feature_dim) image embeddings
-        """
-        return (
-            self.encode_eeg_windows(eeg),
-            self.encode_image_windows(image_layers, subject_ids),
-        )
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.encode_eeg(eeg), self.encode_image(image_layers, subject_ids)
 
     @torch.no_grad()
     def embed(self, eeg: torch.Tensor) -> torch.Tensor:
-        """Inference: concat all window embeddings → l2-norm → (batch, n_windows * feature_dim)."""
-        zE_list = self.encode_eeg_windows(eeg)
-        z = torch.cat(zE_list, dim=1)   # (batch, n_windows * feature_dim)
-        return F.normalize(z, dim=1)
-
-    @torch.no_grad()
-    def encode_image_for_eval(
-        self,
-        image_layers: torch.Tensor,
-    ) -> torch.Tensor:
-        """Inference: concat all window image embeddings → l2-norm → (batch, n_windows * feature_dim)."""
-        zI_list = self.encode_image_windows(image_layers, subject_ids=None)
-        z = torch.cat(zI_list, dim=1)
-        return F.normalize(z, dim=1)
+        """Inference only. Returns l2-normalised (batch, 512) descriptor."""
+        return self.encode_eeg(eeg)
 
 
 if __name__ == "__main__":
@@ -294,30 +205,25 @@ if __name__ == "__main__":
     imgs = torch.randn(4, 5, 3200)
     sids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
-    # training
     model.train()
-    zE_list, zI_list = model(eeg, imgs, sids)
-    assert len(zE_list) == 4
-    assert len(zI_list) == 4
-    for k in range(4):
-        assert zE_list[k].shape == (4, 512), f"zE[{k}] shape {zE_list[k].shape}"
-        assert zI_list[k].shape == (4, 512), f"zI[{k}] shape {zI_list[k].shape}"
+    zE, zI = model(eeg, imgs, sids)
+    assert zE.shape == (4, 512), f"got {zE.shape}"
+    assert zI.shape == (4, 512), f"got {zI.shape}"
 
-    # inference embed
     model.eval()
     with torch.no_grad():
         emb = model.embed(eeg)
-        assert emb.shape == (4, 2048), f"embed shape {emb.shape}"
-        img_emb = model.encode_image_for_eval(imgs)
-        assert img_emb.shape == (4, 2048), f"img_emb shape {img_emb.shape}"
+        assert emb.shape == (4, 512), f"got {emb.shape}"
 
-    # smooth augmentation
+        zI_no_sid = model.encode_image(imgs, subject_ids=None)
+        assert zI_no_sid.shape == (4, 512)
+
     from src.encoders.eeg_augmentation import smooth_eeg
     smoothed = smooth_eeg(eeg, p=1.0)
     assert smoothed.shape == eeg.shape
-    assert not torch.allclose(smoothed, eeg)   # should be different
+    assert not torch.allclose(smoothed, eeg)
 
     smoothed_zero = smooth_eeg(eeg, p=0.0)
-    assert torch.allclose(smoothed_zero, eeg)  # p=0 should be identity
+    assert torch.allclose(smoothed_zero, eeg)
 
     print("All assertions passed")

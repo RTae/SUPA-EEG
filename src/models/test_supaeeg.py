@@ -23,49 +23,42 @@ def test_subject_aware_router_ignores_subject_ids_in_eval_mode():
     )
 
 
-def test_supaeeg_encode_image_windows_ignores_subject_ids_in_eval_mode():
+def test_supaeeg_encode_image_ignores_subject_ids_in_eval_mode():
     model = SUPAEEG()
     image_layers = torch.randn(4, 5, 3200)
     subject_ids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
     model.eval()
     with torch.no_grad():
-        zI_no_ids = model.encode_image_windows(image_layers, subject_ids=None)
-        zI_with_ids = model.encode_image_windows(image_layers, subject_ids=subject_ids)
+        image_emb_no_ids = model.encode_image(image_layers, subject_ids=None)
+        image_emb_with_ids = model.encode_image(image_layers, subject_ids=subject_ids)
 
-    assert len(zI_no_ids) == 4
-    for k in range(4):
-        assert zI_no_ids[k].shape == (4, 512)
-        assert torch.allclose(zI_no_ids[k], zI_with_ids[k], atol=1e-5)
+    assert image_emb_no_ids.shape == (4, 512)
+    assert image_emb_with_ids.shape == (4, 512)
+    assert torch.allclose(image_emb_no_ids, image_emb_with_ids, atol=1e-5)
 
 
-def test_supaeeg_forward_returns_window_lists_in_train_mode():
+def test_supaeeg_forward_returns_single_embeddings():
     model = SUPAEEG()
     eeg = torch.randn(4, 17, 100)
     image_layers = torch.randn(4, 5, 3200)
     subject_ids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
     model.train()
-    zE_list, zI_list = model(eeg, image_layers, subject_ids)
+    zE, zI = model(eeg, image_layers, subject_ids)
 
-    assert len(zE_list) == 4
-    assert len(zI_list) == 4
-    for k in range(4):
-        assert zE_list[k].shape == (4, 512), f"zE[{k}] shape {zE_list[k].shape}"
-        assert zI_list[k].shape == (4, 512), f"zI[{k}] shape {zI_list[k].shape}"
+    assert zE.shape == (4, 512)
+    assert zI.shape == (4, 512)
 
 
-def test_supaeeg_embed_returns_2048():
+def test_supaeeg_embed_returns_512():
     model = SUPAEEG()
     eeg = torch.randn(4, 17, 100)
 
     model.eval()
     with torch.no_grad():
         emb = model.embed(eeg)
-        assert emb.shape == (4, 2048), f"embed shape {emb.shape}"
-
-        img_emb = model.encode_image_for_eval(torch.randn(4, 5, 3200))
-        assert img_emb.shape == (4, 2048), f"img_emb shape {img_emb.shape}"
+        assert emb.shape == (4, 512)
 
 
 def test_make_model_derives_n_layers_from_layer_ids():
