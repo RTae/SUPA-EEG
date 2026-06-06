@@ -48,6 +48,10 @@ n_layers:         5
 router_temperature: 1.0
 subject_dropout_rate: 0.3
 layer_dropout_rate: 0.1
+use_grl: true
+lambda_grl_max: 1.0
+grl_hidden_dim: 256
+lambda_subj: 0.1
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001

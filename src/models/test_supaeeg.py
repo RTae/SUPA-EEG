@@ -43,10 +43,11 @@ def test_supaeeg_forward_accepts_subject_ids_in_train_mode():
     subject_ids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
     model.train()
-    eeg_emb, image_emb = model(eeg, image_layers, subject_ids)
+    eeg_emb, image_emb, subj_logits = model(eeg, image_layers, subject_ids)
 
     assert eeg_emb.shape == (4, 512)
     assert image_emb.shape == (4, 512)
+    assert subj_logits is not None and subj_logits.shape == (4, 10)
 
 
 def test_make_model_derives_n_layers_from_layer_ids():

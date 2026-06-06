@@ -71,6 +71,26 @@ def info_nce_loss(
     return (F.cross_entropy(sim, labels) + F.cross_entropy(sim.T, labels)) / 2
 
 
+def subject_adversarial_loss(
+    subj_logits: torch.Tensor,
+    subject_ids: torch.Tensor,
+) -> torch.Tensor:
+    """Cross-entropy loss for subject classifier.
+
+    The GRL ensures gradients are REVERSED when they reach the encoder,
+    so the encoder learns to remove subject information.
+    This function only trains the subject classifier itself.
+
+    Args:
+        subj_logits: (batch, n_subjects) logits from SubjectClassifier
+        subject_ids: (batch,) int64 0-indexed subject labels
+
+    Returns:
+        scalar cross-entropy loss
+    """
+    return F.cross_entropy(subj_logits, subject_ids)
+
+
 def compute_loss(
     zE: torch.Tensor,
     zI: torch.Tensor,
@@ -79,14 +99,17 @@ def compute_loss(
     stage1_epochs: int,
     mmd_start: float = 0.9,
     mmd_end: float = 0.5,
+    subj_logits=None,
+    subject_ids=None,
+    lambda_subj: float = 0.1,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    """Two-stage SUPAEEG training objective.
+    """Two-stage SUPAEEG training objective with optional adversarial subject term.
 
     Stage 1 (epoch <= stage1_epochs):
-        mmd_w * MMD_RBF(zE, zI) + (1 - mmd_w) * InfoNCE(zE, zI)
+        mmd_w * MMD_RBF(zE, zI) + (1 - mmd_w) * InfoNCE(zE, zI) + lambda_subj * subj_loss
         mmd_w decays linearly from mmd_start to mmd_end.
     Stage 2 (epoch > stage1_epochs):
-        InfoNCE(zE, zI) only
+        InfoNCE(zE, zI) + lambda_subj * subj_loss
 
     Args:
         zE, zI:        l2-normalised embeddings each (batch, D)
@@ -95,24 +118,35 @@ def compute_loss(
         stage1_epochs: Number of stage-1 epochs
         mmd_start:     Initial MMD weight
         mmd_end:       Final MMD weight at end of stage 1
+        subj_logits:   (batch, n_subjects) from SubjectClassifier, or None
+        subject_ids:   (batch,) int64 subject labels, or None
+        lambda_subj:   Weight for the adversarial subject loss term
 
     Returns:
         (total_loss, components_dict)
     """
     infonce = info_nce_loss(zE, zI, logit_scale)
+
+    subj_loss = torch.tensor(0.0, device=zE.device)
+    if subj_logits is not None and subject_ids is not None:
+        subj_loss = subject_adversarial_loss(subj_logits, subject_ids)
+
     if epoch <= stage1_epochs:
         mmd_w = get_mmd_weight(epoch, stage1_epochs, mmd_start, mmd_end)
         mmd   = mmd_rbf(zE, zI)
-        total = mmd_w * mmd + (1 - mmd_w) * infonce
+        total = mmd_w * mmd + (1 - mmd_w) * infonce + lambda_subj * subj_loss
         return total, {
             "total":      total.item(),
             "infonce":    infonce.item(),
             "mmd":        mmd.item(),
             "mmd_weight": mmd_w,
+            "subj_loss":  subj_loss.item(),
         }
-    return infonce, {
-        "total":      infonce.item(),
+    total = infonce + lambda_subj * subj_loss
+    return total, {
+        "total":      total.item(),
         "infonce":    infonce.item(),
         "mmd":        0.0,
         "mmd_weight": 0.0,
+        "subj_loss":  subj_loss.item(),
     }

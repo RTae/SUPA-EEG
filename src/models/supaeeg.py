@@ -1,8 +1,85 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from src.encoders.eegnet_encoder import EEGNetEncoder
+
+
+class GradientReversalFunction(torch.autograd.Function):
+    """Reverses gradients during backward pass.
+    Forward pass: identity (no change to values)
+    Backward pass: multiply gradient by -lambda_grl
+    This trains the encoder to REMOVE subject information.
+    """
+
+    @staticmethod
+    def forward(ctx, x, lambda_grl):
+        ctx.save_for_backward(torch.tensor(lambda_grl))
+        return x.clone()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        lambda_grl = ctx.saved_tensors[0].item()
+        return -lambda_grl * grad_output, None
+
+
+class GradientReversalLayer(nn.Module):
+    """Apply gradient reversal with scheduled lambda.
+
+    lambda_grl controls reversal strength:
+      0.0 = no reversal (GRL off)
+      1.0 = full reversal (standard GRL)
+
+    Scheduled from 0 → lambda_max over training to
+    stabilise early training before adversarial pressure builds.
+
+    Args:
+        lambda_max: float = 1.0  maximum reversal strength
+    """
+
+    def __init__(self, lambda_max: float = 1.0):
+        super().__init__()
+        self.lambda_max = lambda_max
+        self._lambda = 0.0   # current value, updated by set_lambda()
+
+    def set_lambda(self, progress: float) -> None:
+        """Update lambda based on training progress in [0, 1].
+        Uses standard GRL schedule: 2/(1+exp(-10*p)) - 1
+        progress=0 → lambda=0, progress=1 → lambda=lambda_max
+        """
+        self._lambda = self.lambda_max * (
+            2.0 / (1.0 + math.exp(-10.0 * progress)) - 1.0
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return GradientReversalFunction.apply(x, self._lambda)
+
+
+class SubjectClassifier(nn.Module):
+    """2-layer MLP predicting subject ID from EEG features.
+    Trained to predict subject; encoder trained to fool it via GRL.
+    Discarded entirely at inference.
+
+    Args:
+        in_features:  int = 512   input feature dimension
+        n_subjects:   int = 10    number of training subjects
+        hidden_dim:   int = 256   hidden layer size
+    """
+
+    def __init__(self, in_features=512, n_subjects=10, hidden_dim=256):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_features, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(hidden_dim, n_subjects),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (batch, in_features) → (batch, n_subjects) logits"""
+        return self.net(x)
 
 
 class SubjectAwareRouter(nn.Module):
@@ -139,7 +216,9 @@ class SUPAEEG(nn.Module):
                  eeg_feature_dim=1024, image_input_dim=3200,
                  image_mid_dim=1024, feature_dim=512, dropout=0.3,
                  n_subjects=10, n_layers=5, router_temperature=1.0,
-                 subject_dropout_rate=0.3, layer_dropout_rate=0.1):
+                 subject_dropout_rate=0.3, layer_dropout_rate=0.1,
+                 use_grl: bool = True, lambda_grl_max: float = 1.0,
+                 grl_hidden_dim: int = 256):
         super().__init__()
         self.eeg_encoder       = EEGNetEncoder(n_channels, n_timepoints,
                                                eeg_feature_dim, dropout)
@@ -158,11 +237,49 @@ class SUPAEEG(nn.Module):
             layer_dropout_rate=layer_dropout_rate,
         )
 
-    def encode_eeg(self, eeg: torch.Tensor) -> torch.Tensor:
-        x = self.eeg_encoder(eeg)
-        x = self.eeg_projector(x)
-        x = self.share_encoder(x)
-        return F.normalize(x, dim=1)   # (batch, 512)
+        # Instance normalisation — removes per-trial amplitude scaling
+        # (subject-specific skull thickness / electrode impedance artefacts)
+        # Uses (batch, 1, feature_dim) shape so each sample's features are
+        # normalised independently over the feature/length dimension.
+        self.instance_norm = nn.InstanceNorm1d(1)
+
+        # Adversarial subject invariance
+        self.use_grl = use_grl
+        if use_grl:
+            self.grl      = GradientReversalLayer(lambda_max=lambda_grl_max)
+            self.subj_clf = SubjectClassifier(
+                in_features=feature_dim,
+                n_subjects=n_subjects,
+                hidden_dim=grl_hidden_dim,
+            )
+
+    def encode_eeg(
+        self,
+        eeg: torch.Tensor,
+        subject_ids: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Encode EEG into shared embedding space.
+
+        Args:
+            eeg:         (batch, 17, 100)
+            subject_ids: (batch,) int64 0-indexed, or None
+
+        Returns:
+            zE:          (batch, 512) l2-normalised EEG embedding
+            subj_logits: (batch, n_subjects) or None if not training/no GRL
+        """
+        x = self.eeg_encoder(eeg)          # (batch, 1024)
+        x = self.eeg_projector(x)          # (batch, 512)
+        x = self.instance_norm(x.unsqueeze(1)).squeeze(1)  # (batch, 512) normalise amplitude
+
+        # GRL branch: adversarial subject prediction
+        subj_logits = None
+        if self.use_grl and self.training and subject_ids is not None:
+            x_grl       = self.grl(x)           # reversed gradients
+            subj_logits = self.subj_clf(x_grl)  # (batch, n_subjects)
+
+        x = self.share_encoder(x)          # (batch, 512)
+        return F.normalize(x, dim=1), subj_logits
 
     def encode_image(
         self,
@@ -190,13 +307,22 @@ class SUPAEEG(nn.Module):
         eeg: torch.Tensor,
         image_layers: torch.Tensor,
         subject_ids: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.encode_eeg(eeg), self.encode_image(image_layers, subject_ids)
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """
+        Returns:
+            zE:          (batch, 512)
+            zI:          (batch, 512)
+            subj_logits: (batch, n_subjects) or None
+        """
+        zE, subj_logits = self.encode_eeg(eeg, subject_ids)
+        zI = self.encode_image(image_layers, subject_ids)
+        return zE, zI, subj_logits
 
     @torch.no_grad()
     def embed(self, eeg: torch.Tensor) -> torch.Tensor:
         """Inference only. Returns l2-normalised (batch, 512) descriptor."""
-        return self.encode_eeg(eeg)
+        zE, _ = self.encode_eeg(eeg, subject_ids=None)
+        return zE
 
 
 if __name__ == "__main__":
@@ -206,9 +332,10 @@ if __name__ == "__main__":
     sids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
     model.train()
-    zE, zI = model(eeg, imgs, sids)
+    zE, zI, subj_logits = model(eeg, imgs, sids)
     assert zE.shape == (4, 512), f"got {zE.shape}"
     assert zI.shape == (4, 512), f"got {zI.shape}"
+    assert subj_logits is not None and subj_logits.shape == (4, 10)
 
     model.eval()
     with torch.no_grad():

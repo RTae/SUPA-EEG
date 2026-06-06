@@ -177,6 +177,10 @@ class Config:
     metadata_path: str = "data/things_eeg/image_metadata.npy"
     data_average: bool = True
     data_average_test: bool = False
+    use_grl: bool = True
+    lambda_grl_max: float = 1.0
+    grl_hidden_dim: int = 256
+    lambda_subj: float = 0.1
 
 
 def train_one_epoch(
@@ -218,7 +222,7 @@ def train_one_epoch(
         )
 
     model.train()
-    sums: dict[str, float] = {"total": 0.0, "infonce": 0.0, "mmd": 0.0, "mmd_weight": 0.0}
+    sums: dict[str, float] = {"total": 0.0, "infonce": 0.0, "mmd": 0.0, "mmd_weight": 0.0, "subj_loss": 0.0}
     n_batches = 0
     for batch in train_loader:
         eeg: torch.Tensor = batch["eeg"].to(device)
@@ -228,12 +232,20 @@ def train_one_epoch(
             batch["image_concepts"], batch["image_files"]
         ).to(device)
 
-        zE, zI = model(eeg, image_layers, subject_ids)
+        # Update GRL lambda based on training progress
+        if hasattr(model, "use_grl") and model.use_grl:
+            progress = (epoch - 1) / max(config.epochs - 1, 1)
+            model.grl.set_lambda(progress)
+
+        zE, zI, subj_logits = model(eeg, image_layers, subject_ids)
 
         loss, components = compute_loss(
             zE, zI, model.logit_scale,
             epoch, config.stage1_epochs,
             config.mmd_start, config.mmd_end,
+            subj_logits=subj_logits,
+            subject_ids=subject_ids,
+            lambda_subj=config.lambda_subj,
         )
         optimizer.zero_grad()
         loss.backward()
@@ -418,6 +430,9 @@ def make_model(
         router_temperature=config.router_temperature,
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
+        use_grl=config.use_grl,
+        lambda_grl_max=config.lambda_grl_max,
+        grl_hidden_dim=config.grl_hidden_dim,
     ).to(device)
 
 

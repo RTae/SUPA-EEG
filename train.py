@@ -127,6 +127,10 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         metadata_path=cfg.metadata_path,
         data_average=cfg.data_average,
         data_average_test=cfg.data_average_test,
+        use_grl=cfg.use_grl,
+        lambda_grl_max=cfg.lambda_grl_max,
+        grl_hidden_dim=cfg.grl_hidden_dim,
+        lambda_subj=cfg.lambda_subj,
     )
 
 
@@ -202,7 +206,7 @@ def run_intra_subject(
         metrics_file = open(metrics_path, "w", newline="")
         csv_writer = csv.DictWriter(
             metrics_file,
-            fieldnames=["epoch", "total", "infonce", "mmd", "mmd_weight", "top1", "top5"],
+            fieldnames=["epoch", "total", "infonce", "mmd", "mmd_weight", "subj_loss", "top1", "top5"],
         )
         csv_writer.writeheader()
         metrics_file.flush()
@@ -217,12 +221,14 @@ def run_intra_subject(
             logger.info(
                 f"Sub{subject_id:02d} | epoch {epoch}/{config.epochs} | "
                 f"total={components['total']:.4f} | infonce={components['infonce']:.4f} | "
-                f"mmd={components['mmd']:.4f} | mmd_w={components['mmd_weight']:.3f}"
+                f"mmd={components['mmd']:.4f} | mmd_w={components['mmd_weight']:.3f} | "
+                f"subj_loss={components['subj_loss']:.4f}"
             )
             writer.add_scalar("train/total",      components["total"],      epoch)
             writer.add_scalar("train/infonce",    components["infonce"],    epoch)
             writer.add_scalar("train/mmd",        components["mmd"],        epoch)
             writer.add_scalar("train/mmd_weight", components["mmd_weight"], epoch)
+            writer.add_scalar("train/subj_loss",  components["subj_loss"],  epoch)
 
             row: dict[str, Any] = {
                 "epoch":      epoch,
@@ -230,6 +236,7 @@ def run_intra_subject(
                 "infonce":    round(components["infonce"],    6),
                 "mmd":        round(components["mmd"],        6),
                 "mmd_weight": round(components["mmd_weight"], 6),
+                "subj_loss":  round(components["subj_loss"],  6),
                 "top1": "",
                 "top5": "",
             }
@@ -348,7 +355,7 @@ def run_inter_subject(
         metrics_file = open(metrics_path, "w", newline="")
         csv_writer = csv.DictWriter(
             metrics_file,
-            fieldnames=["epoch", "total", "infonce", "mmd", "mmd_weight", "top1", "top5"],
+            fieldnames=["epoch", "total", "infonce", "mmd", "mmd_weight", "subj_loss", "top1", "top5"],
         )
         csv_writer.writeheader()
         metrics_file.flush()
@@ -363,12 +370,14 @@ def run_inter_subject(
             logger.info(
                 f"LOSO test=Sub{test_subject:02d} | epoch {epoch}/{config.epochs} | "
                 f"total={components['total']:.4f} | infonce={components['infonce']:.4f} | "
-                f"mmd={components['mmd']:.4f} | mmd_w={components['mmd_weight']:.3f}"
+                f"mmd={components['mmd']:.4f} | mmd_w={components['mmd_weight']:.3f} | "
+                f"subj_loss={components['subj_loss']:.4f}"
             )
             writer.add_scalar("train/total",      components["total"],      epoch)
             writer.add_scalar("train/infonce",    components["infonce"],    epoch)
             writer.add_scalar("train/mmd",        components["mmd"],        epoch)
             writer.add_scalar("train/mmd_weight", components["mmd_weight"], epoch)
+            writer.add_scalar("train/subj_loss",  components["subj_loss"],  epoch)
 
             row: dict[str, Any] = {
                 "epoch":      epoch,
@@ -376,6 +385,7 @@ def run_inter_subject(
                 "infonce":    round(components["infonce"],    6),
                 "mmd":        round(components["mmd"],        6),
                 "mmd_weight": round(components["mmd_weight"], 6),
+                "subj_loss":  round(components["subj_loss"],  6),
                 "top1": "",
                 "top5": "",
             }
