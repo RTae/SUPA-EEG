@@ -128,6 +128,7 @@ bash scripts/download_data.sh
 This fetches:
 - Preprocessed EEG for subjects 1–10 with only 17 channels `data/things_eeg/sub-XX/`
 - Image metadata, training images (1654 concepts × 10 images), test images (200 concepts × 1 image)
+- InternViT features are also available for download in this script, but you can also extract them locally (see below).
 
 for 63 channels, run
 ```bash

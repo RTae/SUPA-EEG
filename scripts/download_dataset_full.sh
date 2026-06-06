@@ -19,6 +19,10 @@ download() {
   local out_name
   out_dir="$(dirname "$out")"
   out_name="$(basename "$out")"
+  if [[ -f "$out" ]]; then
+    echo "Already exists, skipping: $out"
+    return 0
+  fi
   echo "Downloading $out..."
   aria2c \
     --allow-overwrite=true \
@@ -42,9 +46,20 @@ download "f/9afc6c00192c47528d01" "$DIR/sub-09_63.zip"
 download "f/0127c638be494f878e23" "$DIR/sub-10_63.zip"
 
 # Extract
-for i in {01..08}; do
-  echo "Extracting sub-$i_63.zip..."
-  unzip -q "$DIR/sub-$i_63.zip" -d "$DIR" && rm "$DIR/sub-$i_63.zip"
+for i in {01..10}; do
+  zip_file="$DIR/sub-${i}_63.zip"
+  sub_dir="$DIR/sub-${i}"
+  if [[ -d "$sub_dir" ]]; then
+    echo "Already extracted, skipping: $sub_dir"
+    [[ -f "$zip_file" ]] && rm "$zip_file"
+    continue
+  fi
+  if [[ ! -f "$zip_file" ]]; then
+    echo "WARNING: $zip_file not found, skipping."
+    continue
+  fi
+  echo "Extracting sub-${i}_63.zip..."
+  unzip -q "$zip_file" -d "$DIR" && rm "$zip_file"
 done
 
 echo "Done."
