@@ -34,30 +34,31 @@ download() {
     "$url" || { echo "FAILED: $out"; exit 1; }
 }
 
-download "f/6e4851c36cd64656b051" "$DIR/sub-01_63.zip"
-download "f/51f23849a3cb40839148" "$DIR/sub-02_63.zip"
-download "f/26e1fd5a8eb440c8bf3b" "$DIR/sub-03_63.zip"
-download "f/e7cfad28adc54e729b2c" "$DIR/sub-04_63.zip"
-download "f/9af915568c63485a9753" "$DIR/sub-05_63.zip"
-download "f/cf2c1819a012438fb829" "$DIR/sub-06_63.zip"
-download "f/0413846a1de64cc1bab2" "$DIR/sub-07_63.zip"
-download "f/7171774f2b324c9f889d" "$DIR/sub-08_63.zip"
-download "f/9afc6c00192c47528d01" "$DIR/sub-09_63.zip"
-download "f/0127c638be494f878e23" "$DIR/sub-10_63.zip"
+declare -A _URLS=(
+  [01]="f/6e4851c36cd64656b051"
+  [02]="f/51f23849a3cb40839148"
+  [03]="f/26e1fd5a8eb440c8bf3b"
+  [04]="f/e7cfad28adc54e729b2c"
+  [05]="f/9af915568c63485a9753"
+  [06]="f/cf2c1819a012438fb829"
+  [07]="f/0413846a1de64cc1bab2"
+  [08]="f/7171774f2b324c9f889d"
+  [09]="f/9afc6c00192c47528d01"
+  [10]="f/0127c638be494f878e23"
+)
 
-# Extract
 for i in {01..10}; do
   zip_file="$DIR/sub-${i}_63.zip"
   sub_dir="$DIR/sub-${i}_63"
+
   if [[ -d "$sub_dir" ]]; then
     echo "Already extracted, skipping: $sub_dir"
     [[ -f "$zip_file" ]] && rm "$zip_file"
     continue
   fi
-  if [[ ! -f "$zip_file" ]]; then
-    echo "WARNING: $zip_file not found, skipping."
-    continue
-  fi
+
+  download "${_URLS[$i]}" "$zip_file"
+
   echo "Extracting sub-${i}_63.zip → $sub_dir ..."
   tmp_dir="$DIR/.tmp_extract_${i}"
   mkdir -p "$tmp_dir"
