@@ -54,7 +54,7 @@ sys.modules.setdefault("trainer.loss", _loss_stub)
 
 # Load metrics.py directly from its file path to bypass trainer/__init__.py,
 # which pulls in loss.py and other torch-dependent modules.
-_src_dir = Path(__file__).parent.parent / "src"
+_src_dir = Path(__file__).parent.parent
 _metrics_path = _src_dir / "trainer" / "metrics.py"
 _spec = importlib.util.spec_from_file_location("trainer.metrics", _metrics_path)
 _metrics_mod = importlib.util.module_from_spec(_spec)
@@ -64,7 +64,6 @@ _spec.loader.exec_module(_metrics_mod)
 
 retrieve_topk = _metrics_mod.retrieve_topk
 retrieve_all = _metrics_mod.retrieve_all
-_label_retrieval_counts = _metrics_mod._label_retrieval_counts
 
 
 # ---------------------------------------------------------------------------
