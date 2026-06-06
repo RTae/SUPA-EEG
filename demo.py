@@ -76,10 +76,17 @@ def run_inference(subject: int, target_concept: str, checkpoint_path: str) -> di
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model"])
     
-    # Find sample indices for the target concept
-    indices = [i for i, c in enumerate(dataset.image_meta_data['test_img_concepts']) if c == target_concept]
-    if not indices:
+    # Find the correct concept index in the 200 test set concepts
+    concept_idx = -1
+    for i, c in enumerate(dataset.image_meta_data['test_img_concepts']):
+        if c == target_concept:
+            concept_idx = i
+            break
+    if concept_idx == -1:
         raise ValueError(f"Concept '{target_concept}' not found in the test dataset split")
+        
+    # Get the 80 trials for this concept (using the repetitions factor)
+    indices = [concept_idx * dataset.number_of_repetitions + r for r in range(dataset.number_of_repetitions)]
     
     # Load all EEG trials for this concept
     eeg_tensors = []
