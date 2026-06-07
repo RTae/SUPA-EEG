@@ -33,7 +33,7 @@ grad_clip: 1.0
 stage1_epochs: 150
 stage2_lr: 0.00001
 mmd_start: 0.9
-mmd_end: 0.5
+mmd_end: 0.2
 
 # --- Architecture ----------------------------------------------------------
 n_channels:       17
