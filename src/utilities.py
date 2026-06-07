@@ -446,7 +446,7 @@ def make_scheduler(
 
     if config.warmup_epochs <= 0:
         # No-op: keep constant lr throughout training
-        return ConstantLR(optimizer, factor=1.0, total_iters=0)
+        return ConstantLR(optimizer, factor=1.0, total_iters=1)
 
     epochs = int(config.epochs)
     warmup_epochs = int(config.warmup_epochs)
