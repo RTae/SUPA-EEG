@@ -109,20 +109,20 @@ class SubjectAwareRouter(nn.Module):
 
 
 class SUPAEEG(nn.Module):
-    """SUPAEEG: EEGProject + shared encoder alignment.
+    """SUPAEEG: EEGProject + shared encoder alignment
 
     Architecture:
         EEG (batch, 17, 100)
-          eeg_encoder  -> (batch, 1024)
+          eeg_encoder  -> (batch, 1024)   temporal CNN
           eeg_projector Linear(1024, 512)
-          share_encoder Linear(512, 512)   <- shared with image side
+          share_encoder Linear(512, 512)  <- shared with image
           l2-normalize  -> zE (batch, 512)
 
         image_layers (batch, 5, 3200)
-          .float().mean(dim=1) -> (batch, 3200)
+          router weights -> weighted mean -> (batch, 3200)
           img_pre_projector Linear(3200, 1024)
           img_projector     Linear(1024, 512)
-          share_encoder     Linear(512, 512)   <- SAME nn.Module as EEG
+          share_encoder     Linear(512, 512)  <- SAME nn.Module as EEG
           l2-normalize      -> zI (batch, 512)
 
     Args:
@@ -159,9 +159,9 @@ class SUPAEEG(nn.Module):
         )
 
     def encode_eeg(self, eeg: torch.Tensor) -> torch.Tensor:
-        x = self.eeg_encoder(eeg)
-        x = self.eeg_projector(x)
-        x = self.share_encoder(x)
+        x = self.eeg_encoder(eeg)      # (batch, 1024)
+        x = self.eeg_projector(x)      # (batch, 512)
+        x = self.share_encoder(x)      # (batch, 512)
         return F.normalize(x, dim=1)   # (batch, 512)
 
     def encode_image(
@@ -201,7 +201,7 @@ class SUPAEEG(nn.Module):
 
 if __name__ == "__main__":
     model = SUPAEEG()
-    eeg = torch.randn(4, 17, 100)
+    eeg  = torch.randn(4, 17, 100)
     imgs = torch.randn(4, 5, 3200)
     sids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
@@ -218,10 +218,12 @@ if __name__ == "__main__":
         zI_no_sid = model.encode_image(imgs, subject_ids=None)
         assert zI_no_sid.shape == (4, 512)
 
-        zI_with_sid = model.encode_image(imgs, subject_ids=sids)
-        assert zI_with_sid.shape == (4, 512)
-        assert torch.allclose(zI_no_sid, zI_with_sid, atol=1e-5), (
-            "inference must use global prior regardless of subject_ids"
-        )
+    from src.encoders.eeg_augmentation import smooth_eeg
+    smoothed = smooth_eeg(eeg, p=1.0)
+    assert smoothed.shape == eeg.shape
+    assert not torch.allclose(smoothed, eeg)
 
-    print("Phase 2 all assertions passed")
+    smoothed_zero = smooth_eeg(eeg, p=0.0)
+    assert torch.allclose(smoothed_zero, eeg)
+
+    print("All assertions passed")

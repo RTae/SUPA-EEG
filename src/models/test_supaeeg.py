@@ -1,7 +1,9 @@
 import torch
 
+from src.encoders.eeg_augmentation import smooth_eeg
 from src.models.supaeeg import SUPAEEG, SubjectAwareRouter
 from src.utilities import Config, make_model
+
 
 def test_subject_aware_router_ignores_subject_ids_in_eval_mode():
     router = SubjectAwareRouter(n_subjects=10, n_layers=5)
@@ -36,17 +38,27 @@ def test_supaeeg_encode_image_ignores_subject_ids_in_eval_mode():
     assert torch.allclose(image_emb_no_ids, image_emb_with_ids, atol=1e-5)
 
 
-def test_supaeeg_forward_accepts_subject_ids_in_train_mode():
+def test_supaeeg_forward_returns_single_embeddings():
     model = SUPAEEG()
     eeg = torch.randn(4, 17, 100)
     image_layers = torch.randn(4, 5, 3200)
     subject_ids = torch.tensor([0, 1, 2, 3], dtype=torch.long)
 
     model.train()
-    eeg_emb, image_emb = model(eeg, image_layers, subject_ids)
+    zE, zI = model(eeg, image_layers, subject_ids)
 
-    assert eeg_emb.shape == (4, 512)
-    assert image_emb.shape == (4, 512)
+    assert zE.shape == (4, 512)
+    assert zI.shape == (4, 512)
+
+
+def test_supaeeg_embed_returns_512():
+    model = SUPAEEG()
+    eeg = torch.randn(4, 17, 100)
+
+    model.eval()
+    with torch.no_grad():
+        emb = model.embed(eeg)
+        assert emb.shape == (4, 512)
 
 
 def test_make_model_derives_n_layers_from_layer_ids():
@@ -56,3 +68,16 @@ def test_make_model_derives_n_layers_from_layer_ids():
 
     assert model.router.global_logits.shape == (3,)
     assert model.router.subject_bias.weight.shape == (config.n_subjects, 3)
+
+
+def test_smooth_eeg_p1_changes_signal():
+    eeg = torch.randn(4, 17, 100)
+    smoothed = smooth_eeg(eeg, p=1.0)
+    assert smoothed.shape == eeg.shape
+    assert not torch.allclose(smoothed, eeg)
+
+
+def test_smooth_eeg_p0_is_identity():
+    eeg = torch.randn(4, 17, 100)
+    out = smooth_eeg(eeg, p=0.0)
+    assert torch.allclose(out, eeg)
