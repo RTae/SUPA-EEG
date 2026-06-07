@@ -39,5 +39,3 @@
 | With Subject Aware + Average signal | Top-5 | 62.5% | 43.5% | 24.5% | 40.5% | 29.5% | 43.5% | 49.5% | 41.5% | 39.5% | 59.5% | 43.4% |
 | Smooth aug + DC removal + eval every epoch + Average signal | Top-1 | 28.5% | 24.0% | 10.0% | 22.5% | 15.5% | 20.5% | 21.0% | 25.5% | 13.5% | 32.0% | 21.3% |
 | Smooth aug + DC removal + eval every epoch + Average signal | Top-5 | 63.5% | 56.0% | 24.0% | 52.5% | 38.0% | 42.0% | 47.5% | 45.5% | 29.5% | 59.5% | 45.8% |
-| ⚠️ Above but broken (warmup_epochs=0 → lr=1e-5) | Top-1 | 18.5% | 21.5% | 8.5% | 23.0% | 14.0% | 19.0% | 16.0% | 15.5% | 10.5% | 25.0% | 17.2% |
-

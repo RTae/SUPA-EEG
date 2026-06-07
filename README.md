@@ -241,7 +241,7 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 
 Empirically validated best configs based on ablation experiments.
 
-#### Inter-subject (LOSO) — best avg Top-1: ~21%
+#### Inter-subject (LOSO):
 
 ```bash
 # Single fold (quick test, ~2 min)
@@ -261,7 +261,7 @@ Key findings for inter-subject:
 - `smooth_prob=0.3` — Gaussian smoothing augmentation along the time axis reduces high-frequency noise
 - `early_stop_patience=2` — stops quickly if stage 2 degrades
 
-#### Intra-subject — best avg Top-1: ~87%
+#### Intra-subject:
 
 ```bash
 # Single subject
@@ -271,6 +271,7 @@ python train.py subject=1 \
 # All subjects (~30 min)
 nohup python train.py subject=-1 \
   eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70 \
+  data_average=false \
   > training_intra.log 2>&1 &
 tail -f training_intra.log
 ```
