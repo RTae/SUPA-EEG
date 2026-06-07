@@ -17,8 +17,8 @@ data_average_test: false
 # --- EEG time window (seconds) --------------------------------------------
 # Epoch spans -0.2s to +0.79s. Visual response starts at ~70ms.
 # Crop to post-stimulus window only — removes 200ms of baseline noise.
-eeg_t_start: 0.0    # stimulus onset
-eeg_t_end:   0.7    # covers P1 (80ms), N170 (170ms), P300 (300ms)
+eeg_t_start: -0.2   # full epoch (no crop) — inter-subject needs all signal
+eeg_t_end:   0.8    # covers full 100-point window
 
 # --- InternViT features ----------------------------------------------------
 internvit_model:  "OpenGVLab/InternViT-6B-448px-V1-5"
@@ -30,20 +30,20 @@ metadata_path:    "data/things_eeg/image_metadata.npy"
 extract_batch_size: 128  # images per InternViT forward pass (6B model, reduce if OOM)
 
 # --- Training --------------------------------------------------------------
-epochs: 200
+epochs: 15
 batch_size: 1024
 eval_every: 1
 grad_clip: 1.0
 
 # --- Two-stage schedule ----------------------------------------------------
-stage1_epochs: 30
+stage1_epochs: 20
 stage2_lr: 0.00001
 mmd_start: 0.9
-mmd_end: 0.2
+mmd_end: 0.5
 
 # --- Architecture ----------------------------------------------------------
 n_channels:       17
-n_timepoints:     70   # 0.0s to 0.7s post-stimulus (was 100 with baseline)
+n_timepoints:     100
 feature_dim:      512
 eeg_feature_dim:  1024
 image_input_dim:  3200
@@ -59,12 +59,12 @@ layer_dropout_rate: 0.1
 smooth_prob:        0.3
 smooth_kernel_size: 5
 smooth_sigma:       1.0
-early_stop_patience: 50
+early_stop_patience: 2
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
 weight_decay: 1e-4
-warmup_epochs: 10    # set > 0 to enable linear warmup then cosine decay
+warmup_epochs: 0    # 0 = disabled
 
 # --- Output ----------------------------------------------------------------
 # checkpoints and metrics.csv go here (set at runtime by Hydra)
