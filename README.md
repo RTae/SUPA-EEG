@@ -1,8 +1,8 @@
 # SUPAEEG — Shared-Encoder EEG–Image Alignment
 
 Zero-shot visual decoding from EEG using the [THINGS-EEG2](https://osf.io/anp5v/)
-dataset. SUPAEEG (SAMGA pipeline) aligns EEG embeddings to frozen
-[InternViT-6B](https://huggingface.co/OpenGVLab/InternViT-6B-448px-V1-5) features
+dataset. SUPAEEG aligns EEG embeddings to frozen
+[InternViT-6B](https://huggingface.co/OpenGVLab/InternViT-6B-448px-V1-5) image features
 via a two-stage MMD + InfoNCE objective with a shared encoder for both modalities.
 
 ## Model Architecture
