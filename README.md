@@ -35,7 +35,7 @@ flowchart TD
 
     subgraph LOSS["Two-stage loss"]
         S1["Stage 1 (epochs 1–20)\nmmd_w · MMD_RBF + (1−mmd_w) · InfoNCE\nmmd_w: 0.9 → 0.5 (linear decay)"]
-        S2["Stage 2 (epochs 21+)\nInfoNCE only\nlr → 1e-5"]
+        S2["Stage 2 (epochs 21+, if stage1_epochs < epochs)\nInfoNCE only · share_encoder frozen · lr → 1e-5"]
     end
 
     EEG --> EE --> EP --> SE
@@ -178,7 +178,7 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 | `protocol` | `intra` (per-subject) or `inter` (LOSO) | `intra` |
 | `subject` | Subject index 1–10; `-1` = all subjects (intra only) | `1` |
 
-### InternViT features
+### InternViT config keys
 
 | Key | Description | Default |
 |-----|-------------|---------|
@@ -216,8 +216,11 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 | `smooth_kernel_size` | Smooth kernel size (timepoints) | `5` |
 | `smooth_sigma` | Smooth kernel sigma | `1.0` |
 | `early_stop_patience` | Stage-2 eval rounds before stopping | `2` |
+| `warmup_epochs` | LR warmup epochs (0 = flat lr throughout) | `0` |
 | `eeg_t_start` | EEG epoch crop start (seconds) | `-0.2` |
 | `eeg_t_end` | EEG epoch crop end (seconds) | `0.8` |
+| `n_timepoints` | Timepoints after crop (`int((eeg_t_end - eeg_t_start) * 100)`) | `100` |
+| `eeg_suffix` | Subject folder suffix: `""` = 17-ch (`sub-XX`), `"_63"` = 63-ch (`sub-XX_63`) | `""` |
 
 ## Implementation References
 
@@ -227,64 +230,25 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 | Config dataclass | `src/utilities.py` | `Config`; `make_model`, `train_one_epoch`, `evaluate` |
 | Hyperparameter reference | `conf/config.yaml` | YAML source of all defaults |
 | EEG encoder | `src/encoders/eegnet_encoder.py` | Flatten → Linear(1700,1024) → ResBlock → LayerNorm |
+| EEG augmentation | `src/encoders/eeg_augmentation.py` | `smooth_eeg` — Gaussian smoothing along time axis |
 | Image feature lookup | `src/encoders/vision_encoder.py` | `InternViTFeatureLookup` — loads `.npy` per layer |
 | Full model | `src/models/supaeeg.py` | `SUPAEEG` — shared-encoder alignment |
 | Loss functions | `src/trainer/loss.py` | `mmd_rbf`, `info_nce_loss`, `compute_loss` |
 | Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
 | Feature extraction | `scripts/extract_internvit_features.py` | Offline InternViT feature extraction + `ensure_internvit_features` guard |
 
-### Training
-
-All options are controlled via `conf/config.yaml` or Hydra CLI overrides:
-
-```bash
-# Single subject — intra-subject protocol (default)
-python train.py subject=1
-
-# All subjects, intra protocol
-python train.py subject=-1
-
-# Leave-one-subject-out (LOSO) inter-subject protocol
-python train.py protocol=inter
-
-# Override hyperparameters
-python train.py epochs=60 lr=1e-4 batch_size=256
-
-# Force CPU
-DEVICE=cpu python train.py
-
-# Run with nohup and log to file
-nohup python train.py > training.log 2>&1 &
-tail -f training.log
-```
-
-Outputs are written to `outputs/<date>/<time>/` (managed by Hydra):
-- `metrics_sub{id:02d}.csv` — per-epoch loss components and retrieval metrics
-- `supaeeg_intra_sub{id:02d}.pt` / `supaeeg_loso_sub{id:02d}.pt` — best checkpoint
-- `tb_sub{id:02d}/` — TensorBoard event files
-
-### Recommended Configuration
+## Recommended Configuration
 
 Empirically validated best configs based on ablation experiments.
 
-#### Inter-subject (LOSO) — best avg Top-1: 21.3%
+#### Inter-subject (LOSO) — best avg Top-1: ~21%
 
 ```bash
 # Single fold (quick test, ~2 min)
-python train.py protocol=inter subject=1 \
-  data_average=true \
-  epochs=15 stage1_epochs=20 \
-  batch_size=1024 eval_every=1 \
-  mmd_start=0.9 mmd_end=0.5 \
-  smooth_prob=0.3 early_stop_patience=2
+python train.py protocol=inter subject=1
 
-# All 10 folds (background, ~20 min)
+# All 10 folds (~20 min)
 nohup python train.py protocol=inter subject=-1 \
-  data_average=true \
-  epochs=15 stage1_epochs=20 \
-  batch_size=1024 eval_every=1 \
-  mmd_start=0.9 mmd_end=0.5 \
-  smooth_prob=0.3 early_stop_patience=2 \
   > training_inter.log 2>&1 &
 tail -f training_inter.log
 ```
@@ -293,38 +257,28 @@ Key findings for inter-subject:
 - `data_average=true` — average 4 training repetitions per trial; significantly improves SNR
 - `batch_size=1024` — doubles InfoNCE negatives (511→1023) for stronger gradient signal
 - `eval_every=1` — evaluates every epoch so the exact peak checkpoint is always saved
-- `epochs=15 stage1_epochs=20` — stage 2 (pure InfoNCE) consistently overfits; keep stage 1 (MMD) for all epochs
+- `epochs=15 stage1_epochs=20` — stage 2 (pure InfoNCE) consistently overfits; `stage1_epochs=epochs` disables it entirely
 - `smooth_prob=0.3` — Gaussian smoothing augmentation along the time axis reduces high-frequency noise
 - `early_stop_patience=2` — stops quickly if stage 2 degrades
 
-#### Intra-subject — best avg Top-1: 88.0%
+#### Intra-subject — best avg Top-1: ~87%
 
 ```bash
 # Single subject
 python train.py subject=1 \
-  data_average=true \
-  eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70 \
-  epochs=200 stage1_epochs=30 \
-  batch_size=1024 eval_every=1 \
-  mmd_start=0.9 mmd_end=0.2 \
-  smooth_prob=0.3 early_stop_patience=50
+  eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70
 
-# All subjects (background, ~30 min)
+# All subjects (~30 min)
 nohup python train.py subject=-1 \
-  data_average=true \
   eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70 \
-  epochs=200 stage1_epochs=30 \
-  batch_size=1024 eval_every=1 \
-  mmd_start=0.9 mmd_end=0.2 \
-  smooth_prob=0.3 early_stop_patience=50 \
   > training_intra.log 2>&1 &
 tail -f training_intra.log
 ```
 
 Key findings for intra-subject:
-- `eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70` — crop the 200ms pre-stimulus baseline; keeps only the visual response window (0–700ms), reducing noise by 30%
-- `mmd_end=0.2` — stronger MMD decay helps intra since the model has enough data to specialise
-- `early_stop_patience=50` — intra continues improving past epoch 50; allow long training
+- `eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70` — crop the 200ms pre-stimulus baseline; keeps only the visual response window (0–700ms)
+- Use default `epochs` and config otherwise — intra converges well with the standard settings
+
 
 ## Testing
 
