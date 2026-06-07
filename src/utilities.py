@@ -179,6 +179,8 @@ class Config:
     metadata_path: str = "data/things_eeg/image_metadata.npy"
     data_average: bool = True
     data_average_test: bool = False
+    eeg_t_start: float = 0.0   # crop start in seconds (stimulus onset)
+    eeg_t_end: float = 0.7     # crop end in seconds (covers P1, N170, P300)
     smooth_prob: float = 0.3
     smooth_kernel_size: int = 5
     smooth_sigma: float = 1.0

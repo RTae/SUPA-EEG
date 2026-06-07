@@ -127,6 +127,8 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         metadata_path=cfg.metadata_path,
         data_average=cfg.data_average,
         data_average_test=cfg.data_average_test,
+        eeg_t_start=cfg.eeg_t_start,
+        eeg_t_end=cfg.eeg_t_end,
         smooth_prob=cfg.smooth_prob,
         smooth_kernel_size=cfg.smooth_kernel_size,
         smooth_sigma=cfg.smooth_sigma,
@@ -172,6 +174,8 @@ def run_intra_subject(
             subject=subject_id,
             load_images=False, # since we already have the vision features, no need to load pixel data
             data_average=config.data_average,
+            eeg_t_start=config.eeg_t_start,
+            eeg_t_end=config.eeg_t_end,
         )
         test_dataset = ThingsEEGDataset(
             dataset_dir=config.dataset_dir,
@@ -179,6 +183,8 @@ def run_intra_subject(
             subject=subject_id,
             load_images=False, # since we already have the vision features, no need to load pixel data
             data_average=config.data_average_test,
+            eeg_t_start=config.eeg_t_start,
+            eeg_t_end=config.eeg_t_end,
         )
         train_loader = DataLoader(
             train_dataset,
@@ -332,6 +338,8 @@ def run_inter_subject(
                         subject=s,
                         load_images=False, # since we already have the vision features, no need to load pixel data
                         data_average=config.data_average,
+                        eeg_t_start=config.eeg_t_start,
+                        eeg_t_end=config.eeg_t_end,
                     ),
                     subject_id=s,
                 )
@@ -344,6 +352,8 @@ def run_inter_subject(
             subject=test_subject,
             load_images=False, # since we already have the vision features, no need to load pixel data
             data_average=config.data_average_test,
+            eeg_t_start=config.eeg_t_start,
+            eeg_t_end=config.eeg_t_end,
         )
         train_loader = DataLoader(
             train_dataset,

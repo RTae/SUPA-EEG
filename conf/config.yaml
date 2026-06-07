@@ -11,8 +11,14 @@ all_subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 # --- Data ------------------------------------------------------------------
 dataset_dir: data/things_eeg
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
-data_average: false
+data_average: true
 data_average_test: false
+
+# --- EEG time window (seconds) --------------------------------------------
+# Epoch spans -0.2s to +0.79s. Visual response starts at ~70ms.
+# Crop to post-stimulus window only — removes 200ms of baseline noise.
+eeg_t_start: 0.0    # stimulus onset
+eeg_t_end:   0.7    # covers P1 (80ms), N170 (170ms), P300 (300ms)
 
 # --- InternViT features ----------------------------------------------------
 internvit_model:  "OpenGVLab/InternViT-6B-448px-V1-5"
@@ -37,7 +43,7 @@ mmd_end: 0.2
 
 # --- Architecture ----------------------------------------------------------
 n_channels:       17
-n_timepoints:     100
+n_timepoints:     70   # 0.0s to 0.7s post-stimulus (was 100 with baseline)
 feature_dim:      512
 eeg_feature_dim:  1024
 image_input_dim:  3200

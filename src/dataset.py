@@ -19,6 +19,8 @@ class ThingsEEGDataset(Dataset):
         max_subjects: int = 10,
         load_images: bool = True,
         data_average: bool = False,
+        eeg_t_start: float = -0.2,
+        eeg_t_end: float = 1.0,
     ) -> None:
         
         self.max_subjects = max_subjects
@@ -43,6 +45,8 @@ class ThingsEEGDataset(Dataset):
         self.eeg_data, self.number_of_repetitions, self.number_of_subjects_loaded = self._load_eeg_data(
             dataset_dir, eeg_folder_list, eeg_file_name, device, subject,
             data_average=data_average,
+            eeg_t_start=eeg_t_start,
+            eeg_t_end=eeg_t_end,
         )
         
         logger.info("Loading image metadata...")
@@ -79,7 +83,7 @@ class ThingsEEGDataset(Dataset):
 
     
     @staticmethod
-    def _load_eeg_data(dataset_dir, folder_list: list[str], file_name: str, device: torch.device, subject: int, data_average: bool = False) -> list[dict[str, Any]]:
+    def _load_eeg_data(dataset_dir, folder_list: list[str], file_name: str, device: torch.device, subject: int, data_average: bool = False, eeg_t_start: float = -0.2, eeg_t_end: float = 1.0) -> list[dict[str, Any]]:
         # Load EEG data from numpy file and convert to torch tensor
         eeg_data = []
         number_of_repetitions = 0
@@ -104,6 +108,13 @@ class ThingsEEGDataset(Dataset):
             # Training image conditions × Training EEG repetitions × EEG channels × EEG time points
             # 16540, 4, 17, 100
             raw = data['preprocessed_eeg_data']
+
+            # Crop to post-stimulus window using the stored time axis
+            times = data['times']   # shape (n_timepoints,) in seconds
+            t_start_idx = int(np.searchsorted(times, eeg_t_start))
+            t_end_idx   = int(np.searchsorted(times, eeg_t_end))
+            raw = raw[..., t_start_idx:t_end_idx]
+
             number_of_repetitions = raw.shape[1]
 
             if data_average:
