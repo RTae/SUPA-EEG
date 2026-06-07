@@ -17,7 +17,7 @@ eeg_suffix: ""    # "" = 17-ch (sub-XX folders), "_63" = 63-ch (sub-XX_63 folder
 
 # --- EEG time window (seconds) --------------------------------------------
 # Epoch spans -0.2s to +0.79s. Visual response starts at ~70ms.
-# Crop to post-stimulus window only — removes 200ms of baseline noise.
+# Use eeg_t_start/eeg_t_end to crop the epoch (e.g. eeg_t_start=0.0 removes the 200ms baseline).
 eeg_t_start: -0.2   # full epoch (no crop) — inter-subject needs all signal
 eeg_t_end:   0.8    # covers full 100-point window
 
