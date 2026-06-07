@@ -13,9 +13,6 @@ class ResidualAdd(nn.Module):
 class EEGNetEncoder(nn.Module):
     """EEGProject-style MLP encoder.
 
-    Keeps the class name EEGNetEncoder for interface compatibility
-    with the rest of the codebase.
-
     Input:  (batch, n_channels, n_timepoints)
     Output: (batch, feature_dim)
 
