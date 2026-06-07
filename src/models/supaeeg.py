@@ -109,7 +109,7 @@ class SubjectAwareRouter(nn.Module):
 
 
 class SUPAEEG(nn.Module):
-    """SUPAEEG: temporal CNN EEG encoder + shared linear alignment.
+    """SUPAEEG: EEGProject + shared encoder alignment
 
     Architecture:
         EEG (batch, 17, 100)
