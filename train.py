@@ -19,7 +19,6 @@ from src.utilities import (
     log_results_table,
     make_model,
     make_optimizer,
-    make_scheduler,
     save_checkpoint,
     train_one_epoch,
 )
