@@ -437,6 +437,56 @@ def make_scheduler(
         config:    Runtime configuration.
 
     Returns:
+        A scheduler compatible with ``scheduler.step()`` once per epoch.
+    """
+    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+
+    epochs = int(config.epochs)
+    warmup_epochs = int(config.warmup_epochs)
+    lr = float(config.lr)
+    min_lr = float(config.stage2_lr)
+
+    if epochs <= 0:
+        raise ValueError(f"epochs must be > 0, got {epochs}")
+
+    # Allow disabling warmup via warmup_epochs=0.
+    if warmup_epochs <= 0:
+        return CosineAnnealingLR(
+            optimizer,
+            T_max=max(epochs, 1),
+            eta_min=min_lr,
+        )
+
+    if not (0.0 < min_lr <= lr):
+        raise ValueError(
+            f"stage2_lr must be in (0, lr], got stage2_lr={min_lr} lr={lr}"
+        )
+
+    warmup = LinearLR(
+        optimizer,
+        start_factor=min_lr / lr,
+        end_factor=1.0,
+        total_iters=warmup_epochs,
+    )
+    decay = CosineAnnealingLR(
+        optimizer,
+        T_max=max(epochs - warmup_epochs, 1),
+        eta_min=min_lr,
+    )
+    return SequentialLR(
+        optimizer,
+        schedulers=[warmup, decay],
+        milestones=[warmup_epochs],
+    )
+
+    Warms up from ``stage2_lr`` to ``lr`` over ``warmup_epochs``, then
+    decays back to ``stage2_lr`` over the remaining epochs.
+
+    Args:
+        optimizer: The AdamW optimiser to schedule.
+        config:    Runtime configuration.
+
+    Returns:
         A ``SequentialLR`` scheduler.
     """
     from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
