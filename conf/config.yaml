@@ -24,16 +24,16 @@ metadata_path:    "data/things_eeg/image_metadata.npy"
 extract_batch_size: 128  # images per InternViT forward pass (6B model, reduce if OOM)
 
 # --- Training --------------------------------------------------------------
-epochs: 15
+epochs: 100
 batch_size: 1024
 eval_every: 1
 grad_clip: 1.0
 
 # --- Two-stage schedule ----------------------------------------------------
-stage1_epochs: 20   # decay over 20 so mmd_w≈0.71 at epoch 10 (peak zone)
+stage1_epochs: 1000
 stage2_lr: 0.00001
 mmd_start: 0.9
-mmd_end: 0.5
+mmd_end: 0.2
 
 # --- Architecture ----------------------------------------------------------
 n_channels:       17
@@ -53,11 +53,12 @@ layer_dropout_rate: 0.1
 smooth_prob:        0.3
 smooth_kernel_size: 5
 smooth_sigma:       1.0
-early_stop_patience: 2
+early_stop_patience: 20
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
 weight_decay: 1e-4
+warmup_epochs: 20
 
 # --- Output ----------------------------------------------------------------
 # checkpoints and metrics.csv go here (set at runtime by Hydra)

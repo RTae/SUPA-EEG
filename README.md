@@ -35,7 +35,7 @@ flowchart TD
 
     subgraph LOSS["Two-stage loss"]
         S1["Stage 1 (epochs 1–20)\nmmd_w · MMD_RBF + (1−mmd_w) · InfoNCE\nmmd_w: 0.9 → 0.5 (linear decay)"]
-        S2["Stage 2 (epochs 21+)\nInfoNCE only\nshare_encoder frozen · lr → 5e-5"]
+        S2["Stage 2 (epochs 21+)\nInfoNCE only\nlr → 5e-5"]
     end
 
     EEG --> EE --> EP --> SE
@@ -179,6 +179,10 @@ python train.py epochs=60 lr=1e-4 batch_size=256
 
 # Force CPU
 DEVICE=cpu python train.py
+
+# Run with nohup and log to file
+nohup python train.py > training.log 2>&1 &
+tail -f training.log
 ```
 
 Outputs are written to `outputs/<date>/<time>/` (managed by Hydra):

@@ -19,6 +19,7 @@ from src.utilities import (
     log_results_table,
     make_model,
     make_optimizer,
+    make_scheduler,
     save_checkpoint,
     train_one_epoch,
 )
@@ -131,6 +132,7 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         smooth_kernel_size=cfg.smooth_kernel_size,
         smooth_sigma=cfg.smooth_sigma,
         early_stop_patience=cfg.early_stop_patience,
+        warmup_epochs=cfg.warmup_epochs,
     )
 
 
@@ -199,6 +201,7 @@ def run_intra_subject(
 
         model     = make_model(config, device)
         optimizer = make_optimizer(model, config)
+        scheduler = make_scheduler(optimizer, config)
         best_top1 = 0.0
         best_top5 = 0.0
         no_improve = 0   # early-stop counter (stage 2 only)
@@ -228,6 +231,8 @@ def run_intra_subject(
             writer.add_scalar("train/infonce",    components["infonce"],    epoch)
             writer.add_scalar("train/mmd",        components["mmd"],        epoch)
             writer.add_scalar("train/mmd_weight", components["mmd_weight"], epoch)
+            scheduler.step()
+            writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], epoch)
 
             row: dict[str, Any] = {
                 "epoch":      epoch,
@@ -278,7 +283,7 @@ def run_intra_subject(
         all_results[subject_id] = {"top1": best_top1, "top5": best_top5}
 
         # Free GPU memory before the next subject
-        del model, optimizer, train_loader, test_loader, train_dataset, test_dataset
+        del model, optimizer, scheduler, train_loader, test_loader, train_dataset, test_dataset
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -361,6 +366,7 @@ def run_inter_subject(
 
         model     = make_model(config, device)
         optimizer = make_optimizer(model, config)
+        scheduler = make_scheduler(optimizer, config)
         best_top1 = 0.0
         best_top5 = 0.0
         no_improve = 0   # early-stop counter (stage 2 only)
@@ -390,6 +396,8 @@ def run_inter_subject(
             writer.add_scalar("train/infonce",    components["infonce"],    epoch)
             writer.add_scalar("train/mmd",        components["mmd"],        epoch)
             writer.add_scalar("train/mmd_weight", components["mmd_weight"], epoch)
+            scheduler.step()
+            writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], epoch)
 
             row: dict[str, Any] = {
                 "epoch":      epoch,
@@ -440,7 +448,7 @@ def run_inter_subject(
         all_results[test_subject] = {"top1": best_top1, "top5": best_top5}
 
         # Free GPU memory before the next fold
-        del model, optimizer, train_loader, test_loader, train_dataset, test_dataset
+        del model, optimizer, scheduler, train_loader, test_loader, train_dataset, test_dataset
         gc.collect()
         torch.cuda.empty_cache()
 

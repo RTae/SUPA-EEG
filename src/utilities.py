@@ -183,6 +183,7 @@ class Config:
     smooth_kernel_size: int = 5
     smooth_sigma: float = 1.0
     early_stop_patience: int = 3
+    warmup_epochs: int = 5
 
 
 def train_one_epoch(
@@ -195,9 +196,6 @@ def train_one_epoch(
     config: "Config",
 ) -> dict[str, float]:
     """Run a single training epoch.
-
-    Stage transition: at epoch == config.stage1_epochs + 1, share_encoder is
-    frozen and lr is reduced to config.stage2_lr.
 
     Args:
         model:            SUPAEEG model (will be set to train mode).
@@ -212,16 +210,6 @@ def train_one_epoch(
         Dict with mean loss components over the epoch.
     """
     from src.trainer.loss import compute_loss  # local import avoids circular deps
-
-    # Stage 2 transition
-    if epoch == config.stage1_epochs + 1:
-        for p in model.share_encoder.parameters():
-            p.requires_grad = False
-        for g in optimizer.param_groups:
-            g["lr"] = config.stage2_lr
-        logger.info(
-            f"Stage 2: share_encoder frozen, lr -> {config.stage2_lr}"
-        )
 
     model.train()
     sums: dict[str, float] = {"total": 0.0, "infonce": 0.0, "mmd": 0.0, "mmd_weight": 0.0}
@@ -433,6 +421,42 @@ def make_model(
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
     ).to(device)
+
+
+def make_scheduler(
+    optimizer: AdamW,
+    config: "Config",
+) -> Any:
+    """Build a LinearLR warmup followed by CosineAnnealingLR decay.
+
+    Warms up from ``stage2_lr`` to ``lr`` over ``warmup_epochs``, then
+    decays back to ``stage2_lr`` over the remaining epochs.
+
+    Args:
+        optimizer: The AdamW optimiser to schedule.
+        config:    Runtime configuration.
+
+    Returns:
+        A ``SequentialLR`` scheduler.
+    """
+    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+
+    warmup = LinearLR(
+        optimizer,
+        start_factor=config.stage2_lr / config.lr,
+        end_factor=1.0,
+        total_iters=config.warmup_epochs,
+    )
+    decay = CosineAnnealingLR(
+        optimizer,
+        T_max=max(config.epochs - config.warmup_epochs, 1),
+        eta_min=config.stage2_lr,
+    )
+    return SequentialLR(
+        optimizer,
+        schedulers=[warmup, decay],
+        milestones=[config.warmup_epochs],
+    )
 
 
 def make_optimizer(model: Any, config: Config) -> AdamW:
