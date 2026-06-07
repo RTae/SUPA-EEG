@@ -17,6 +17,8 @@
 | Baseline           | Top-5     | 99.0% | 98.0% | 99.5% | 98.5% | 95.5% | 98.5% | 98.0% | 100.0% | 98.0% | 99.5% | 98.5% |
 | Smooth aug + DC removal + eval every epoch | Top-1 | 88.5% | 88.0% | 85.5% | 80.5% | 78.5% | 90.5% | 82.5% | 92.0% | 86.0% | 95.5% | 86.8% |
 | Smooth aug + DC removal + eval every epoch | Top-5 | 99.0% | 100.0% | 99.0% | 99.5% | 96.5% | 98.0% | 97.5% | 100.0% | 98.5% | 100.0% | 98.8% |
+| Smooth aug + DC removal + eval every epoch + Select time window | Top-1 | 92.0% | 88.5% | 88.0% | 83.0% | 81.0% | 91.0% | 84.0% | 93.0% | 88.0% | 94.5% | 88.3% |
+| Smooth aug + DC removal + eval every epoch + Select time window | Top-5 | 100.0% | 99.5% | 99.5% | 99.5% | 97.0% | 99.5% | 99.0% | 99.5% | 99.5% | 99.5% | 99.3% |
 
 ## INTER-SUBJECT
 | Method              | Metric | Sub01 | Sub02 | Sub03 | Sub04 | Sub05 | Sub06 | Sub07 | Sub08 | Sub09 | Sub10 | Avg |
