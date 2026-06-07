@@ -188,6 +188,17 @@ def run_intra_subject(
             eeg_t_end=config.eeg_t_end,
             eeg_suffix=config.eeg_suffix,
         )
+        if train_dataset.eeg_data is not None:
+            actual_channels    = train_dataset.eeg_data.shape[1]
+            actual_timepoints  = train_dataset.eeg_data.shape[2]
+            if actual_channels != config.n_channels or actual_timepoints != config.n_timepoints:
+                raise ValueError(
+                    f"Subject {subject_id}: loaded EEG shape "
+                    f"(n_channels={actual_channels}, n_timepoints={actual_timepoints}) "
+                    f"does not match config "
+                    f"(n_channels={config.n_channels}, n_timepoints={config.n_timepoints}). "
+                    "Check eeg_suffix, eeg_t_start, and eeg_t_end settings."
+                )
         train_loader = DataLoader(
             train_dataset,
             batch_size=config.batch_size,
