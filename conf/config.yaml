@@ -30,7 +30,7 @@ eval_every: 1
 grad_clip: 1.0
 
 # --- Two-stage schedule ----------------------------------------------------
-stage1_epochs: 20
+stage1_epochs: 150
 stage2_lr: 0.00001
 mmd_start: 0.9
 mmd_end: 0.5
