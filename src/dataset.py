@@ -91,11 +91,11 @@ class ThingsEEGDataset(Dataset):
         number_of_repetitions = 0
         number_of_subjects_loaded = 0
         
+        import re as _re
+        folder_pattern = _re.compile(r"sub-\d{2}" + _re.escape(eeg_suffix) + r"$")
         for subject_folder in folder_list:
             subject_path = os.path.join(dataset_dir, subject_folder)
             # Match folder by suffix: "" -> sub-XX, "_63" -> sub-XX_63
-            import re as _re
-            folder_pattern = _re.compile(r"sub-\d{2}" + _re.escape(eeg_suffix) + r"$")
             if not folder_pattern.match(subject_folder):
                 continue
             if subject != -1 and subject_folder != f"sub-{subject:02d}{eeg_suffix}":
