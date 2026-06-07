@@ -448,23 +448,43 @@ def make_scheduler(
         # No-op: keep constant lr throughout training
         return ConstantLR(optimizer, factor=1.0, total_iters=0)
 
+    epochs = int(config.epochs)
+    warmup_epochs = int(config.warmup_epochs)
+    lr = float(config.lr)
+    min_lr = float(config.stage2_lr)
+
+    if epochs <= 0:
+        raise ValueError(f"epochs must be > 0, got {epochs}")
+
+    # Allow disabling warmup via warmup_epochs=0.
+    if warmup_epochs <= 0:
+        return CosineAnnealingLR(
+            optimizer,
+            T_max=max(epochs, 1),
+            eta_min=min_lr,
+        )
+
+    if not (0.0 < min_lr <= lr):
+        raise ValueError(
+            f"stage2_lr must be in (0, lr], got stage2_lr={min_lr} lr={lr}"
+        )
+
     warmup = LinearLR(
         optimizer,
-        start_factor=config.stage2_lr / config.lr,
+        start_factor=min_lr / lr,
         end_factor=1.0,
-        total_iters=config.warmup_epochs,
+        total_iters=warmup_epochs,
     )
     decay = CosineAnnealingLR(
         optimizer,
-        T_max=max(config.epochs - config.warmup_epochs, 1),
-        eta_min=config.stage2_lr,
+        T_max=max(epochs - warmup_epochs, 1),
+        eta_min=min_lr,
     )
     return SequentialLR(
         optimizer,
         schedulers=[warmup, decay],
-        milestones=[config.warmup_epochs],
+        milestones=[warmup_epochs],
     )
-
 
 def make_optimizer(model: Any, config: Config) -> AdamW:
     """Build an AdamW optimiser from ``config``.

@@ -19,7 +19,6 @@ from src.utilities import (
     log_results_table,
     make_model,
     make_optimizer,
-    make_scheduler,
     save_checkpoint,
     train_one_epoch,
 )
@@ -207,7 +206,9 @@ def run_intra_subject(
 
         model     = make_model(config, device)
         optimizer = make_optimizer(model, config)
+        from src.utilities import make_scheduler
         scheduler = make_scheduler(optimizer, config)
+        scheduler.step(0)  # set initial warmup LR before epoch 1
         best_top1 = 0.0
         best_top5 = 0.0
         no_improve = 0   # early-stop counter (stage 2 only)
@@ -378,7 +379,9 @@ def run_inter_subject(
 
         model     = make_model(config, device)
         optimizer = make_optimizer(model, config)
+        from src.utilities import make_scheduler
         scheduler = make_scheduler(optimizer, config)
+        scheduler.step(0)  # set initial warmup LR before epoch 1
         best_top1 = 0.0
         best_top5 = 0.0
         no_improve = 0   # early-stop counter (stage 2 only)

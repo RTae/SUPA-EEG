@@ -109,20 +109,20 @@ class SubjectAwareRouter(nn.Module):
 
 
 class SUPAEEG(nn.Module):
-    """SUPAEEG: temporal CNN EEG encoder + shared MLP alignment.
+    """SUPAEEG: EEGProject + shared encoder alignment
 
     Architecture:
         EEG (batch, 17, 100)
           eeg_encoder  -> (batch, 1024)   temporal CNN
           eeg_projector Linear(1024, 512)
-          share_encoder MLP(512→512→512)  <- shared with image, nonlinear
+          share_encoder Linear(512, 512)  <- shared with image
           l2-normalize  -> zE (batch, 512)
 
         image_layers (batch, 5, 3200)
           router weights -> weighted mean -> (batch, 3200)
           img_pre_projector Linear(3200, 1024)
           img_projector     Linear(1024, 512)
-          share_encoder     MLP(512→512→512)  <- SAME nn.Module as EEG
+          share_encoder     Linear(512, 512)  <- SAME nn.Module as EEG
           l2-normalize      -> zI (batch, 512)
 
     Args:
