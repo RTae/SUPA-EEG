@@ -523,6 +523,10 @@ def train(cfg: DictConfig) -> None:
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Output dir: {output_dir}")
 
+    # Persist the full loguru log to a file alongside all other outputs.
+    log_file = os.path.join(output_dir, "train.log")
+    logger.add(log_file, level="INFO", format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {name}:{function}:{line} - {message}")
+
     # Save a human-readable copy of the config alongside results
     config_dump_path = os.path.join(output_dir, "config_used.yaml")
     with open(config_dump_path, "w") as f:
