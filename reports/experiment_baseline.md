@@ -16,8 +16,8 @@
 | SAMGA              | Top-5     | 95.5% | 99.8% | 98.2% | 98.7% | 98.4% | 99.9% | 98.7% | 99.8% | 99.2% | 99.8% | 98.8% |
 | Baseline           | Top-1     | 86.5% | 84.5% | 83.0% | 78.5% | 76.5% | 89.5% | 85.5% | 92.0% | 83.0% | 91.5% | 85.0% |
 | Baseline           | Top-5     | 99.0% | 98.0% | 99.5% | 98.5% | 95.5% | 98.5% | 98.0% | 100.0% | 98.0% | 99.5% | 98.5% |
-| Smooth aug + DC removal + eval every epoch | Top-1 | | | | | | | | | | | | | |
-| Smooth aug + DC removal + eval every epoch | Top-5 | | | | | | | | | | | | | |
+| Smooth aug + DC removal + eval every epoch | Top-1 | 88.5% | 88.0% | 85.5% | 80.5% | 78.5% | 90.5% | 82.5% | 92.0% | 86.0% | 95.5% | 86.8% |
+| Smooth aug + DC removal + eval every epoch | Top-5 | 99.0% | 100.0% | 99.0% | 99.5% | 96.5% | 98.0% | 97.5% | 100.0% | 98.5% | 100.0% | 98.8% |
 
 ## INTER-SUBJECT
 | Method              | Metric | Sub01 | Sub02 | Sub03 | Sub04 | Sub05 | Sub06 | Sub07 | Sub08 | Sub09 | Sub10 | Avg |
