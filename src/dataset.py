@@ -21,6 +21,7 @@ class ThingsEEGDataset(Dataset):
         data_average: bool = False,
         eeg_t_start: float = -0.2,
         eeg_t_end: float = 1.0,
+        eeg_suffix: str = "",
     ) -> None:
         
         self.max_subjects = max_subjects
@@ -47,6 +48,7 @@ class ThingsEEGDataset(Dataset):
             data_average=data_average,
             eeg_t_start=eeg_t_start,
             eeg_t_end=eeg_t_end,
+            eeg_suffix=eeg_suffix,
         )
         
         logger.info("Loading image metadata...")
@@ -83,7 +85,7 @@ class ThingsEEGDataset(Dataset):
 
     
     @staticmethod
-    def _load_eeg_data(dataset_dir, folder_list: list[str], file_name: str, device: torch.device, subject: int, data_average: bool = False, eeg_t_start: float = -0.2, eeg_t_end: float = 1.0) -> list[dict[str, Any]]:
+    def _load_eeg_data(dataset_dir, folder_list: list[str], file_name: str, device: torch.device, subject: int, data_average: bool = False, eeg_t_start: float = -0.2, eeg_t_end: float = 1.0, eeg_suffix: str = "") -> list[dict[str, Any]]:
         # Load EEG data from numpy file and convert to torch tensor
         eeg_data = []
         number_of_repetitions = 0
@@ -91,7 +93,12 @@ class ThingsEEGDataset(Dataset):
         
         for subject_folder in folder_list:
             subject_path = os.path.join(dataset_dir, subject_folder)
-            if subject != -1 and subject_folder != f"sub-{subject:02d}":
+            # Match folder by suffix: "" -> sub-XX, "_63" -> sub-XX_63
+            import re as _re
+            folder_pattern = _re.compile(r"sub-\d{2}" + _re.escape(eeg_suffix) + r"$")
+            if not folder_pattern.match(subject_folder):
+                continue
+            if subject != -1 and subject_folder != f"sub-{subject:02d}{eeg_suffix}":
                 continue
             
             if not os.path.isdir(subject_path):
@@ -105,9 +112,12 @@ class ThingsEEGDataset(Dataset):
                 continue
                 
             data = np.load(path, allow_pickle=True).item()
-            # Training image conditions × Training EEG repetitions × EEG channels × EEG time points
-            # 16540, 4, 17, 100
             raw = data['preprocessed_eeg_data']
+
+            # Drop stimulus/trigger channel if present (last channel named 'stim')
+            ch_names = list(data.get('ch_names', []))
+            if ch_names and ch_names[-1].lower() == 'stim':
+                raw = raw[..., :-1, :]   # drop last channel: (N, reps, 64, T) -> (N, reps, 63, T)
 
             # Crop to post-stimulus window using the stored time axis
             times = data['times']   # shape (n_timepoints,) in seconds

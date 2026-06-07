@@ -13,6 +13,7 @@ dataset_dir: data/things_eeg
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
 data_average: true
 data_average_test: false
+eeg_suffix: ""    # "" = 17-ch (sub-XX folders), "_63" = 63-ch (sub-XX_63 folders)
 
 # --- EEG time window (seconds) --------------------------------------------
 # Epoch spans -0.2s to +0.79s. Visual response starts at ~70ms.
@@ -42,7 +43,7 @@ mmd_start: 0.9
 mmd_end: 0.5
 
 # --- Architecture ----------------------------------------------------------
-n_channels:       17
+n_channels:       17   # 17 for default, 63 for eeg_suffix=_63
 n_timepoints:     100
 feature_dim:      512
 eeg_feature_dim:  1024
@@ -64,7 +65,7 @@ early_stop_patience: 2
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
 weight_decay: 1e-4
-warmup_epochs: 0    # 0 = disabled
+warmup_epochs: 0    # 0 = flat lr throughout; >0 = warmup then cosine decay
 
 # --- Output ----------------------------------------------------------------
 # checkpoints and metrics.csv go here (set at runtime by Hydra)

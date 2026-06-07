@@ -179,6 +179,7 @@ class Config:
     metadata_path: str = "data/things_eeg/image_metadata.npy"
     data_average: bool = True
     data_average_test: bool = False
+    eeg_suffix: str = ""          # "" = 17-ch (sub-XX), "_63" = 63-ch (sub-XX_63)
     eeg_t_start: float = 0.0   # crop start in seconds (stimulus onset)
     eeg_t_end: float = 0.7     # crop end in seconds (covers P1, N170, P300)
     smooth_prob: float = 0.3
@@ -429,19 +430,23 @@ def make_scheduler(
     optimizer: AdamW,
     config: "Config",
 ) -> Any:
-    """Build a LinearLR warmup followed by CosineAnnealingLR decay.
+    """Build a LR scheduler. Returns a no-op when warmup_epochs == 0.
 
-    Warms up from ``stage2_lr`` to ``lr`` over ``warmup_epochs``, then
-    decays back to ``stage2_lr`` over the remaining epochs.
+    When warmup_epochs > 0: LinearLR warmup from stage2_lr → lr, then
+    CosineAnnealingLR decay back to stage2_lr over remaining epochs.
 
     Args:
         optimizer: The AdamW optimiser to schedule.
         config:    Runtime configuration.
 
     Returns:
-        A ``SequentialLR`` scheduler.
+        A scheduler with a .step() method.
     """
-    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+    from torch.optim.lr_scheduler import ConstantLR, CosineAnnealingLR, LinearLR, SequentialLR
+
+    if config.warmup_epochs <= 0:
+        # No-op: keep constant lr throughout training
+        return ConstantLR(optimizer, factor=1.0, total_iters=0)
 
     warmup = LinearLR(
         optimizer,

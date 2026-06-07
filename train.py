@@ -127,6 +127,7 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         metadata_path=cfg.metadata_path,
         data_average=cfg.data_average,
         data_average_test=cfg.data_average_test,
+        eeg_suffix=cfg.eeg_suffix,
         eeg_t_start=cfg.eeg_t_start,
         eeg_t_end=cfg.eeg_t_end,
         smooth_prob=cfg.smooth_prob,
@@ -172,19 +173,21 @@ def run_intra_subject(
             dataset_dir=config.dataset_dir,
             data_type="train",
             subject=subject_id,
-            load_images=False, # since we already have the vision features, no need to load pixel data
+            load_images=False,
             data_average=config.data_average,
             eeg_t_start=config.eeg_t_start,
             eeg_t_end=config.eeg_t_end,
+            eeg_suffix=config.eeg_suffix,
         )
         test_dataset = ThingsEEGDataset(
             dataset_dir=config.dataset_dir,
             data_type="test",
             subject=subject_id,
-            load_images=False, # since we already have the vision features, no need to load pixel data
+            load_images=False,
             data_average=config.data_average_test,
             eeg_t_start=config.eeg_t_start,
             eeg_t_end=config.eeg_t_end,
+            eeg_suffix=config.eeg_suffix,
         )
         train_loader = DataLoader(
             train_dataset,
@@ -336,10 +339,11 @@ def run_inter_subject(
                         dataset_dir=config.dataset_dir,
                         data_type="train",
                         subject=s,
-                        load_images=False, # since we already have the vision features, no need to load pixel data
+                        load_images=False,
                         data_average=config.data_average,
                         eeg_t_start=config.eeg_t_start,
                         eeg_t_end=config.eeg_t_end,
+                        eeg_suffix=config.eeg_suffix,
                     ),
                     subject_id=s,
                 )
@@ -350,10 +354,11 @@ def run_inter_subject(
             dataset_dir=config.dataset_dir,
             data_type="test",
             subject=test_subject,
-            load_images=False, # since we already have the vision features, no need to load pixel data
+            load_images=False,
             data_average=config.data_average_test,
             eeg_t_start=config.eeg_t_start,
             eeg_t_end=config.eeg_t_end,
+            eeg_suffix=config.eeg_suffix,
         )
         train_loader = DataLoader(
             train_dataset,
