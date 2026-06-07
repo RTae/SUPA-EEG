@@ -89,7 +89,6 @@ class _SubjectIDDataset(Dataset):
 # ---------------------------------------------------------------------------
 # Config conversion
 # ---------------------------------------------------------------------------
-
 def _cfg_to_config(cfg: DictConfig) -> Config:
     """Convert a Hydra DictConfig into the Config dataclass used by the runners."""
     return Config(
@@ -139,8 +138,6 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
 # ---------------------------------------------------------------------------
 # Protocol runners
 # ---------------------------------------------------------------------------
-
-
 def run_intra_subject(
     config: Config,
     internvit_lookup: InternViTFeatureLookup,
@@ -457,17 +454,9 @@ def run_inter_subject(
     log_results_table(all_results, avg_top1, avg_top5, protocol="inter")
     return all_results
 
-
-# ---------------------------------------------------------------------------
-# Typer entry point
-# ---------------------------------------------------------------------------
-
-
 # ---------------------------------------------------------------------------
 # Hydra entry point
 # ---------------------------------------------------------------------------
-
-
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def train(cfg: DictConfig) -> None:
     """Train SUPAEEG on THINGS-EEG2 using the intra- or inter-subject protocol.
