@@ -180,8 +180,8 @@ class Config:
     data_average: bool = True
     data_average_test: bool = False
     eeg_suffix: str = ""          # "" = 17-ch (sub-XX), "_63" = 63-ch (sub-XX_63)
-    eeg_t_start: float = 0.0   # crop start in seconds (stimulus onset)
-    eeg_t_end: float = 0.7     # crop end in seconds (covers P1, N170, P300)
+    eeg_t_start: float = -0.2   # crop start in seconds (stimulus onset)
+    eeg_t_end: float = 0.8     # crop end in seconds (matches default 100-point epoch)
     smooth_prob: float = 0.3
     smooth_kernel_size: int = 5
     smooth_sigma: float = 1.0
