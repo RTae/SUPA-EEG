@@ -26,20 +26,21 @@ flowchart TD
     end
 
     subgraph IMG_PATH["Image branch"]
+        RT["SubjectAwareRouter\nsoftmax weights over 5 layers\n(train: subject-aware)"]
+        AVG["weighted sum over 5 layers\n→ (batch, 3200)"]
         IP1["img_pre_projector\nLinear(3200→1024)"]
-        AVG["mean over 5 layers\n→ (batch, 1024)"]
         IP2["img_projector\nLinear(1024→512)"]
     end
 
     SE["share_encoder\nLinear(512→512)\nsame weights · both paths"]
 
     subgraph LOSS["Two-stage loss"]
-        S1["Stage 1 (epochs 1–20)\nmmd_w · MMD_RBF + (1−mmd_w) · InfoNCE\nmmd_w: 0.9 → 0.5 (linear decay)"]
-        S2["Stage 2 (epochs 21+, if stage1_epochs < epochs)\nInfoNCE only · share_encoder frozen · lr → 1e-5"]
+        S1["Stage 1 (epochs 1–30)\nmmd_w · MMD_RBF + (1−mmd_w) · InfoNCE\nmmd_w: 0.9 → 0.2 (linear decay)"]
+        S2["Full run\nLR schedule: warmup + cosine decay\neta_min = 1e-5"]
     end
 
     EEG --> EE --> EP --> SE
-    IMG --> IP1 --> AVG --> IP2 --> SE
+    IMG --> RT --> AVG --> IP1 --> IP2 --> SE
     SE -->|"zE, zI  (batch, 512) ℓ2-norm"| LOSS
     IV -.->|stop-grad| IMG
 ```
@@ -58,7 +59,7 @@ flowchart LR
 
     subgraph GALLERY["Image gallery · 200 test concepts"]
         IF["InternViT features\n(200, 5, 3200)"]
-        IP["img_pre_projector → mean → img_projector\n→ share_encoder  ℓ2-norm\n→ (200, 512)"]
+        IP["router(global prior) → weighted sum\n→ img_pre_projector → img_projector\n→ share_encoder  ℓ2-norm\n→ (200, 512)"]
     end
 
     RET["Cosine similarity\n200-way ranking\nTop-1 / Top-5"]
