@@ -11,6 +11,8 @@ from loguru import logger
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
+from src.encoders.eeg_augmentation import smooth_eeg
+
 # -- EEG channel groups --
 PRE_FRONTAL = ["FP1", "FPZ", "FP2", "AF3", "AF4"]
 FRONTAL = ["F7", "F5", "F3", "F1", "FZ", "F2", "F4", "F6", "F8"]
@@ -157,6 +159,11 @@ class Config:
     image_input_dim: int = 3200
     image_mid_dim: int = 1024
     dropout: float = 0.3
+    n_subjects: int = 10
+    n_layers: int = 5
+    router_temperature: float = 1.0
+    subject_dropout_rate: float = 0.3
+    layer_dropout_rate: float = 0.1
     lr: float = 1e-4
     weight_decay: float = 1e-4
     grad_clip: float = 1.0
@@ -170,6 +177,13 @@ class Config:
     train_img_dir: str = "data/things_eeg/training_images"
     test_img_dir: str = "data/things_eeg/test_images"
     metadata_path: str = "data/things_eeg/image_metadata.npy"
+    data_average: bool = True
+    data_average_test: bool = False
+    smooth_prob: float = 0.3
+    smooth_kernel_size: int = 5
+    smooth_sigma: float = 1.0
+    early_stop_patience: int = 3
+    warmup_epochs: int = 5
 
 
 def train_one_epoch(
@@ -182,9 +196,6 @@ def train_one_epoch(
     config: "Config",
 ) -> dict[str, float]:
     """Run a single training epoch.
-
-    Stage transition: at epoch == config.stage1_epochs + 1, share_encoder is
-    frozen and lr is reduced to config.stage2_lr.
 
     Args:
         model:            SUPAEEG model (will be set to train mode).
@@ -200,27 +211,26 @@ def train_one_epoch(
     """
     from src.trainer.loss import compute_loss  # local import avoids circular deps
 
-    # Stage 2 transition
-    if epoch == config.stage1_epochs + 1:
-        for p in model.share_encoder.parameters():
-            p.requires_grad = False
-        for g in optimizer.param_groups:
-            g["lr"] = config.stage2_lr
-        logger.info(
-            f"Stage 2: share_encoder frozen, lr -> {config.stage2_lr}"
-        )
-
     model.train()
     sums: dict[str, float] = {"total": 0.0, "infonce": 0.0, "mmd": 0.0, "mmd_weight": 0.0}
     n_batches = 0
     for batch in train_loader:
         eeg: torch.Tensor = batch["eeg"].to(device)
+        subject_ids: torch.Tensor = batch["subject_ids"].to(device)
+
+        # smooth augmentation — training only
+        eeg = smooth_eeg(
+            eeg,
+            kernel_size=config.smooth_kernel_size,
+            sigma=config.smooth_sigma,
+            p=config.smooth_prob,
+        )
 
         image_layers = internvit_lookup.retrieve_batch(
             batch["image_concepts"], batch["image_files"]
         ).to(device)
 
-        zE, zI = model(eeg, image_layers)
+        zE, zI = model(eeg, image_layers, subject_ids)
 
         loss, components = compute_loss(
             zE, zI, model.logit_scale,
@@ -295,7 +305,10 @@ def evaluate(
         concept_order, [concept_to_file[c] for c in concept_order]
     )  # (N_concepts, n_layers, 3200)
     with torch.no_grad():
-        image_features = model.encode_image(gallery.to(device)).cpu().numpy()  # (N_concepts, 512)
+        image_features = model.encode_image(
+            gallery.to(device),
+            subject_ids=None,
+        ).cpu().numpy()  # (N_concepts, 512)
 
     top5_count, top1_count, total = retrieve_all(eeg_features, image_features)
     return top1_count / total, top5_count / total
@@ -383,6 +396,17 @@ def make_model(
     """
     from src.models.supaeeg import SUPAEEG  # local import avoids circular deps
 
+    n_layers = len(config.layer_ids)
+    if n_layers == 0:
+        raise ValueError("config.layer_ids must contain at least one layer")
+    if config.n_layers != n_layers:
+        logger.warning(
+            "config.n_layers (%d) does not match len(config.layer_ids) (%d); "
+            "using len(config.layer_ids) for model construction",
+            config.n_layers,
+            n_layers,
+        )
+
     return SUPAEEG(
         n_channels=config.n_channels,
         n_timepoints=config.n_timepoints,
@@ -391,8 +415,69 @@ def make_model(
         image_mid_dim=config.image_mid_dim,
         feature_dim=config.feature_dim,
         dropout=config.dropout,
+        n_subjects=config.n_subjects,
+        n_layers=n_layers,
+        router_temperature=config.router_temperature,
+        subject_dropout_rate=config.subject_dropout_rate,
+        layer_dropout_rate=config.layer_dropout_rate,
     ).to(device)
 
+
+def make_scheduler(
+    optimizer: AdamW,
+    config: "Config",
+) -> Any:
+    """Build a LinearLR warmup followed by CosineAnnealingLR decay.
+
+    Warms up from ``stage2_lr`` to ``lr`` over ``warmup_epochs``, then
+    decays back to ``stage2_lr`` over the remaining epochs.
+
+    Args:
+        optimizer: The AdamW optimiser to schedule.
+        config:    Runtime configuration.
+
+    Returns:
+        A scheduler compatible with ``scheduler.step()`` once per epoch.
+    """
+    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+
+    epochs = int(config.epochs)
+    warmup_epochs = int(config.warmup_epochs)
+    lr = float(config.lr)
+    min_lr = float(config.stage2_lr)
+
+    if epochs <= 0:
+        raise ValueError(f"epochs must be > 0, got {epochs}")
+
+    # Allow disabling warmup via warmup_epochs=0.
+    if warmup_epochs <= 0:
+        return CosineAnnealingLR(
+            optimizer,
+            T_max=max(epochs, 1),
+            eta_min=min_lr,
+        )
+
+    if not (0.0 < min_lr <= lr):
+        raise ValueError(
+            f"stage2_lr must be in (0, lr], got stage2_lr={min_lr} lr={lr}"
+        )
+
+    warmup = LinearLR(
+        optimizer,
+        start_factor=min_lr / lr,
+        end_factor=1.0,
+        total_iters=warmup_epochs,
+    )
+    decay = CosineAnnealingLR(
+        optimizer,
+        T_max=max(epochs - warmup_epochs, 1),
+        eta_min=min_lr,
+    )
+    return SequentialLR(
+        optimizer,
+        schedulers=[warmup, decay],
+        milestones=[warmup_epochs],
+    )
 
 def make_optimizer(model: Any, config: Config) -> AdamW:
     """Build an AdamW optimiser from ``config``.
@@ -409,5 +494,4 @@ def make_optimizer(model: Any, config: Config) -> AdamW:
         lr=config.lr,
         weight_decay=config.weight_decay,
     )
-
 

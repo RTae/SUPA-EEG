@@ -21,6 +21,10 @@ download() {
   local out_name
   out_dir="$(dirname "$out")"
   out_name="$(basename "$out")"
+  if [[ -f "$out" ]]; then
+    echo "Already exists, skipping: $out"
+    return 0
+  fi
   echo "Downloading $out..."
   aria2c \
     --allow-overwrite=true \
@@ -55,12 +59,34 @@ download "f/bde721733abe4b1a9d4e" "$DIR/image_feature/internvit_multilevel_20_24
 
 # Extract
 for i in {01..10}; do
-  echo "Extracting sub-$i.zip..."
-  unzip -q "$DIR/sub-$i.zip" -d "$DIR" && rm "$DIR/sub-$i.zip"
+  zip_file="$DIR/sub-${i}.zip"
+  sub_dir="$DIR/sub-${i}"
+  if [[ -d "$sub_dir" ]]; then
+    echo "Already extracted, skipping: $sub_dir"
+    [[ -f "$zip_file" ]] && rm "$zip_file"
+    continue
+  fi
+  if [[ ! -f "$zip_file" ]]; then
+    echo "WARNING: $zip_file not found, skipping."
+    continue
+  fi
+  echo "Extracting sub-${i}.zip..."
+  unzip -q "$zip_file" -d "$DIR" && rm "$zip_file"
 done
 
 echo "Extracting images..."
-unzip -q "$DIR/train_images.zip" -d "$DIR" && rm "$DIR/train_images.zip"
-unzip -q "$DIR/test_images.zip"  -d "$DIR" && rm "$DIR/test_images.zip"
+if [[ -d "$DIR/training_images" ]]; then
+  echo "Already extracted, skipping: $DIR/training_images"
+  [[ -f "$DIR/train_images.zip" ]] && rm "$DIR/train_images.zip"
+else
+  unzip -q "$DIR/train_images.zip" -d "$DIR" && rm "$DIR/train_images.zip"
+fi
+
+if [[ -d "$DIR/test_images" ]]; then
+  echo "Already extracted, skipping: $DIR/test_images"
+  [[ -f "$DIR/test_images.zip" ]] && rm "$DIR/test_images.zip"
+else
+  unzip -q "$DIR/test_images.zip" -d "$DIR" && rm "$DIR/test_images.zip"
+fi
 
 echo "Done."

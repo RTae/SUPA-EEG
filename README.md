@@ -35,7 +35,7 @@ flowchart TD
 
     subgraph LOSS["Two-stage loss"]
         S1["Stage 1 (epochs 1–20)\nmmd_w · MMD_RBF + (1−mmd_w) · InfoNCE\nmmd_w: 0.9 → 0.5 (linear decay)"]
-        S2["Stage 2 (epochs 21+)\nInfoNCE only\nshare_encoder frozen · lr → 5e-5"]
+        S2["Stage 2 (epochs 21+)\nInfoNCE only\nlr → 1e-5"]
     end
 
     EEG --> EE --> EP --> SE
@@ -107,11 +107,10 @@ data/
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create virtualenv and install dependencies
-uv venv && uv sync --no-build-isolation
+uv venv && uv sync
 
-# Install flash-attn separately
-uv add flash-attn --no-build-isolation
-uv add einops --no-build-isolation
+# Install flash-attn and einops separately (require --no-build-isolation)
+uv pip install einops flash-attn --no-build-isolation
 
 # Activate (every session)
 source .venv/bin/activate
@@ -127,8 +126,15 @@ bash scripts/download_data.sh
 ```
 
 This fetches:
-- Preprocessed EEG for subjects 1–10 → `data/things_eeg/sub-XX/`
+- Preprocessed EEG for subjects 1–10 with only 17 channels `data/things_eeg/sub-XX/`
 - Image metadata, training images (1654 concepts × 10 images), test images (200 concepts × 1 image)
+- InternViT features are also available for download in this script, but you can also extract them locally (see below).
+
+for 63 channels, run
+```bash
+bash scripts/download_dataset_full.sh
+```
+which fetches the full dataset (including 63-channel EEG) but not the vision features (see below).
 
 Manual sources:
 
@@ -173,6 +179,10 @@ python train.py epochs=60 lr=1e-4 batch_size=256
 
 # Force CPU
 DEVICE=cpu python train.py
+
+# Run with nohup and log to file
+nohup python train.py > training.log 2>&1 &
+tail -f training.log
 ```
 
 Outputs are written to `outputs/<date>/<time>/` (managed by Hydra):
@@ -246,6 +256,28 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 | Loss functions | `src/trainer/loss.py` | `mmd_rbf`, `info_nce_loss`, `compute_loss` |
 | Retrieval eval | `src/trainer/metrics.py` | `retrieve_all` — Top-1 / Top-5 diagonal retrieval |
 | Feature extraction | `scripts/extract_internvit_features.py` | Offline InternViT feature extraction + `ensure_internvit_features` guard |
+
+## Testing
+
+Test files live alongside the source they test (no separate `tests/` folder required).
+pytest is configured in `pyproject.toml` to discover `test_*.py` files anywhere in the project.
+
+```bash
+# Run all tests
+pytest
+
+# Run a specific test file
+pytest src/test_dataset.py
+pytest src/trainer/test_metrics.py
+pytest src/models/test_supaeeg_router.py
+pytest test_train.py
+
+# Verbose output
+pytest -v
+
+# Stop on first failure
+pytest -x
+```
 
 ## Dataset Explorer
 

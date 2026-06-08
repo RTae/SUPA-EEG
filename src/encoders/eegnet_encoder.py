@@ -13,9 +13,6 @@ class ResidualAdd(nn.Module):
 class EEGNetEncoder(nn.Module):
     """EEGProject-style MLP encoder.
 
-    Keeps the class name EEGNetEncoder for interface compatibility
-    with the rest of the codebase.
-
     Input:  (batch, n_channels, n_timepoints)
     Output: (batch, feature_dim)
 
@@ -25,6 +22,7 @@ class EEGNetEncoder(nn.Module):
         feature_dim:  int = 1024
         dropout:      float = 0.3
     """
+
     def __init__(self, n_channels=17, n_timepoints=100,
                  feature_dim=1024, dropout=0.3):
         super().__init__()

@@ -11,6 +11,8 @@ all_subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 # --- Data ------------------------------------------------------------------
 dataset_dir: data/things_eeg
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
+data_average: false
+data_average_test: false
 
 # --- InternViT features ----------------------------------------------------
 internvit_model:  "OpenGVLab/InternViT-6B-448px-V1-5"
@@ -22,16 +24,16 @@ metadata_path:    "data/things_eeg/image_metadata.npy"
 extract_batch_size: 128  # images per InternViT forward pass (6B model, reduce if OOM)
 
 # --- Training --------------------------------------------------------------
-epochs: 60
-batch_size: 512
-eval_every: 5
+epochs: 200
+batch_size: 1024
+eval_every: 1
 grad_clip: 1.0
 
 # --- Two-stage schedule ----------------------------------------------------
-stage1_epochs: 20
-stage2_lr: 0.00005
+stage1_epochs: 30
+stage2_lr: 0.00001
 mmd_start: 0.9
-mmd_end: 0.5
+mmd_end: 0.2
 
 # --- Architecture ----------------------------------------------------------
 n_channels:       17
@@ -41,10 +43,22 @@ eeg_feature_dim:  1024
 image_input_dim:  3200
 image_mid_dim:    1024
 dropout:          0.3
+n_subjects:       10
+n_layers:         5
+router_temperature: 1.0
+subject_dropout_rate: 0.3
+layer_dropout_rate: 0.1
+
+# --- EEG augmentation (training only) -------------------------------------
+smooth_prob:        0.3
+smooth_kernel_size: 5
+smooth_sigma:       1.0
+early_stop_patience: 50
 
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
 weight_decay: 1e-4
+warmup_epochs: 10    # set > 0 to enable linear warmup then cosine decay
 
 # --- Output ----------------------------------------------------------------
 # checkpoints and metrics.csv go here (set at runtime by Hydra)
