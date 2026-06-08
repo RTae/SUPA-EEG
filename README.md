@@ -63,6 +63,28 @@ flowchart LR
     RES --> GELU --> FC2 --> DROP --> RES
 ```
 
+### SubjectAwareRouter
+
+```mermaid
+flowchart TD
+    SID["subject_ids\n(batch,) int64 or None"]
+    GL["global_logits\nlearned prior over 5 layers"]
+    SB["subject_bias\nEmbedding(10, 5)"]
+    SM["subject dropout mask\np = 0.3"]
+    ADD["add subject bias\nto global prior"]
+    LM["layer dropout mask\np = 0.1"]
+    LOGITS["router logits\n(batch, 5)"]
+    TEMP["divide by temperature\nT = 1.0"]
+    SOFT["softmax over layers"]
+    W["layer weights\n(batch, 5)"]
+    INF["inference path\nuse global prior only"]
+
+    GL --> ADD
+    SID --> SB --> SM --> ADD
+    ADD --> LM --> LOGITS --> TEMP --> SOFT --> W
+    GL --> INF --> TEMP
+```
+
 ### Inference Pipeline
 
 ```mermaid
