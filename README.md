@@ -35,8 +35,8 @@ flowchart TD
     SE["share_encoder\nLinear(512→512)\nsame weights · both paths"]
 
     subgraph LOSS["Two-stage loss"]
-        S1["Stage 1 (epochs 1–30)\nmmd_w · MMD_RBF + (1−mmd_w) · InfoNCE\nmmd_w: 0.9 → 0.2 (linear decay)"]
-        S2["Full run\nLR schedule: warmup + cosine decay\neta_min = 1e-5"]
+        S1["Stage 1 (epochs 1–20)\nmmd_w · MMD_RBF + (1−mmd_w) · InfoNCE\nmmd_w: 0.9 → 0.2 (linear decay)"]
+        S2["Default run\nflat LR (warmup_epochs=0)\noptional warmup + cosine if enabled"]
     end
 
     EEG --> EE --> EP --> SE
@@ -171,6 +171,16 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 |-----|-------------|---------|
 | `dataset_dir` | THINGS-EEG2 root | `data/things_eeg` |
 | `device` | Compute device (`DEVICE` env var overrides) | `cuda` |
+| `data_average` | Average repetitions in the training split | `true` |
+| `data_average_test` | Average repetitions in the test split | `false` |
+| `eeg_suffix` | EEG folder suffix: `""` = 17-ch, `"_63"` = 63-ch | `""` |
+
+### EEG time window
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `eeg_t_start` | Crop start time in seconds | `-0.2` |
+| `eeg_t_end` | Crop end time in seconds | `0.8` |
 
 ### Protocol
 
@@ -194,29 +204,34 @@ All keys live in `conf/config.yaml` and can be overridden as Hydra `key=value` p
 
 | Key | Description | Default |
 |-----|-------------|---------|
+| `n_channels` | Number of EEG channels | `17` |
+| `n_timepoints` | EEG timepoints per sample | `100` |
 | `feature_dim` | Shared embedding dimension | `512` |
 | `eeg_feature_dim` | EEGNetEncoder output dimension | `1024` |
 | `image_input_dim` | InternViT feature dimension per layer | `3200` |
 | `image_mid_dim` | Image pre-projector hidden dimension | `1024` |
+| `router_temperature` | Router softmax temperature | `1.0` |
+| `subject_dropout_rate` | Subject-bias dropout in router | `0.3` |
+| `layer_dropout_rate` | Layer-logit dropout in router | `0.1` |
 
 ### Training
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `epochs` | Total training epochs | `15` |
+| `epochs` | Total training epochs | `200` |
 | `batch_size` | Batch size | `1024` |
 | `eval_every` | Evaluate every N epochs | `1` |
 | `lr` | Initial learning rate | `1e-4` |
 | `weight_decay` | AdamW weight decay | `1e-4` |
 | `grad_clip` | Max gradient norm | `1.0` |
 | `stage1_epochs` | Epochs in MMD+InfoNCE stage | `20` |
-| `stage2_lr` | Learning rate after stage-1 | `1e-5` |
+| `stage2_lr` | Minimum LR used by warmup/cosine schedule | `1e-5` |
 | `mmd_start` | MMD weight at epoch 1 | `0.9` |
-| `mmd_end` | MMD weight at end of stage 1 | `0.5` |
+| `mmd_end` | MMD weight at end of stage 1 | `0.2` |
 | `smooth_prob` | Gaussian smooth aug probability | `0.3` |
 | `smooth_kernel_size` | Smooth kernel size (timepoints) | `5` |
 | `smooth_sigma` | Smooth kernel sigma | `1.0` |
-| `early_stop_patience` | Stage-2 eval rounds before stopping | `2` |
+| `early_stop_patience` | Eval rounds before early stopping | `50` |
 | `warmup_epochs` | LR warmup epochs (0 = flat lr throughout) | `0` |
 | `eeg_t_start` | EEG epoch crop start (seconds) | `-0.2` |
 | `eeg_t_end` | EEG epoch crop end (seconds) | `0.8` |
