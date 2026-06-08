@@ -17,6 +17,8 @@
 | Baseline           | Top-5     | 99.0% | 98.0% | 99.5% | 98.5% | 95.5% | 98.5% | 98.0% | 100.0% | 98.0% | 99.5% | 98.5% |
 | Smooth aug + DC removal + eval every epoch | Top-1 | 88.5% | 88.0% | 85.5% | 80.5% | 78.5% | 90.5% | 82.5% | 92.0% | 86.0% | 95.5% | 86.8% |
 | Smooth aug + DC removal + eval every epoch | Top-5 | 99.0% | 100.0% | 99.0% | 99.5% | 96.5% | 98.0% | 97.5% | 100.0% | 98.5% | 100.0% | 98.8% |
+| Smooth aug + DC removal + eval every epoch + Select time window | Top-1 | 92.0% | 88.5% | 88.0% | 83.0% | 81.0% | 91.0% | 84.0% | 93.0% | 88.0% | 94.5% | 88.3% |
+| Smooth aug + DC removal + eval every epoch + Select time window | Top-5 | 100.0% | 99.5% | 99.5% | 99.5% | 97.0% | 99.5% | 99.0% | 99.5% | 99.5% | 99.5% | 99.3% |
 
 ## INTER-SUBJECT
 | Method              | Metric | Sub01 | Sub02 | Sub03 | Sub04 | Sub05 | Sub06 | Sub07 | Sub08 | Sub09 | Sub10 | Avg |
@@ -37,6 +39,5 @@
 | Baseline            | Top-5 | 56.5% | 24.5% | 25.0% | 32.0% | 21.5% | 37.5% | 48.5% | 42.5% | 23.0% | 54.0% | 36.5% |
 | With Subject Aware + Average signal | Top-1 | 29.0% | 19.5% | 9.5%  | 16.0% | 13.5% | 18.5% | 22.0% | 16.0% | 13.0% | 27.5% | 18.4% |
 | With Subject Aware + Average signal | Top-5 | 62.5% | 43.5% | 24.5% | 40.5% | 29.5% | 43.5% | 49.5% | 41.5% | 39.5% | 59.5% | 43.4% |
-| Smooth aug + DC removal + eval every epoch + Average signal | Top-1 | 28.5% | 24.0% | 10.0% | 22.5% | 15.5% | 20.5% | 21.0% | 25.5% | 13.5% | 32.0% | 21.3% |
-| Smooth aug + DC removal + eval every epoch + Average signal | Top-5 | 63.5% | 56.0% | 24.0% | 52.5% | 38.0% | 42.0% | 47.5% | 45.5% | 29.5% | 59.5% | 45.8% |
-
+| Smooth aug + DC removal + eval every epoch + Average signal + Full-window | Top-1 | 33.0% | 22.0% | 10.5% | 20.0% | 13.5% | 24.5% | 23.5% | 23.0% | 11.5% | 32.0% | 21.4% |
+| Smooth aug + DC removal + eval every epoch + Average signal + Full-window | Top-5 | 67.0% | 54.0% | 24.5% | 48.0% | 31.5% | 48.5% | 48.0% | 46.0% | 31.5% | 55.5% | 45.5% |
