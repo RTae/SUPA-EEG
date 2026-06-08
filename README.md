@@ -45,6 +45,24 @@ flowchart TD
     IV -.->|stop-grad| IMG
 ```
 
+### EEGNetEncoder
+
+```mermaid
+flowchart LR
+    IN["EEG input\n(batch, 17, 100)"]
+    FLAT["reshape / flatten\n1700 = 17 x 100"]
+    FC1["Linear\n1700 -> 1024"]
+    RES["ResidualAdd"]
+    GELU["GELU"]
+    FC2["Linear\n1024 -> 1024"]
+    DROP["Dropout\np = 0.3"]
+    LN["LayerNorm\n1024"]
+    OUT["encoder output\n(batch, 1024)"]
+
+    IN --> FLAT --> FC1 --> RES --> LN --> OUT
+    RES --> GELU --> FC2 --> DROP --> RES
+```
+
 ### Inference Pipeline
 
 ```mermaid

@@ -35,6 +35,7 @@ dependencies = [
     "typer>=0.24.1",
     "pytest>=9.0.3",
     "tensorboard>=2.20.0",
+    "torchview>=0.2.7",
 ]
 
 [project.optional-dependencies]
