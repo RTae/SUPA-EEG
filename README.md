@@ -367,9 +367,9 @@ feature distributions interactively.
 ## Experiments
 1. Run model with differencent random seeds (e.g. `seed=42`, `seed=43`, `seed=44`) to get a sense of variability across runs.
 ```bash
-bash ./exp_difference_seed.sh
+bash ./scripts/exp_difference_seed.sh
 
 # run with nohup to keep it running after closing the terminal
-nohup bash ./exp_difference_seed.sh > exp_difference_seed.log 2>&1 &
+nohup bash ./scripts/exp_difference_seed.sh > exp_difference_seed.log 2>&1 &
 tail -f exp_difference_seed.log
 ```
