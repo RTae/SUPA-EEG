@@ -68,6 +68,92 @@ tail -f exp_difference_seed.log
 | **Avg All Subject** | **Top-1**  | 0.8080 | 0.8070 | 0.8085 | 0.8078 ± 0.001 |
 | **Avg All Subject** | **Top-5**  | 0.9625 | 0.9670 | 0.9685 | 0.9660 ± 0.003 |
 
+## 1. Seed Variance
+**Goal:** Verify the model is stable and results are not lucky.
+**What changes:** `seed` in config (42, 43, 44).
+**What's fixed:** Everything else — same architecture, data, hyperparameters.
+**Metric:** Mean ± std of Top-1 and Top-5 across 3 runs.
+### 2. EEG Encoder Ablation
+**Goal:** Find the best architecture for encoding EEG signals.
+**What changes:** The `eeg_encoder` block inside `SUPAEEG`.
+**What's fixed:** Image encoder, shared encoder, training config.
+
+| Variant | Architecture Detail |
+|---|---|
+| `EEGProject` *(current)* | Flatten (17×100→1700) → Linear → GELU + Linear Residual → LayerNorm |
+| `EEGNet` | Temporal conv → Depthwise spatial conv over channels → Separable conv → ELU + pooling |
+| `TSConv` | Temporal conv block → Spatial filtering → Temporal aggregation |
+| `EEGConformer` | Conv patch embed → Transformer encoder → aggregation (CNN + self-attention hybrid) |
+| `ATM` | Attention-based temporal mixing across channels and time |
+### 3. Image Backbone Ablation
+**Goal:** Find which vision model's features align best with EEG representations.
+**What changes:** Pre-extracted image features and `image_input_dim`.
+**What's fixed:** EEG encoder, shared encoder, router/layer config.
+
+| Variant                 | Type                | Notes                                 |
+| ----------------------- | ------------------- | ------------------------------------- |
+| `InternViT` *(current)* | Supervised ViT 6B   | Multilayer features, used with router |
+| `RN50`                  | CLIP ResNet-50      | Convolutional, smallest CLIP model    |
+| `RN101`                 | CLIP ResNet-101     | Deeper convolutional CLIP             |
+| `ViT-B-16`              | CLIP ViT Base       | Standard ViT, 16px patches            |
+| `ViT-H-14`              | CLIP ViT Huge       | Large ViT, 14px patches               |
+| `ViT-bigG-14`           | CLIP ViT bigG       | Largest CLIP model                    |
+| `DINOv2`                | Self-supervised ViT | No language supervision               |
+| `EVA-02`                | EVA-CLIP ViT        | Strong open-source CLIP variant       |
+### 4. Image Layer Selection Ablation
+**Goal:** Validate that `SubjectAwareRouter` and multi-layer blending adds value over fixed single-layer features.
+**What changes:** How InternViT layer features are combined.
+**What's fixed:** Everything else — same backbone (InternViT), EEG encoder, shared encoder.
+
+| Variant              | Description                                                         |
+| -------------------- | ------------------------------------------------------------------- |
+| `Router` *(current)* | Learned per-subject softmax blending of layers [20, 24, 28, 32, 36] |
+| `Uniform`            | Simple average of all 5 layers, no learned weights                  |
+| `Single layer 20`    | Early layer only — low-level visual features                        |
+| `Single layer 28`    | Middle layer only — mid-level features                              |
+| `Single layer 36`    | Late layer only — high-level semantic features                      |
+
+### 5. Shared Encoder Ablation
+**Goal:** Validate that weight sharing between EEG and image paths drives cross-modal alignment.
+**What changes:** The `share_encoder` module applied to both modalities after their respective projectors.
+**What's fixed:** EEG encoder, image encoder, training config.
+
+| Variant              | Description                                                        |
+| -------------------- | ------------------------------------------------------------------ |
+| `linear` *(current)* | Single `nn.Linear(512→512)` shared by both EEG and image           |
+| `none`               | Removed — both paths go directly to L2 normalize                   |
+| `separate`           | Two independent `nn.Linear(512→512)`, one per modality, no sharing |
+| `transformer`        | Small Transformer block (1–2 layers, 512-dim token)                |
+| `jepa`               | Split 512-dim into sub-tokens → ViT-style CLS encoder              |
+### 6. EEG Channels
+**Goal:** Test whether denser electrode coverage improves EEG representations.
+**What changes:** `eeg_suffix`, `n_channels` in config.
+**What's fixed:** Architecture, image encoder, training config.
+
+| Variant             | Description                                          |
+| ------------------- | ---------------------------------------------------- |
+| `17-ch` *(current)* | Default electrode setup, `eeg_suffix=""`             |
+| `63-ch`             | Denser coverage, `eeg_suffix="_63"`, `n_channels=63` |
+### 7. Higher Sampling Rate (1000Hz)
+**What changes:** Use the raw 1000Hz EEG instead of the 100Hz downsampled version.  
+**Impact on architecture:** n_timepoints increases from 100 → 1000, so the EEG encoder input grows 10×. This may require adjusting eeg_feature_dim or using strided convolutions.
+
+| Variant             | Sampling Rate   | n_timepoints |
+| ------------------- | --------------- | ------------ |
+| `100Hz` _(current)_ | Downsampled     | 100          |
+| `1000Hz`            | Full resolution | 1000         |
+
+**Worth doing because:** downsampling to 100Hz discards high-frequency neural signals (gamma band, 30–100Hz) that may carry visual information.
+
+### 8. Wrong Prediction Analysis
+
+When the model predicts incorrectly, you can analyze **what it got wrong and why**:
+
+- **Semantic similarity of errors** — are wrong predictions visually/semantically similar to the correct image? (e.g. predicted "cat" when correct was "dog"). Use the image embeddings to compute similarity between the predicted concept and true concept.
+- **Confusion matrix on Top-5** — which concepts are most often confused with each other? Plot as a heatmap.
+- **Hard vs. easy concepts** — rank concepts by per-concept accuracy. Are low-level visual concepts (e.g. simple shapes) easier than high-level semantic ones?
+- **Subject-level error patterns** — do all subjects fail on the same concepts or different ones? This can reveal subject-specific neural representations.
+- **Visualize failure cases** — show the true image alongside the top-5 retrieved images for the worst-performing concepts.
 
 ## INTRA-SUBJECT
 | Method             | Metric    | Sub01 | Sub02 | Sub03 | Sub04 | Sub05 | Sub06 | Sub07 | Sub08 | Sub09 | Sub10 |  Avg  |
