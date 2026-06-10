@@ -374,9 +374,11 @@ def run_inter_subject(
             eeg_t_end=config.eeg_t_end,
             eeg_suffix=config.eeg_suffix,
         )
-        if train_dataset.eeg_data is not None:
-            actual_channels    = train_dataset.eeg_data.shape[1]
-            actual_timepoints  = train_dataset.eeg_data.shape[2]
+        # ConcatDataset wraps _SubjectIDDataset(ThingsEEGDataset(...)), so drill in
+        _first_ds = train_dataset.datasets[0].dataset
+        if _first_ds.eeg_data is not None:
+            actual_channels    = _first_ds.eeg_data.shape[1]
+            actual_timepoints  = _first_ds.eeg_data.shape[2]
             if actual_channels != config.n_channels or actual_timepoints != config.n_timepoints:
                 raise ValueError(
                     f"LOSO test_subject {test_subject}: loaded EEG shape "
