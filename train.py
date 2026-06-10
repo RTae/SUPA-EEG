@@ -20,6 +20,7 @@ from src.utilities import (
     make_model,
     make_optimizer,
     save_checkpoint,
+    set_seed,
     train_one_epoch,
 )
 
@@ -134,6 +135,7 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         smooth_sigma=cfg.smooth_sigma,
         early_stop_patience=cfg.early_stop_patience,
         warmup_epochs=cfg.warmup_epochs,
+        seed=cfg.seed,
     )
 
 
@@ -510,6 +512,10 @@ def train(cfg: DictConfig) -> None:
 
     if config.protocol not in ("intra", "inter"):
         raise ValueError(f"protocol must be 'intra' or 'inter', got {config.protocol!r}")
+
+    if config.seed >= 0:
+        set_seed(config.seed)
+        logger.info(f"Random seed set to {config.seed}")
 
     logger.info("\n" + OmegaConf.to_yaml(cfg))
 

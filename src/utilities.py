@@ -1,9 +1,11 @@
 import os
+import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -34,6 +36,14 @@ FREQ_BANDS: dict[str, list[float]] = {
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = _PROJECT_ROOT / "data"
 DEFAULT_IMG_DIR = DEFAULT_DATA_DIR / "imageNet_images"
+
+
+def set_seed(seed: int) -> None:
+    """Set random seeds for Python, NumPy, and PyTorch for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def _synset_map_path(language: str, img_dir: Path | str | None = None) -> Path:
@@ -187,6 +197,7 @@ class Config:
     smooth_sigma: float = 1.0
     early_stop_patience: int = 3
     warmup_epochs: int = 5
+    seed: int = 42
 
 
 def train_one_epoch(
