@@ -1,4 +1,4 @@
-# SUPAEEG — Shared-Encoder EEG–Image Alignment
+# SUPA-EEG: Scale Unified Parieto-occipital Architecture for Electroencephalography Decoding
 
 Zero-shot visual decoding from EEG using the [THINGS-EEG2](https://osf.io/anp5v/)
 dataset. SUPAEEG aligns EEG embeddings to frozen
