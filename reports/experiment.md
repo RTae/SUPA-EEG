@@ -1,5 +1,5 @@
 ## Experiments
-### 1. Seed Variance
+### 1. Seed Variance (Done)
 **Goal:** Verify the model is stable and reduce result variance by running with different random seeds.
 **Metric:** Mean ± std of Top-1 and Top-5 across 3 runs.
 
@@ -68,11 +68,6 @@ tail -f exp_difference_seed.log
 | **Avg All Subject** | **Top-1**  | 0.8080 | 0.8070 | 0.8085 | 0.8078 ± 0.001 |
 | **Avg All Subject** | **Top-5**  | 0.9625 | 0.9670 | 0.9685 | 0.9660 ± 0.003 |
 
-## 1. Seed Variance
-**Goal:** Verify the model is stable and results are not lucky.
-**What changes:** `seed` in config (42, 43, 44).
-**What's fixed:** Everything else — same architecture, data, hyperparameters.
-**Metric:** Mean ± std of Top-1 and Top-5 across 3 runs.
 ### 2. EEG Encoder Ablation
 **Goal:** Find the best architecture for encoding EEG signals.
 **What changes:** The `eeg_encoder` block inside `SUPAEEG`.
@@ -85,6 +80,7 @@ tail -f exp_difference_seed.log
 | `TSConv` | Temporal conv block → Spatial filtering → Temporal aggregation |
 | `EEGConformer` | Conv patch embed → Transformer encoder → aggregation (CNN + self-attention hybrid) |
 | `ATM` | Attention-based temporal mixing across channels and time |
+
 ### 3. Image Backbone Ablation
 **Goal:** Find which vision model's features align best with EEG representations.
 **What changes:** Pre-extracted image features and `image_input_dim`.
@@ -100,6 +96,7 @@ tail -f exp_difference_seed.log
 | `ViT-bigG-14`           | CLIP ViT bigG       | Largest CLIP model                    |
 | `DINOv2`                | Self-supervised ViT | No language supervision               |
 | `EVA-02`                | EVA-CLIP ViT        | Strong open-source CLIP variant       |
+
 ### 4. Image Layer Selection Ablation
 **Goal:** Validate that `SubjectAwareRouter` and multi-layer blending adds value over fixed single-layer features.
 **What changes:** How InternViT layer features are combined.
@@ -113,7 +110,7 @@ tail -f exp_difference_seed.log
 | `Single layer 28`    | Middle layer only — mid-level features                              |
 | `Single layer 36`    | Late layer only — high-level semantic features                      |
 
-### 5. Shared Encoder Ablation
+### 5. Shared Encoder Ablation (In-progress)
 **Goal:** Validate that weight sharing between EEG and image paths drives cross-modal alignment.
 **What changes:** The `share_encoder` module applied to both modalities after their respective projectors.
 **What's fixed:** EEG encoder, image encoder, training config.
@@ -125,7 +122,8 @@ tail -f exp_difference_seed.log
 | `separate`           | Two independent `nn.Linear(512→512)`, one per modality, no sharing |
 | `transformer`        | Small Transformer block (1–2 layers, 512-dim token)                |
 | `jepa`               | Split 512-dim into sub-tokens → ViT-style CLS encoder              |
-### 6. EEG Channels
+
+### 6. EEG Channels (Done)
 **Goal:** Test whether denser electrode coverage improves EEG representations.
 **What changes:** `eeg_suffix`, `n_channels` in config.
 **What's fixed:** Architecture, image encoder, training config.
@@ -134,7 +132,8 @@ tail -f exp_difference_seed.log
 | ------------------- | ---------------------------------------------------- |
 | `17-ch` *(current)* | Default electrode setup, `eeg_suffix=""`             |
 | `63-ch`             | Denser coverage, `eeg_suffix="_63"`, `n_channels=63` |
-### 7. Higher Sampling Rate (1000Hz)
+
+### 7. Higher Sampling Rate (In-progress)
 **What changes:** Use the raw 1000Hz EEG instead of the 100Hz downsampled version.  
 **Impact on architecture:** n_timepoints increases from 100 → 1000, so the EEG encoder input grows 10×. This may require adjusting eeg_feature_dim or using strided convolutions.
 
