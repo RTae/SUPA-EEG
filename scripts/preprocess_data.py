@@ -1,3 +1,13 @@
+import os
+import mne
+import numpy as np
+from sklearn.utils import shuffle
+import numpy as np
+from tqdm import tqdm
+from sklearn.discriminant_analysis import _cov
+import argparse
+import scipy
+
 def epoching(args, data_part, seed):
 	"""This function first converts the EEG data to MNE raw format, and
 	performs channel selection, epoching, baseline correction and frequency
@@ -26,20 +36,15 @@ def epoching(args, data_part, seed):
 
 	"""
 
-	import os
-	import mne
-	import numpy as np
-	from sklearn.utils import shuffle
-
 	### Loop across data collection sessions ###
 	epoched_data = []
 	img_conditions = []
 	for s in range(args.n_ses):
 
 		### Load the EEG data and convert it to MNE raw format ###
-		eeg_dir = os.path.join('eeg_dataset', 'raw_data', 'sub-'+
-			format(args.sub,'02'), 'ses-'+format(s+1,'02'), 'raw_eeg_'+
-			data_part+'.npy')
+		eeg_dir = os.path.join('data', 'things_eeg', 'sub-'+
+			format(args.sub,'02')+'_unprocessed', 'ses-'+format(s+1,'02'),
+			'raw_eeg_'+data_part+'.npy')
 		eeg_data = np.load(os.path.join(args.project_dir, eeg_dir),
 			allow_pickle=True).item()
 		ch_names = eeg_data['ch_names']
@@ -126,11 +131,6 @@ def mvnn(args, epoched_test, epoched_train):
 
 	"""
 
-	import numpy as np
-	from tqdm import tqdm
-	from sklearn.discriminant_analysis import _cov
-	import scipy
-
 	### Loop across data collection sessions ###
 	whitened_test = []
 	whitened_train = []
@@ -205,11 +205,6 @@ def save_prepr(args, whitened_test, whitened_train, img_conditions_train,
 		Random seed.
 
 	"""
-
-	import numpy as np
-	from sklearn.utils import shuffle
-	import os
-
 	### Merge and save the test data ###
 	for s in range(args.n_ses):
 		if s == 0:
@@ -228,8 +223,8 @@ def save_prepr(args, whitened_test, whitened_train, img_conditions_train,
 	}
 	del merged_test
 	# Saving directories
-	save_dir = os.path.join(args.project_dir, 'eeg_dataset',
-		'preprocessed_data', 'sub-'+format(args.sub,'02'))
+	save_dir = os.path.join(args.project_dir, 'data', 'things_eeg',
+		'sub-'+format(args.sub,'02'))
 	file_name_test = 'preprocessed_eeg_test.npy'
 	file_name_train = 'preprocessed_eeg_training.npy'
 	# Create the directory if not existing and save the data
@@ -300,53 +295,52 @@ project_dir : str
 
 """
 
-import argparse
+if __name__ == "__main__":
+    # =============================================================================
+    # Input arguments
+    # =============================================================================
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--sub', default=1, type=int)
+    parser.add_argument('--n_ses', default=4, type=int)
+    parser.add_argument('--sfreq', default=1000, type=int)
+    parser.add_argument('--mvnn_dim', default='time', type=str)
+    parser.add_argument('--project_dir', default='../project_directory', type=str)
+    args = parser.parse_args()
 
-# =============================================================================
-# Input arguments
-# =============================================================================
-parser = argparse.ArgumentParser()
-parser.add_argument('--sub', default=1, type=int)
-parser.add_argument('--n_ses', default=4, type=int)
-parser.add_argument('--sfreq', default=100, type=int)
-parser.add_argument('--mvnn_dim', default='time', type=str)
-parser.add_argument('--project_dir', default='../project_directory', type=str)
-args = parser.parse_args()
+    print('>>> EEG data preprocessing <<<')
+    print('\nInput arguments:')
+    for key, val in vars(args).items():
+        print('{:16} {}'.format(key, val))
 
-print('>>> EEG data preprocessing <<<')
-print('\nInput arguments:')
-for key, val in vars(args).items():
-	print('{:16} {}'.format(key, val))
-
-# Set random seed for reproducible results
-seed = 20200220
-
-
-# =============================================================================
-# Epoch and sort the data
-# =============================================================================
-# Channel selection, epoching, baseline correction and frequency downsampling of
-# the test and training data partitions.
-# Then, the conditions are sorted and the EEG data is reshaped to:
-# Image conditions × EEG repetitions × EEG channels × EEG time points
-# This step is applied independently to the data of each partition and session.
-epoched_test, _, ch_names, times = epoching(args, 'test', seed)
-epoched_train, img_conditions_train, _, _ = epoching(args, 'training', seed)
+    # Set random seed for reproducible results
+    seed = 20200220
 
 
-# =============================================================================
-# Multivariate Noise Normalization
-# =============================================================================
-# MVNN is applied independently to the data of each session.
-whitened_test, whitened_train = mvnn(args, epoched_test, epoched_train)
-del epoched_test, epoched_train
+    # =============================================================================
+    # Epoch and sort the data
+    # =============================================================================
+    # Channel selection, epoching, baseline correction and frequency downsampling of
+    # the test and training data partitions.
+    # Then, the conditions are sorted and the EEG data is reshaped to:
+    # Image conditions × EEG repetitions × EEG channels × EEG time points
+    # This step is applied independently to the data of each partition and session.
+    epoched_test, _, ch_names, times = epoching(args, 'test', seed)
+    epoched_train, img_conditions_train, _, _ = epoching(args, 'training', seed)
 
 
-# =============================================================================
-# Merge and save the preprocessed data
-# =============================================================================
-# In this step the data of all sessions is merged into the shape:
-# Image conditions × EEG repetitions × EEG channels × EEG time points
-# Then, the preprocessed data of the test and training data partitions is saved.
-save_prepr(args, whitened_test, whitened_train, img_conditions_train, ch_names,
-	times, seed)
+    # =============================================================================
+    # Multivariate Noise Normalization
+    # =============================================================================
+    # MVNN is applied independently to the data of each session.
+    whitened_test, whitened_train = mvnn(args, epoched_test, epoched_train)
+    del epoched_test, epoched_train
+
+
+    # =============================================================================
+    # Merge and save the preprocessed data
+    # =============================================================================
+    # In this step the data of all sessions is merged into the shape:
+    # Image conditions × EEG repetitions × EEG channels × EEG time points
+    # Then, the preprocessed data of the test and training data partitions is saved.
+    save_prepr(args, whitened_test, whitened_train, img_conditions_train, ch_names,
+        times, seed)
