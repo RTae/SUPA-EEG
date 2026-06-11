@@ -154,7 +154,6 @@ When the model predicts incorrectly, you can analyze **what it got wrong and wh
 - **Subject-level error patterns** — do all subjects fail on the same concepts or different ones? This can reveal subject-specific neural representations.
 - **Visualize failure cases** — show the true image alongside the top-5 retrieved images for the worst-performing concepts.
 
-
 ## ETC
 ## INTRA-SUBJECT
 | Method             | Metric    | Sub01 | Sub02 | Sub03 | Sub04 | Sub05 | Sub06 | Sub07 | Sub08 | Sub09 | Sub10 |  Avg  |
