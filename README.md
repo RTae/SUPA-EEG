@@ -184,10 +184,8 @@ bash scripts/download_unprocessed_data.sh
 nohup bash scripts/download_unprocessed_data.sh > download_unprocessed.log 2>&1 &
 tail -f download_unprocessed.log
 
-# Run preprocessing (requires MNE, see requirements.txt)
-for sub in {1..10}; do
-  python scripts/preprocess_data.py --sub $sub --n_ses 4 --project_dir /workspace/time-series-project
-done
+# Run preprocessing
+bash scripts/preprocess_all_subject.sh
 
 # Run with nohup
 nohup bash scripts/preprocess_all_subject.sh > preprocess_all_subject.log 2>&1 &
