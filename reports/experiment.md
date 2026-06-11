@@ -134,15 +134,15 @@ tail -f exp_difference_seed.log
 | `63-ch`             | Denser coverage, `eeg_suffix="_63"`, `n_channels=63` |
 
 ### 7. Higher Sampling Rate (In-progress)
-**What changes:** Use the raw 1000Hz EEG instead of the 100Hz downsampled version.  
-**Impact on architecture:** n_timepoints increases from 100 → 1000, so the EEG encoder input grows 10×. This may require adjusting eeg_feature_dim or using strided convolutions.
+Experiment with using the full 1000Hz sampling rate instead of downsampling to 100Hz. This may capture more temporal dynamics in the EEG signals.
+1. Preapre 1000Hz data (currently using 100Hz), you can take a look from README.md for how to prepare the data.
+2. Run the script below to train the model with 1000Hz data.
+```bash
+# For 17 channels
+nohup bash ./scripts/exp_higher_sampling.sh > exp_higher_sampling.log 2>&1 &
 
-| Variant             | Sampling Rate   | n_timepoints |
-| ------------------- | --------------- | ------------ |
-| `100Hz` _(current)_ | Downsampled     | 100          |
-| `1000Hz`            | Full resolution | 1000         |
-
-**Worth doing because:** downsampling to 100Hz discards high-frequency neural signals (gamma band, 30–100Hz) that may carry visual information.
+tail -f exp_higher_sampling.log
+```
 
 ### 8. Wrong Prediction Analysis
 
