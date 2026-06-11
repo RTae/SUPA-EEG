@@ -159,23 +159,26 @@ source .venv/bin/activate
 
 ### Data
 
-Download EEG data and images:
+Download EEG data and images using the provided script. By default, it fetches a minimal subset of the dataset (17-channel EEG) for quick testing. For the full dataset with 63-channel EEG, run the second command.
+This fetches:
+- Preprocessed EEG for subjects 1–10 with only 17 channels `data/things_eeg/sub-XX/`
+- Image metadata, training images (1654 concepts × 10 images), test images (200 concepts × 1 image)
+- InternViT features are also available for download in this script, but you can also extract them locally (see below).
 
 ```bash
 sudo apt-get install aria2
 bash scripts/download_data.sh
 ```
 
-This fetches:
-- Preprocessed EEG for subjects 1–10 with only 17 channels `data/things_eeg/sub-XX/`
-- Image metadata, training images (1654 concepts × 10 images), test images (200 concepts × 1 image)
-- InternViT features are also available for download in this script, but you can also extract them locally (see below).
-
-for 63 channels, run
+for 63 channels which fetches the full dataset (including 63-channel EEG) but not the vision features (see below), run
 ```bash
 bash scripts/download_dataset_full.sh
 ```
-which fetches the full dataset (including 63-channel EEG) but not the vision features (see below).
+
+Also, if you want to try with raw EEG data, you can download the original raw files and run the preprocessing pipeline yourself, run
+```bash
+bash scripts/download_unprocessed_eeg.sh
+```
 
 Manual sources:
 
