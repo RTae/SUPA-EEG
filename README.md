@@ -180,8 +180,18 @@ Also, if you want to try with raw EEG data, you can download the original raw fi
 # Download raw EEG data (large, ~100GB)
 bash scripts/download_unprocessed_data.sh
 
+# run with nohup
+nohup bash scripts/download_unprocessed_data.sh > download_unprocessed.log 2>&1 &
+tail -f download_unprocessed.log
+
 # Run preprocessing (requires MNE, see requirements.txt)
-python scripts/preprocess_eeg.py
+for sub in {1..10}; do
+  python scripts/preprocess_data.py --sub $sub --n_ses 4 --project_dir /workspace/time-series-project
+done
+
+# Run with nohup
+nohup bash scripts/preprocess_all_subject.sh > preprocess_all_subject.log 2>&1 &
+tail -f preprocess_all_subject.log
 ```
 
 Manual sources:
