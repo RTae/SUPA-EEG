@@ -177,7 +177,7 @@ bash scripts/download_dataset_full.sh
 
 Also, if you want to try with raw EEG data, you can download the original raw files and run the preprocessing pipeline yourself, run
 ```bash
-bash scripts/download_unprocessed_eeg.sh
+bash scripts/download_unprocessed_data.sh
 ```
 
 Manual sources:
