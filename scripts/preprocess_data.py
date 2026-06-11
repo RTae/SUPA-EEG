@@ -58,11 +58,8 @@ def epoching(args, data_part, seed):
 
 		### Get events, drop unused channels and reject target trials ###
 		events = mne.find_events(raw, stim_channel='stim')
-		# Select only occipital (O) and posterior (P) channels
-		chan_idx = np.asarray(mne.pick_channels_regexp(raw.info['ch_names'],
-			'^O *|^P *'))
-		new_chans = [raw.info['ch_names'][c] for c in chan_idx]
-		raw.pick_channels(new_chans)
+		# Drop stim channel before epoching (keep all 63 EEG channels)
+		raw.drop_channels(['stim'])
 		# Reject the target trials (event 99999)
 		idx_target = np.where(events[:,2] == 99999)[0]
 		events = np.delete(events, idx_target, 0)
@@ -181,7 +178,7 @@ def mvnn(args, epoched_test, epoched_train):
 
 
 def save_prepr(args, whitened_test, whitened_train, img_conditions_train,
-	ch_names, times, seed):
+	ch_names, times, seed, folder_suffix, ch_idx=None):
 	"""Merge the EEG data of all sessions together, shuffle the EEG repetitions
 	across sessions and reshaping the data to the format:
 	Image conditions × EEG repetitions × EEG channels × EEG time points.
@@ -211,7 +208,9 @@ def save_prepr(args, whitened_test, whitened_train, img_conditions_train,
 			merged_test = whitened_test[s]
 		else:
 			merged_test = np.append(merged_test, whitened_test[s], 1)
-	del whitened_test
+	# Select channel subset if requested
+	if ch_idx is not None:
+		merged_test = merged_test[:, :, ch_idx, :]
 	# Shuffle the repetitions of different sessions
 	idx = shuffle(np.arange(0, merged_test.shape[1]), random_state=seed)
 	merged_test = merged_test[:,idx]
@@ -224,7 +223,7 @@ def save_prepr(args, whitened_test, whitened_train, img_conditions_train,
 	del merged_test
 	# Saving directories
 	save_dir = os.path.join(args.project_dir, 'data', 'things_eeg',
-		'sub-'+format(args.sub,'02'))
+		'sub-'+format(args.sub,'02')+folder_suffix)
 	file_name_test = 'preprocessed_eeg_test.npy'
 	file_name_train = 'preprocessed_eeg_training.npy'
 	# Create the directory if not existing and save the data
@@ -241,7 +240,6 @@ def save_prepr(args, whitened_test, whitened_train, img_conditions_train,
 		else:
 			white_data = np.append(white_data, whitened_train[s], 0)
 			img_cond = np.append(img_cond, img_conditions_train[s], 0)
-	del whitened_train, img_conditions_train
 	# Data matrix of shape:
 	# Image conditions × EEG repetitions × EEG channels × EEG time points
 	merged_train = np.zeros((len(np.unique(img_cond)), white_data.shape[1]*2,
@@ -255,6 +253,9 @@ def save_prepr(args, whitened_test, whitened_train, img_conditions_train,
 			else:
 				ordered_data = np.append(ordered_data, white_data[idx[r]], 0)
 		merged_train[i] = ordered_data
+	# Select channel subset if requested
+	if ch_idx is not None:
+		merged_train = merged_train[:, :, ch_idx, :]
 	# Shuffle the repetitions of different sessions
 	idx = shuffle(np.arange(0, merged_train.shape[1]), random_state=seed)
 	merged_train = merged_train[:,idx]
@@ -342,5 +343,13 @@ if __name__ == "__main__":
     # In this step the data of all sessions is merged into the shape:
     # Image conditions × EEG repetitions × EEG channels × EEG time points
     # Then, the preprocessed data of the test and training data partitions is saved.
+    # Save all 63 EEG channels at original 1 kHz
     save_prepr(args, whitened_test, whitened_train, img_conditions_train, ch_names,
-        times, seed)
+        times, seed, folder_suffix='_1khz_63')
+
+    # Save 17 occipital/posterior channels at original 1 kHz
+    op_ch_idx = [i for i, ch in enumerate(ch_names)
+                 if ch.startswith('O') or ch.startswith('P')]
+    op_ch_names = [ch_names[i] for i in op_ch_idx]
+    save_prepr(args, whitened_test, whitened_train, img_conditions_train, op_ch_names,
+        times, seed, folder_suffix='_1khz_17', ch_idx=op_ch_idx)

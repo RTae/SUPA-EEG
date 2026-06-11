@@ -177,7 +177,11 @@ bash scripts/download_dataset_full.sh
 
 Also, if you want to try with raw EEG data, you can download the original raw files and run the preprocessing pipeline yourself, run
 ```bash
+# Download raw EEG data (large, ~100GB)
 bash scripts/download_unprocessed_data.sh
+
+# Run preprocessing (requires MNE, see requirements.txt)
+python scripts/preprocess_eeg.py
 ```
 
 Manual sources:
