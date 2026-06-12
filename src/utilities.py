@@ -198,6 +198,7 @@ class Config:
     early_stop_patience: int = 3
     warmup_epochs: int = 5
     seed: int = 42
+    share_encoder_type: str = "linear"   # linear | none | separate | transformer | jepa
 
 
 def train_one_epoch(
@@ -434,6 +435,7 @@ def make_model(
         router_temperature=config.router_temperature,
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
+        share_encoder_type=config.share_encoder_type,
     ).to(device)
 
 

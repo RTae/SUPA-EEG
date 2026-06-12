@@ -55,6 +55,7 @@ n_layers:         5
 router_temperature: 1.0
 subject_dropout_rate: 0.3
 layer_dropout_rate: 0.1
+share_encoder_type: "linear"  # linear | none | separate | transformer | jepa
 
 # --- EEG augmentation (training only) -------------------------------------
 smooth_prob:        0.3
