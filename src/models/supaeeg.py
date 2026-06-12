@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from src.encoders.eegnet_encoder import EEGNetEncoder
 
-_SHARE_ENCODER_TYPES = {"linear", "none", "separate", "transformer", "jepa"}
+_SHARE_ENCODER_TYPES = {"linear", "none", "separate", "transformer", "tokenized_cls"}
 
 
 class TransformerShareEncoder(nn.Module):
@@ -23,8 +23,13 @@ class TransformerShareEncoder(nn.Module):
         return self.encoder(x.unsqueeze(1)).squeeze(1)
 
 
-class JEPAEncoder(nn.Module):
-    """Shared encoder: split 512-d into sub-tokens → ViT-style CLS pooling."""
+class TokenizedCLSEncoder(nn.Module):
+    """Shared encoder: split 512-d into sub-tokens → ViT-style CLS pooling.
+
+    The input vector is divided into n_tokens equal chunks, each projected
+    to feature_dim. Learnable positional embeddings are added before the
+    Transformer so token position carries information.
+    """
 
     def __init__(self, feature_dim: int, n_tokens: int = 8, n_layers: int = 2, nhead: int = 8):
         super().__init__()
@@ -35,6 +40,9 @@ class JEPAEncoder(nn.Module):
         self.token_proj = nn.Linear(token_dim, feature_dim)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, feature_dim))
         nn.init.normal_(self.cls_token, std=0.02)
+        # +1 for the CLS token position
+        self.pos_embed = nn.Parameter(torch.zeros(1, n_tokens + 1, feature_dim))
+        nn.init.normal_(self.pos_embed, std=0.02)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=feature_dim, nhead=nhead,
             dim_feedforward=feature_dim * 2,
@@ -49,6 +57,7 @@ class JEPAEncoder(nn.Module):
         tokens = self.token_proj(tokens)                # (B, n_tokens, feature_dim)
         cls = self.cls_token.expand(batch, -1, -1)
         tokens = torch.cat([cls, tokens], dim=1)        # (B, n_tokens+1, feature_dim)
+        tokens = tokens + self.pos_embed                # add positional embeddings
         out = self.encoder(tokens)                      # (B, n_tokens+1, feature_dim)
         return self.out_proj(out[:, 0])                 # CLS → (B, feature_dim)
 
@@ -57,11 +66,11 @@ def _build_share_encoder(encoder_type: str, feature_dim: int) -> nn.Module:
     if encoder_type == "linear":
         return nn.Linear(feature_dim, feature_dim)
     elif encoder_type in ("none", "separate"):
-        return nn.Linear(feature_dim, feature_dim)   # "separate" = two independent copies
+        return nn.Linear(feature_dim, feature_dim)
     elif encoder_type == "transformer":
         return TransformerShareEncoder(feature_dim)
-    elif encoder_type == "jepa":
-        return JEPAEncoder(feature_dim)
+    elif encoder_type == "tokenized_cls":
+        return TokenizedCLSEncoder(feature_dim)
     else:
         raise ValueError(f"share_encoder_type must be one of {_SHARE_ENCODER_TYPES}, got {encoder_type!r}")
 

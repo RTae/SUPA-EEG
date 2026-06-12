@@ -1,17 +1,17 @@
 #!/bin/bash
 
 # Shared Encoder Ablation — Experiment 5
-# Compares share_encoder_type: linear | none | separate | transformer | jepa
+# Compares share_encoder_type: linear | none | separate | transformer | tokenized_cls
 
 echo "=== Shared Encoder Ablation: inter protocol, all subjects ==="
-for variant in linear none separate transformer jepa
+for variant in linear none separate transformer tokenized_cls
 do
     echo "--- share_encoder_type=$variant ---"
     python train.py protocol=inter subject=-1 share_encoder_type=$variant
 done
 
 echo "=== Shared Encoder Ablation: intra protocol, all subjects ==="
-for variant in linear none separate transformer jepa
+for variant in linear none separate transformer tokenized_cls
 do
     echo "--- share_encoder_type=$variant ---"
     python train.py protocol=intra subject=-1 \
