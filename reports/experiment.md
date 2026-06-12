@@ -133,7 +133,7 @@ tail -f exp_difference_seed.log
 | `17-ch` *(current)* | Default electrode setup, `eeg_suffix=""`             |
 | `63-ch`             | Denser coverage, `eeg_suffix="_63"`, `n_channels=63` |
 
-### 7. Higher Sampling Rate (In-progress)
+### 7. Higher Sampling Rate (Block, taking too long to run)
 Experiment with using the full 1000Hz sampling rate instead of downsampling to 100Hz. This may capture more temporal dynamics in the EEG signals.
 1. Preapre 1000Hz data (currently using 100Hz), you can take a look from README.md for how to prepare the data.
 2. Run the script below to train the model with 1000Hz data.
