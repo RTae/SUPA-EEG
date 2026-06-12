@@ -112,16 +112,22 @@ tail -f exp_difference_seed.log
 
 ### 5. Shared Encoder Ablation (In-progress)
 **Goal:** Validate that weight sharing between EEG and image paths drives cross-modal alignment.
-**What changes:** The `share_encoder` module applied to both modalities after their respective projectors.
-**What's fixed:** EEG encoder, image encoder, training config.
 
-| Variant              | Description                                                        |
-| -------------------- | ------------------------------------------------------------------ |
-| `linear` *(current)* | Single `nn.Linear(512→512)` shared by both EEG and image           |
-| `none`               | Removed — both paths go directly to L2 normalize                   |
-| `separate`           | Two independent `nn.Linear(512→512)`, one per modality, no sharing |
-| `transformer`        | Small Transformer block (1–2 layers, 512-dim token)                |
-| `jepa`               | Split 512-dim into sub-tokens → ViT-style CLS encoder              |
+| Variant              | Description                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `linear` *(current)* | Single `nn.Linear(512→512)` shared by both EEG and image                                     |
+| `none`               | Removed — both paths go directly to L2 normalize (`nn.Identity`)                             |
+| `separate`           | Two independent `nn.Linear(512→512)`, one per modality, no weight sharing                    |
+| `transformer`        | Single-token Transformer (2 layers, 512-dim) shared by both paths                            |
+| `tokenized_cls`      | Split 512-d into 8 sub-tokens + positional embeddings → Transformer → CLS pooling            |
+| `jepa`               | JEPA-style: context encoder + predictor; random token masking (25%) during training          |
+
+#### How to run:
+```bash
+nohup bash ./scripts/exp_share_encoder.sh > exp_share_encoder.log 2>&1 &
+tail -f exp_share_encoder.log
+```
+
 
 ### 6. EEG Channels (Done)
 **Goal:** Test whether denser electrode coverage improves EEG representations.
@@ -135,6 +141,7 @@ tail -f exp_difference_seed.log
 
 ### 7. Higher Sampling Rate (Block, taking too long to run)
 Experiment with using the full 1000Hz sampling rate instead of downsampling to 100Hz. This may capture more temporal dynamics in the EEG signals.
+#### How to run:
 1. Preapre 1000Hz data (currently using 100Hz), you can take a look from README.md for how to prepare the data.
 2. Run the script below to train the model with 1000Hz data.
 ```bash
