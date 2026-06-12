@@ -214,17 +214,18 @@ class SUPAEEG(nn.Module):
         # Build share encoder(s).
         # "linear" / "transformer" / "jepa": one shared module used by both paths.
         # "separate": two independent modules, no weight sharing.
-        # "none": both paths skip directly to l2-normalize (Identity).
+        # "none": Identity — both paths go directly to l2-normalize.
         if share_encoder_type == "none":
-            self.eeg_share_encoder = nn.Identity()
-            self.img_share_encoder = nn.Identity()
+            enc = nn.Identity()
+            self.eeg_share_encoder = enc
+            self.img_share_encoder = enc
         elif share_encoder_type == "separate":
             self.eeg_share_encoder = _build_share_encoder(share_encoder_type, feature_dim)
             self.img_share_encoder = _build_share_encoder(share_encoder_type, feature_dim)
         else:  # linear, transformer, jepa — shared weights
-            shared = _build_share_encoder(share_encoder_type, feature_dim)
-            self.eeg_share_encoder = shared
-            self.img_share_encoder = shared
+            enc = _build_share_encoder(share_encoder_type, feature_dim)
+            self.eeg_share_encoder = enc
+            self.img_share_encoder = enc
         self.logit_scale       = nn.Parameter(
             torch.ones([]) * torch.log(torch.tensor(1 / 0.07))
         )
@@ -260,7 +261,7 @@ class SUPAEEG(nn.Module):
         x = (image_layers.float() * weights.unsqueeze(-1)).sum(dim=1)
         x = self.img_pre_projector(x)
         x = self.img_projector(x)
-        x = self.img_share_encoder(x)
+        x = self.img_share_encoder(x)      # (batch, 512)
         return F.normalize(x, dim=1)
 
     def forward(
