@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from src.encoders.eegnet_encoder import EEGNetEncoder
 
-_SHARE_ENCODER_TYPES = {"linear", "none", "separate", "transformer", "tokenized_cls"}
+_SHARE_ENCODER_TYPES = {"linear", "none", "separate", "transformer", "tokenized_cls", "jepa"}
 
 
 class TransformerShareEncoder(nn.Module):
@@ -62,6 +62,90 @@ class TokenizedCLSEncoder(nn.Module):
         return self.out_proj(out[:, 0])                 # CLS → (B, feature_dim)
 
 
+class JEPAStyleEncoder(nn.Module):
+    """JEPA-inspired shared encoder (Joint-Embedding Predictive Architecture).
+
+    Splits the 512-d vector into n_tokens chunks and applies two stages:
+
+    1. Context encoder (Transformer): processes all token positions, but
+       during training a fraction (mask_ratio) of tokens are replaced with
+       a learned mask token, hiding their content from the context encoder.
+
+    2. Predictor (lighter Transformer): takes the context encoder output and
+       predicts/refines representations for ALL positions — including the
+       masked ones — entirely in latent/embedding space (not input space).
+       This is the key JEPA distinction from MAE.
+
+    At inference: mask_ratio=0, all tokens visible, predictor just refines.
+    """
+
+    def __init__(
+        self,
+        feature_dim: int,
+        n_tokens: int = 8,
+        context_layers: int = 2,
+        predictor_layers: int = 2,
+        nhead: int = 8,
+        mask_ratio: float = 0.25,
+    ):
+        super().__init__()
+        if feature_dim % n_tokens != 0:
+            raise ValueError(f"feature_dim ({feature_dim}) must be divisible by n_tokens ({n_tokens})")
+        self.n_tokens = n_tokens
+        self.mask_ratio = mask_ratio
+
+        token_dim = feature_dim // n_tokens
+        self.token_proj = nn.Linear(token_dim, feature_dim)
+
+        self.cls_token  = nn.Parameter(torch.zeros(1, 1, feature_dim))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, feature_dim))
+        self.pos_embed  = nn.Parameter(torch.zeros(1, n_tokens + 1, feature_dim))
+        nn.init.normal_(self.cls_token,  std=0.02)
+        nn.init.normal_(self.mask_token, std=0.02)
+        nn.init.normal_(self.pos_embed,  std=0.02)
+
+        # Context encoder — full capacity
+        context_layer = nn.TransformerEncoderLayer(
+            d_model=feature_dim, nhead=nhead,
+            dim_feedforward=feature_dim * 2,
+            dropout=0.1, batch_first=True,
+        )
+        self.context_encoder = nn.TransformerEncoder(context_layer, num_layers=context_layers)
+
+        # Predictor — narrower feedforward (predicts in latent space, not input space)
+        predictor_layer = nn.TransformerEncoderLayer(
+            d_model=feature_dim, nhead=nhead,
+            dim_feedforward=feature_dim,      # narrower than context encoder
+            dropout=0.1, batch_first=True,
+        )
+        self.predictor = nn.TransformerEncoder(predictor_layer, num_layers=predictor_layers)
+
+        self.out_proj = nn.Linear(feature_dim, feature_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch = x.shape[0]
+        tokens = x.view(batch, self.n_tokens, -1)   # (B, n_tokens, token_dim)
+        tokens = self.token_proj(tokens)             # (B, n_tokens, feature_dim)
+
+        # Replace a random subset of tokens with the mask token (training only)
+        if self.training and self.mask_ratio > 0:
+            mask = torch.rand(batch, self.n_tokens, device=x.device) < self.mask_ratio
+            mask_tokens = self.mask_token.expand(batch, self.n_tokens, -1)
+            tokens = torch.where(mask.unsqueeze(-1), mask_tokens, tokens)
+
+        cls    = self.cls_token.expand(batch, -1, -1)
+        tokens = torch.cat([cls, tokens], dim=1)     # (B, n_tokens+1, feature_dim)
+        tokens = tokens + self.pos_embed
+
+        # Stage 1: context encoder extracts representations
+        ctx = self.context_encoder(tokens)           # (B, n_tokens+1, feature_dim)
+
+        # Stage 2: predictor refines all positions in latent space
+        out = self.predictor(ctx)                    # (B, n_tokens+1, feature_dim)
+
+        return self.out_proj(out[:, 0])              # CLS → (B, feature_dim)
+
+
 def _build_share_encoder(encoder_type: str, feature_dim: int) -> nn.Module:
     if encoder_type == "linear":
         return nn.Linear(feature_dim, feature_dim)
@@ -71,6 +155,8 @@ def _build_share_encoder(encoder_type: str, feature_dim: int) -> nn.Module:
         return TransformerShareEncoder(feature_dim)
     elif encoder_type == "tokenized_cls":
         return TokenizedCLSEncoder(feature_dim)
+    elif encoder_type == "jepa":
+        return JEPAStyleEncoder(feature_dim)
     else:
         raise ValueError(f"share_encoder_type must be one of {_SHARE_ENCODER_TYPES}, got {encoder_type!r}")
 
