@@ -422,7 +422,7 @@ def make_model(
             n_layers,
         )
 
-    logger.info("Model share_encoder_type=%s", config.share_encoder_type)
+    logger.info("Model share_encoder_type={}", config.share_encoder_type)
 
     return SUPAEEG(
         n_channels=config.n_channels,
