@@ -68,24 +68,23 @@ tail -f exp_difference_seed.log
 | **Avg All Subject** | **Top-1**  | 0.8080 | 0.8070 | 0.8085 | 0.8078 ± 0.001 |
 | **Avg All Subject** | **Top-5**  | 0.9625 | 0.9670 | 0.9685 | 0.9660 ± 0.003 |
 
-### 2. EEG Encoder Ablation
-**Goal:** Find the best architecture for encoding EEG signals.
-**What changes:** The `eeg_encoder` block inside `SUPAEEG`.
-**What's fixed:** Image encoder, shared encoder, training config.
+### 2. Two-Axis Representation Ablation (EEG Encoder x Image Backbone)
+**Goal:** Jointly evaluate representation quality by varying two axes together.
+**Axis A (EEG):** The `eeg_encoder` block inside `SUPAEEG`.
+**Axis B (Image):** Pre-extracted image features and `image_input_dim`.
+**What's fixed:** Shared encoder, router/layer config, training protocol/hyperparameters.
 
+#### Expierment design:
+##### Axis A: EEG encoder variants
 | Variant | Architecture Detail |
 |---|---|
-| `EEGProject` *(current)* | Flatten (17×100→1700) → Linear → GELU + Linear Residual → LayerNorm |
-| `EEGNet` | Temporal conv → Depthwise spatial conv over channels → Separable conv → ELU + pooling |
-| `TSConv` | Temporal conv block → Spatial filtering → Temporal aggregation |
-| `EEGConformer` | Conv patch embed → Transformer encoder → aggregation (CNN + self-attention hybrid) |
+| `EEGProject` *(current)* | Flatten (17x100->1700) -> Linear -> GELU + Linear Residual -> LayerNorm |
+| `EEGNet` | Temporal conv -> Depthwise spatial conv over channels -> Separable conv -> ELU + pooling |
+| `TSConv` | Temporal conv block -> Spatial filtering -> Temporal aggregation |
+| `EEGConformer` | Conv patch embed -> Transformer encoder -> aggregation (CNN + self-attention hybrid) |
 | `ATM` | Attention-based temporal mixing across channels and time |
 
-### 3. Image Backbone Ablation
-**Goal:** Find which vision model's features align best with EEG representations.
-**What changes:** Pre-extracted image features and `image_input_dim`.
-**What's fixed:** EEG encoder, shared encoder, router/layer config.
-
+##### Axis B: Image backbone variants
 | Variant                 | Type                | Notes                                 |
 | ----------------------- | ------------------- | ------------------------------------- |
 | `InternViT` *(current)* | Supervised ViT 6B   | Multilayer features, used with router |
@@ -97,7 +96,33 @@ tail -f exp_difference_seed.log
 | `DINOv2`                | Self-supervised ViT | No language supervision               |
 | `EVA-02`                | EVA-CLIP ViT        | Strong open-source CLIP variant       |
 
-### 4. Image Layer Selection Ablation
+#### How to run:
+1. Run the script below to train the model with different EEG encoders and image backbones.
+```bash
+nohup bash ./scripts/exp_eeg_image_ablation.sh > exp_eeg_image_ablation.log 2>&1 &
+tail -f exp_eeg_image_ablation.log
+```
+
+#### Results
+##### Inter-subject (Avg across subjects)
+| EEG \\ Image | InternViT | RN50 | RN101 | ViT-B-16 | ViT-H-14 | ViT-bigG-14 | DINOv2 | EVA-02 |
+|--------------|-----------|------|-------|----------|----------|-------------|--------|--------|
+| EEGProject   | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| EEGNet       | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| TSConv       | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| EEGConformer | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| ATM          | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+
+##### Intra-subject (Avg across subjects)
+| EEG \\ Image | InternViT | RN50 | RN101 | ViT-B-16 | ViT-H-14 | ViT-bigG-14 | DINOv2 | EVA-02 |
+|--------------|-----------|------|-------|----------|----------|-------------|--------|--------|
+| EEGProject   | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| EEGNet       | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| TSConv       | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| EEGConformer | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+| ATM          | - / -     | - / -| - / - | - / -    | - / -    | - / -       | - / -  | - / -  |
+
+### 3. Image Layer Selection Ablation
 **Goal:** Validate that `SubjectAwareRouter` and multi-layer blending adds value over fixed single-layer features.
 **What changes:** How InternViT layer features are combined.
 **What's fixed:** Everything else — same backbone (InternViT), EEG encoder, shared encoder.
@@ -110,7 +135,7 @@ tail -f exp_difference_seed.log
 | `Single layer 28`    | Middle layer only — mid-level features                              |
 | `Single layer 36`    | Late layer only — high-level semantic features                      |
 
-### 5. Shared Encoder Ablation (In-progress)
+### 4. Shared Encoder Ablation (In-progress)
 **Goal:** Validate that weight sharing between EEG and image paths drives cross-modal alignment.
 
 | Variant              | Description                                                                                  |
@@ -169,7 +194,7 @@ tail -f exp_share_encoder.log
 - Given zero difference across variants, this ablation currently does not support the hypothesis that shared encoder type changes retrieval performance under the present configuration.
 
 
-### 6. EEG Channels (Done)
+### 5. EEG Channels (Done)
 **Goal:** Test whether denser electrode coverage improves EEG representations.
 **What changes:** `eeg_suffix`, `n_channels` in config.
 **What's fixed:** Architecture, image encoder, training config.
@@ -179,7 +204,7 @@ tail -f exp_share_encoder.log
 | `17-ch` *(current)* | Default electrode setup, `eeg_suffix=""`             |
 | `63-ch`             | Denser coverage, `eeg_suffix="_63"`, `n_channels=63` |
 
-### 7. Higher Sampling Rate (Block, taking too long to run)
+### 6. Higher Sampling Rate (Block, taking too long to run)
 Experiment with using the full 1000Hz sampling rate instead of downsampling to 100Hz. This may capture more temporal dynamics in the EEG signals.
 #### How to run:
 1. Preapre 1000Hz data (currently using 100Hz), you can take a look from README.md for how to prepare the data.
@@ -191,7 +216,7 @@ nohup bash ./scripts/exp_higher_sampling.sh > exp_higher_sampling.log 2>&1 &
 tail -f exp_higher_sampling.log
 ```
 
-### 8. Wrong Prediction Analysis
+### 7. Wrong Prediction Analysis
 
 When the model predicts incorrectly, you can analyze **what it got wrong and why**:
 
