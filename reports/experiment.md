@@ -128,7 +128,7 @@ nohup bash ./scripts/exp_share_encoder.sh > exp_share_encoder.log 2>&1 &
 tail -f exp_share_encoder.log
 ```
 
-#### Results (from `exp_share_encoder.log`)
+#### Results
 
 ##### Inter-subject: Top-1 (%)
 | Method        | Sub01 | Sub02 | Sub03 | Sub04 | Sub05 | Sub06 | Sub07 | Sub08 | Sub09 | Sub10 | Avg  |
