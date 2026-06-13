@@ -136,6 +136,7 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         early_stop_patience=cfg.early_stop_patience,
         warmup_epochs=cfg.warmup_epochs,
         seed=cfg.seed,
+        share_encoder_type=cfg.share_encoder_type,
     )
 
 
