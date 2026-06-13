@@ -198,7 +198,7 @@ class Config:
     early_stop_patience: int = 3
     warmup_epochs: int = 5
     seed: int = 42
-    share_encoder_type: str = "linear"   # linear | none | separate | transformer | jepa
+    share_encoder_type: str = "linear"   # linear | none | separate | transformer | tokenized_cls | jepa
 
 
 def train_one_epoch(
