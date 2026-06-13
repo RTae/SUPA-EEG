@@ -201,7 +201,9 @@ Manual sources:
 | Training images | [OSF — y63gw/3v527](https://osf.io/y63gw/files/3v527) |
 | Test images | [OSF — y63gw/znu7b](https://osf.io/y63gw/files/znu7b) |
 
-### InternViT features
+### Visual features
+
+#### InternViT features
 
 InternViT-6B features are extracted locally before training. `train.py` does
 this automatically on the first run (no-op if already extracted):
