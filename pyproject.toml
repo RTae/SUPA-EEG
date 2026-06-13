@@ -1,7 +1,7 @@
 [project]
 name = "supa_eeg"
 version = "0.1.0"
-description = "Add your description here"
+description = "Zero-shot visual decoding from EEG"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
