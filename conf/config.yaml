@@ -11,8 +11,15 @@ all_subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 # --- Data ------------------------------------------------------------------
 dataset_dir: data/things_eeg
 device: ${oc.env:DEVICE,cuda}   # override: DEVICE=cpu python train.py
-data_average: false
+data_average: true
 data_average_test: false
+eeg_suffix: ""    # "" = 17-ch (sub-XX folders), "_63" = 63-ch (sub-XX_63 folders)
+
+# --- EEG time window (seconds) --------------------------------------------
+# Epoch spans -0.2s to +0.79s. Visual response starts at ~70ms.
+# Use eeg_t_start/eeg_t_end to crop the epoch (e.g. eeg_t_start=0.0 removes the 200ms baseline).
+eeg_t_start: -0.2   # full epoch (no crop) — inter-subject needs all signal
+eeg_t_end:   0.8    # covers full 100-point window
 
 # --- InternViT features ----------------------------------------------------
 internvit_model:  "OpenGVLab/InternViT-6B-448px-V1-5"
@@ -30,13 +37,13 @@ eval_every: 1
 grad_clip: 1.0
 
 # --- Two-stage schedule ----------------------------------------------------
-stage1_epochs: 30
+stage1_epochs: 20
 stage2_lr: 0.00001
 mmd_start: 0.9
 mmd_end: 0.2
 
 # --- Architecture ----------------------------------------------------------
-n_channels:       17
+n_channels:       17   # 17 for default, 63 for eeg_suffix=_63
 n_timepoints:     100
 feature_dim:      512
 eeg_feature_dim:  1024
@@ -48,6 +55,7 @@ n_layers:         5
 router_temperature: 1.0
 subject_dropout_rate: 0.3
 layer_dropout_rate: 0.1
+share_encoder_type: "linear"  # linear | none | separate | transformer | jepa
 
 # --- EEG augmentation (training only) -------------------------------------
 smooth_prob:        0.3
@@ -55,10 +63,13 @@ smooth_kernel_size: 5
 smooth_sigma:       1.0
 early_stop_patience: 50
 
+# --- Reproducibility -------------------------------------------------------
+seed: 42   # set to -1 to skip seeding
+
 # --- Optimiser -------------------------------------------------------------
 lr: 0.0001
 weight_decay: 1e-4
-warmup_epochs: 10    # set > 0 to enable linear warmup then cosine decay
+warmup_epochs: 0    # 0 = flat lr throughout; >0 = warmup then cosine decay
 
 # --- Output ----------------------------------------------------------------
 # checkpoints and metrics.csv go here (set at runtime by Hydra)

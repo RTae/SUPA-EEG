@@ -1,9 +1,11 @@
 import os
+import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -36,105 +38,12 @@ DEFAULT_DATA_DIR = _PROJECT_ROOT / "data"
 DEFAULT_IMG_DIR = DEFAULT_DATA_DIR / "imageNet_images"
 
 
-def _synset_map_path(language: str, img_dir: Path | str | None = None) -> Path:
-    if language not in ("ch", "en"):
-        raise ValueError(f"Invalid language '{language}'. Expected 'ch' or 'en'.")
-    base = Path(img_dir) if img_dir else DEFAULT_IMG_DIR
-    return base / f"synset_map_{language}.txt"
-
-
-def wnid2category(wnid: str, language: str, img_dir: str | None = None) -> str:
-    path = _synset_map_path(language, img_dir)
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if wnid in line:
-                return line.split()[1]
-    raise ValueError(f"Could not find wnid: {wnid}")
-
-
-def category2wnid(category: str, language: str, img_dir: str | None = None) -> str:
-    path = _synset_map_path(language, img_dir)
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if category in line:
-                return line.split()[0]
-    raise ValueError(f"Could not find category: {category}")
-
-
-def get_device() -> torch.device:
-    """Return the best available device (CUDA > MPS > CPU)."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
-def build_optimizer(params, opt_cfg):
-    """Build a PyTorch optimizer from a Hydra model.optimizer config."""
-    if opt_cfg.type == "sgd":
-        return optim.SGD(
-            params,
-            lr=opt_cfg.lr,
-            weight_decay=opt_cfg.get("weight_decay", 0),
-            momentum=opt_cfg.get("momentum", 0),
-        )
-    if opt_cfg.type == "adam":
-        return optim.Adam(params, lr=opt_cfg.lr)
-    raise ValueError(f"Unknown optimizer type: {opt_cfg.type}")
-
-
-def get_benchmark_split(
-    data_list: list[dict],
-    metric_type: str,
-) -> tuple[list[int], list[int]]:
-    """Return (train_indices, test_indices) for the given evaluation paradigm.
-
-    Stage is inferred from the raw ``subject`` field:
-      - Stage 1: subject < 8   (first recording session)
-      - Stage 2: subject >= 8  (second session, ~7 days later)
-    RealID = subject % 8  (maps both sessions to the same person).
-
-    Supported *metric_type* values:
-      ``"wt"``  – Within-Time
-      ``"ct"``  – Cross-Time
-      ``"cp"``  – Cross-Participant
-    """
-    metric = metric_type.lower()
-
-    # CT : Train on one session, test on the other for the same person.
-    if metric == "ct":
-        raise NotImplementedError("CT split is not implemented yet.")
-    
-    # CP : Use subjects 0-9 for training and all remaining subjects for testing.
-    elif metric == "cp":
-        train_idx = [
-            i for i, sample in enumerate(data_list)
-            if 0 <= int(sample.get("subject", -1)) <= 9
-        ]
-        test_idx = [
-            i for i, sample in enumerate(data_list)
-            if int(sample.get("subject", -1)) > 9
-        ]
-
-        if not train_idx:
-            raise ValueError("CP split produced an empty training set. Expected subjects 0-9 in the data.")
-        if not test_idx:
-            raise ValueError("CP split produced an empty test set. Expected subjects above 9 in the data.")
-
-    # WT : follow the original benchmark protocol exactly.
-    # After subject / granularity filtering, samples remain arranged in 50-sample
-    # category blocks, with the first 30 used for training and the last 20 for test.
-    elif metric == "wt":
-        train_idx = [i for i in range(len(data_list)) if i % 50 < 30]
-        test_idx = [i for i in range(len(data_list)) if i % 50 >= 30]
-
-    else:
-        raise ValueError(f"Unknown metric_type '{metric_type}'. Expected 'wt', 'ct', or 'cp'.")
-
-    return train_idx, test_idx
-
-
+def set_seed(seed: int) -> None:
+    """Set random seeds for Python, NumPy, and PyTorch for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 # ---------------------------------------------------------------------------
 # SUPAEEG training config & helpers
 # ---------------------------------------------------------------------------
@@ -179,11 +88,16 @@ class Config:
     metadata_path: str = "data/things_eeg/image_metadata.npy"
     data_average: bool = True
     data_average_test: bool = False
+    eeg_suffix: str = ""          # "" = 17-ch (sub-XX), "_63" = 63-ch (sub-XX_63)
+    eeg_t_start: float = -0.2   # crop start in seconds (stimulus onset)
+    eeg_t_end: float = 0.8     # crop end in seconds (matches default 100-point epoch)
     smooth_prob: float = 0.3
     smooth_kernel_size: int = 5
     smooth_sigma: float = 1.0
     early_stop_patience: int = 3
     warmup_epochs: int = 5
+    seed: int = 42
+    share_encoder_type: str = "linear"   # linear | none | separate | transformer | tokenized_cls | jepa
 
 
 def train_one_epoch(
@@ -407,6 +321,8 @@ def make_model(
             n_layers,
         )
 
+    logger.info("Model share_encoder_type={}", config.share_encoder_type)
+
     return SUPAEEG(
         n_channels=config.n_channels,
         n_timepoints=config.n_timepoints,
@@ -420,6 +336,7 @@ def make_model(
         router_temperature=config.router_temperature,
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
+        share_encoder_type=config.share_encoder_type,
     ).to(device)
 
 
@@ -427,19 +344,23 @@ def make_scheduler(
     optimizer: AdamW,
     config: "Config",
 ) -> Any:
-    """Build a LinearLR warmup followed by CosineAnnealingLR decay.
+    """Build a LR scheduler. Returns a no-op when warmup_epochs == 0.
 
-    Warms up from ``stage2_lr`` to ``lr`` over ``warmup_epochs``, then
-    decays back to ``stage2_lr`` over the remaining epochs.
+    When warmup_epochs > 0: LinearLR warmup from stage2_lr → lr, then
+    CosineAnnealingLR decay back to stage2_lr over remaining epochs.
 
     Args:
         optimizer: The AdamW optimiser to schedule.
         config:    Runtime configuration.
 
     Returns:
-        A scheduler compatible with ``scheduler.step()`` once per epoch.
+        A scheduler with a .step() method.
     """
-    from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+    from torch.optim.lr_scheduler import ConstantLR, CosineAnnealingLR, LinearLR, SequentialLR
+
+    if config.warmup_epochs <= 0:
+        # No-op: keep constant lr throughout training
+        return ConstantLR(optimizer, factor=1.0, total_iters=1)
 
     epochs = int(config.epochs)
     warmup_epochs = int(config.warmup_epochs)

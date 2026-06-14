@@ -1,7 +1,7 @@
 [project]
 name = "supa_eeg"
 version = "0.1.0"
-description = "Add your description here"
+description = "Zero-shot visual decoding from EEG"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -35,6 +35,7 @@ dependencies = [
     "typer>=0.24.1",
     "pytest>=9.0.3",
     "tensorboard>=2.20.0",
+    "torchview>=0.2.7",
 ]
 
 [project.optional-dependencies]
