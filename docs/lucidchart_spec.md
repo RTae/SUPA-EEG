@@ -2,6 +2,12 @@
 
 Each section maps to a stage label. For every node: what image/icon to use, exact inputs, exact outputs.
 
+## Visual Conventions
+
+- **Stage label = rectangular container/group box.** Each stage (Offline Pre-processing, Input Data, Training, Evaluation) is drawn as a bounding rectangle that wraps all nodes belonging to that stage. The stage name sits on the box border or inside the top edge.
+- Within the **Training** container, the EEG branch and Image branch are two parallel sub-containers, both feeding into a Loss sub-container.
+- Arrows crossing container boundaries are drawn from the last node of the source stage to the first node of the destination stage.
+
 ---
 
 ## STAGE LABEL: Offline Pre-processing  *(run once, no gradients)*
