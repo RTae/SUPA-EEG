@@ -1,0 +1,91 @@
+% Drop after \subsection{Inter-Subject and Intra-Subject Visual Retrieval Results}
+
+% -----------------------------------------------------------------------
+\subsection{Wrong Prediction Analysis}
+
+To better understand the nature of retrieval failures, we conduct a structured
+analysis of incorrect predictions under the inter-subject setting. All results
+in this subsection are reported for Subject~01; cross-subject analysis is
+deferred pending full embedding computation across all subjects.
+
+\paragraph{Semantic coherence of errors.}
+When SUPA-EEG retrieves an incorrect concept, errors are far from random.
+The mean cosine similarity between the \emph{predicted} concept's image
+embedding and the \emph{correct} concept's image embedding is $0.323$,
+compared to $0.100$ for random concept pairs---a $3.2\times$ elevation above
+chance (Figure~\ref{fig:semantic_sim}). This confirms the qualitative
+observation in Section~\ref{sec:visual_retrieval}: even failed retrievals
+tend to be semantically or visually related to the target, suggesting that
+SUPA-EEG's embedding space captures meaningful high-level structure despite
+cross-subject variability.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.72\linewidth]{reports/error_analysis_semantic_sim.png}
+    \caption{Distribution of image-to-image cosine similarity for error pairs
+             (predicted vs.\ correct concept) compared to random pairs (Sub-01,
+             inter-subject). Error pairs are systematically more similar than
+             chance ($0.323$ vs.\ $0.100$).}
+    \label{fig:semantic_sim}
+\end{figure}
+
+\paragraph{Concept difficulty.}
+Figure~\ref{fig:hard_easy} ranks all 200 test concepts by per-concept Top-1
+accuracy. A clear difficulty gradient exists: some concepts are retrieved
+perfectly while others never appear in any Top-5 prediction. % TODO: once
+% cross-subject embeddings are available, report whether this ranking is
+% consistent across subjects or subject-specific.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.85\linewidth]{reports/error_analysis_hard_easy.png}
+    \caption{Per-concept Top-1 retrieval accuracy (Sub-01, inter-subject).
+             Red = 20 hardest concepts; green = 20 easiest. Dashed line
+             denotes the overall mean (28.5\%).}
+    \label{fig:hard_easy}
+\end{figure}
+
+\paragraph{Confusion structure.}
+Figure~\ref{fig:confusion} shows the EEG-to-image similarity sub-matrix for
+the 20 hardest concepts. Off-diagonal bright cells reveal concept pairs that
+are systematically conflated by the model, providing a diagnostic tool for
+identifying where the embedding space collapses distinct concepts. % TODO:
+% identify the most confused pairs by name and interpret in terms of shared
+% visual or categorical features.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.82\linewidth]{reports/error_analysis_confusion.png}
+    \caption{EEG$\rightarrow$image cosine similarity heatmap for the 20 hardest
+             test concepts (Sub-01, inter-subject). High off-diagonal values
+             indicate systematic confusion between concept pairs.}
+    \label{fig:confusion}
+\end{figure}
+
+\paragraph{Failure case visualisation.}
+Figure~\ref{fig:failures} shows the ground-truth image and Top-5 retrieved
+images for the eight worst-performing concepts, extending the qualitative
+examples in Figure~\ref{fig:visual_retrieval_results} to the hardest cases.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=\linewidth]{reports/error_analysis_failures.png}
+    \caption{Failure cases: ground-truth (red border) and Top-5 retrieved
+             images for the eight concepts with the lowest inter-subject
+             retrieval score (Sub-01). Green border = correct retrieval.}
+    \label{fig:failures}
+\end{figure}
+
+\paragraph{Subject-level error patterns.}
+% TODO (requires save_embeddings.py for Sub-02--10 on server):
+% Run: for i in 2..10: python scripts/save_embeddings.py --subject $i
+% Then: python scripts/analyze_errors.py --subject $i
+% Key question: do subjects fail on the same concepts (model limitation)
+% or different ones (subject-specific neural representations)?
+% Report: per-concept accuracy correlation across subjects; heatmap of
+% concept accuracy (subjects x concepts).
+\textbf{[Pending cross-subject embeddings.]}
+We will report whether failure patterns are consistent across subjects or
+subject-specific, which has direct implications for whether the remaining
+inter-subject gap is a model limitation or reflects genuine individual
+variability in visual neural representations.
