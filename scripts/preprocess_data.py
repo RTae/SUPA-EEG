@@ -60,6 +60,12 @@ def epoching(args, data_part, seed):
 		events = mne.find_events(raw, stim_channel='stim')
 		# Drop stim channel before epoching (keep all 63 EEG channels)
 		raw.drop_channels(['stim'])
+		if args.channels == '17':
+			posterior_channels = [
+				ch for ch in raw.ch_names
+				if ch.startswith('O') or ch.startswith('P')
+			]
+			raw.pick(posterior_channels)
 		# Reject the target trials (event 99999)
 		idx_target = np.where(events[:,2] == 99999)[0]
 		events = np.delete(events, idx_target, 0)
@@ -140,6 +146,15 @@ def mvnn(args, epoched_test, epoched_train):
 		sigma_part = np.empty((len(session_data),session_data[0].shape[2],
 			session_data[0].shape[2]))
 		for p in range(sigma_part.shape[0]):
+			if args.mvnn_dim == "pooled":
+				# Pool trials and time points into observations and estimate one
+				# shrinkage covariance per partition. This preserves session-wise
+				# whitening while avoiding thousands of serial covariance fits.
+				observations = session_data[p].transpose(0, 1, 3, 2).reshape(
+					-1, session_data[p].shape[2]
+				)
+				sigma_part[p] = _cov(observations, shrinkage='auto')
+				continue
 			# Image conditions covariance matrix of shape:
 			# Image conditions × EEG channels × EEG channels
 			sigma_cond = np.empty((session_data[p].shape[0],
@@ -304,8 +319,15 @@ if __name__ == "__main__":
     parser.add_argument('--sub', default=1, type=int)
     parser.add_argument('--n_ses', default=4, type=int)
     parser.add_argument('--sfreq', default=1000, type=int)
-    parser.add_argument('--mvnn_dim', default='time', type=str)
+    parser.add_argument(
+        '--mvnn_dim', default='time', choices=['time', 'epochs', 'pooled'],
+        help='Covariance granularity; pooled is the bounded full-rate option.',
+    )
     parser.add_argument('--project_dir', default='../project_directory', type=str)
+    parser.add_argument(
+        '--channels', choices=['17', '63', 'both'], default='both',
+        help='Select posterior 17 channels before MVNN for faster 1 kHz preprocessing.',
+    )
     args = parser.parse_args()
 
     print('>>> EEG data preprocessing <<<')
@@ -343,13 +365,16 @@ if __name__ == "__main__":
     # In this step the data of all sessions is merged into the shape:
     # Image conditions × EEG repetitions × EEG channels × EEG time points
     # Then, the preprocessed data of the test and training data partitions is saved.
-    # Save all 63 EEG channels at original 1 kHz
-    save_prepr(args, whitened_test, whitened_train, img_conditions_train, ch_names,
-        times, seed, folder_suffix='_1khz_63')
+    if args.channels in ('63', 'both'):
+        save_prepr(args, whitened_test, whitened_train, img_conditions_train, ch_names,
+            times, seed, folder_suffix='_1khz_63')
 
-    # Save 17 occipital/posterior channels at original 1 kHz
-    op_ch_idx = [i for i, ch in enumerate(ch_names)
-                 if ch.startswith('O') or ch.startswith('P')]
-    op_ch_names = [ch_names[i] for i in op_ch_idx]
-    save_prepr(args, whitened_test, whitened_train, img_conditions_train, op_ch_names,
-        times, seed, folder_suffix='_1khz_17', ch_idx=op_ch_idx)
+    if args.channels == '17':
+        save_prepr(args, whitened_test, whitened_train, img_conditions_train, ch_names,
+            times, seed, folder_suffix='_1khz_17')
+    elif args.channels == 'both':
+        op_ch_idx = [i for i, ch in enumerate(ch_names)
+                     if ch.startswith('O') or ch.startswith('P')]
+        op_ch_names = [ch_names[i] for i in op_ch_idx]
+        save_prepr(args, whitened_test, whitened_train, img_conditions_train, op_ch_names,
+            times, seed, folder_suffix='_1khz_17', ch_idx=op_ch_idx)

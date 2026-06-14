@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.encoders.eegnet_encoder import EEGNetEncoder
+from src.encoders.eeg_ablation_encoders import build_eeg_encoder
 
 _SHARE_ENCODER_TYPES = {"linear", "none", "separate", "transformer", "tokenized_cls", "jepa"}
 
@@ -296,13 +296,20 @@ class SUPAEEG(nn.Module):
                  image_mid_dim=1024, feature_dim=512, dropout=0.3,
                  n_subjects=10, n_layers=5, router_temperature=1.0,
                  subject_dropout_rate=0.3, layer_dropout_rate=0.1,
-                 share_encoder_type="linear"):
+                 share_encoder_type="linear", eeg_encoder_type="eegproject",
+                 image_layer_mode="router", image_layer_index=0,
+                 temporal_compression=0):
         super().__init__()
         if share_encoder_type not in _SHARE_ENCODER_TYPES:
             raise ValueError(f"share_encoder_type must be one of {_SHARE_ENCODER_TYPES}, got {share_encoder_type!r}")
         self.share_encoder_type = share_encoder_type
-        self.eeg_encoder       = EEGNetEncoder(n_channels, n_timepoints,
-                                               eeg_feature_dim, dropout)
+        self.eeg_encoder_type = eeg_encoder_type
+        self.image_layer_mode = image_layer_mode
+        self.image_layer_index = image_layer_index
+        self.eeg_encoder = build_eeg_encoder(
+            eeg_encoder_type, n_channels, n_timepoints, eeg_feature_dim,
+            dropout, temporal_compression,
+        )
         self.eeg_projector     = nn.Linear(eeg_feature_dim, feature_dim)
         self.img_pre_projector = nn.Linear(image_input_dim, image_mid_dim)
         self.img_projector     = nn.Linear(image_mid_dim, feature_dim)
@@ -331,6 +338,12 @@ class SUPAEEG(nn.Module):
             subject_dropout_rate=subject_dropout_rate,
             layer_dropout_rate=layer_dropout_rate,
         )
+        if image_layer_mode not in {"router", "uniform", "single"}:
+            raise ValueError("image_layer_mode must be router, uniform, or single")
+        if image_layer_mode == "single" and not 0 <= image_layer_index < n_layers:
+            raise ValueError(
+                f"image_layer_index must be in [0, {n_layers}), got {image_layer_index}"
+            )
 
     def encode_eeg(self, eeg: torch.Tensor) -> torch.Tensor:
         x = self.eeg_encoder(eeg)          # (batch, 1024)
@@ -352,7 +365,18 @@ class SUPAEEG(nn.Module):
         Returns:
             (batch, 512) l2-normalised
         """
-        weights = self.router(subject_ids)
+        if self.image_layer_mode == "router":
+            weights = self.router(subject_ids)
+        elif self.image_layer_mode == "uniform":
+            weights = image_layers.new_full(
+                (image_layers.shape[0], image_layers.shape[1]),
+                1.0 / image_layers.shape[1],
+            )
+        else:
+            weights = image_layers.new_zeros(
+                (image_layers.shape[0], image_layers.shape[1])
+            )
+            weights[:, self.image_layer_index] = 1.0
         x = (image_layers.float() * weights.unsqueeze(-1)).sum(dim=1)
         x = self.img_pre_projector(x)
         x = self.img_projector(x)

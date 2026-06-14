@@ -96,16 +96,30 @@ class InternViTFeatureLookup:
     """
 
     def __init__(self, feature_path: str) -> None:
-        self.features: dict = np.load(feature_path, allow_pickle=True).item()
+        if feature_path.endswith(".pt"):
+            payload = torch.load(feature_path, map_location="cpu", weights_only=True)
+            table = payload.get("features", payload)
+            self.features = {
+                key: np.stack(
+                    [
+                        np.asarray(value["S1"], dtype=np.float32),
+                        np.asarray(value["S2"], dtype=np.float32),
+                        np.asarray(value["S3"], dtype=np.float32),
+                    ]
+                )
+                for key, value in table.items()
+            }
+        else:
+            self.features = np.load(feature_path, allow_pickle=True).item()
 
     def retrieve_batch(
         self,
         concepts: list[str],
         image_files: list[str],
     ) -> torch.Tensor:
-        """Return ``(batch, n_layers, 3200)`` float32 tensor."""
+        """Return ``(batch, n_layers, d)`` float32 tensor (d depends on feature bank)."""
         arrs = [
-            self.features[(c, f)].astype(np.float32)
+            np.asarray(self.features[(c, f)], dtype=np.float32)
             for c, f in zip(concepts, image_files)
         ]
         return torch.from_numpy(np.stack(arrs))

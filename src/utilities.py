@@ -98,6 +98,12 @@ class Config:
     warmup_epochs: int = 5
     seed: int = 42
     share_encoder_type: str = "linear"   # linear | none | separate | transformer | tokenized_cls | jepa
+    eeg_encoder_type: str = "eegproject"
+    image_layer_mode: str = "router"
+    image_layer_index: int = 0
+    temporal_compression: int = 0
+    image_feature_path: str = ""
+    skip_feature_extraction: bool = False
 
 
 def train_one_epoch(
@@ -337,6 +343,10 @@ def make_model(
         subject_dropout_rate=config.subject_dropout_rate,
         layer_dropout_rate=config.layer_dropout_rate,
         share_encoder_type=config.share_encoder_type,
+        eeg_encoder_type=config.eeg_encoder_type,
+        image_layer_mode=config.image_layer_mode,
+        image_layer_index=config.image_layer_index,
+        temporal_compression=config.temporal_compression,
     ).to(device)
 
 
@@ -415,4 +425,3 @@ def make_optimizer(model: Any, config: Config) -> AdamW:
         lr=config.lr,
         weight_decay=config.weight_decay,
     )
-
