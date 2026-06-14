@@ -97,11 +97,27 @@ tail -f exp_difference_seed.log
 | `EVA-02`                | EVA-CLIP ViT        | Strong open-source CLIP variant       |
 
 #### How to run:
-1. Run the script below to train the model with different EEG encoders and image backbones.
+The bounded runner evaluates all five EEG encoders with InternViT, then evaluates EEGProject and TSConv with each additional pre-extracted image feature bank found under `FEATURE_ROOT`. The defaults use subject S01, the intra-subject protocol, 15 epochs, and a 110-minute timeout for each variant.
+
 ```bash
-nohup bash ./scripts/exp_eeg_image_ablation.sh > exp_eeg_image_ablation.log 2>&1 &
-tail -f exp_eeg_image_ablation.log
+# Download the required EEG data and available image feature banks.
+bash ./scripts/download_data.sh
+
+# Run in the foreground.
+PROTOCOL=intra SUBJECT=1 EPOCHS=15 GPU=0 \
+OUT_ROOT=outputs/exp2_two_axis \
+bash ./scripts/exp_bounded_suite.sh exp2
+
+# Or run detached from the terminal.
+nohup env PROTOCOL=intra SUBJECT=1 EPOCHS=15 GPU=0 \
+OUT_ROOT=outputs/exp2_two_axis \
+bash ./scripts/exp_bounded_suite.sh exp2 \
+> exp2_two_axis.log 2>&1 &
+
+tail -f exp2_two_axis.log
 ```
+
+The InternViT baseline covers `eegproject`, `eegnet`, `tsconv`, `eegconformer`, and `atm`. Additional feature banks, such as CLIP, cover the representative `eegproject` and `tsconv` encoders to keep the two-axis ablation within the runtime budget. Set `FEATURE_ROOT` if the feature files are stored outside `data/things_eeg/image_feature`, and set `MAX_SECONDS` to change the per-variant timeout.
 
 #### Results
 ##### Inter-subject (Avg across subjects)
