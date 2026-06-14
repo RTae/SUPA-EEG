@@ -70,6 +70,29 @@ def test_make_model_derives_n_layers_from_layer_ids():
     assert model.router.subject_bias.weight.shape == (config.n_subjects, 3)
 
 
+def test_all_eeg_ablation_encoders_return_expected_shape():
+    eeg = torch.randn(2, 17, 100)
+    for encoder_type in ("eegproject", "eegnet", "tsconv", "eegconformer", "atm"):
+        model = SUPAEEG(eeg_encoder_type=encoder_type)
+        assert model.encode_eeg(eeg).shape == (2, 512)
+
+
+def test_image_layer_modes_select_expected_layers():
+    layers = torch.zeros(2, 5, 3200)
+    layers[:, 2] = 1.0
+    single = SUPAEEG(image_layer_mode="single", image_layer_index=2)
+    uniform = SUPAEEG(image_layer_mode="uniform")
+    with torch.no_grad():
+        assert single.encode_image(layers).shape == (2, 512)
+        assert uniform.encode_image(layers).shape == (2, 512)
+
+
+def test_temporal_compression_accepts_full_rate_input():
+    model = SUPAEEG(n_timepoints=1000, temporal_compression=100)
+    eeg = torch.randn(2, 17, 1000)
+    assert model.encode_eeg(eeg).shape == (2, 512)
+
+
 def test_smooth_eeg_p1_changes_signal():
     eeg = torch.randn(4, 17, 100)
     smoothed = smooth_eeg(eeg, p=1.0)

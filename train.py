@@ -137,6 +137,12 @@ def _cfg_to_config(cfg: DictConfig) -> Config:
         warmup_epochs=cfg.warmup_epochs,
         seed=cfg.seed,
         share_encoder_type=cfg.share_encoder_type,
+        eeg_encoder_type=cfg.eeg_encoder_type,
+        image_layer_mode=cfg.image_layer_mode,
+        image_layer_index=cfg.image_layer_index,
+        temporal_compression=cfg.temporal_compression,
+        image_feature_path=cfg.image_feature_path,
+        skip_feature_extraction=cfg.skip_feature_extraction,
     )
 
 
@@ -536,18 +542,26 @@ def train(cfg: DictConfig) -> None:
 
     # Ensure InternViT features are present (no-op if already extracted)
     from src.encoders.vision_encoder import ensure_internvit_features
-    ensure_internvit_features(
-        internvit_dir  = config.internvit_dir,
-        layer_ids      = config.layer_ids,
-        train_img_dir  = config.train_img_dir,
-        test_img_dir   = config.test_img_dir,
-        model_name     = config.internvit_model,
-        device         = str(_device),
-        batch_size     = int(cfg.extract_batch_size),
+    feature_path = config.image_feature_path or os.path.join(
+        config.internvit_dir, "internvit_features.npy"
     )
+    if config.skip_feature_extraction and not os.path.isfile(feature_path):
+        raise FileNotFoundError(
+            f"Timed experiment requires pre-extracted features: {feature_path}"
+        )
+    if not config.image_feature_path:
+        ensure_internvit_features(
+            internvit_dir  = config.internvit_dir,
+            layer_ids      = config.layer_ids,
+            train_img_dir  = config.train_img_dir,
+            test_img_dir   = config.test_img_dir,
+            model_name     = config.internvit_model,
+            device         = str(_device),
+            batch_size     = int(cfg.extract_batch_size),
+        )
 
     internvit_lookup = InternViTFeatureLookup(
-        feature_path=os.path.join(config.internvit_dir, "internvit_features.npy"),
+        feature_path=feature_path,
     )
 
     output_dir = HydraConfig.get().runtime.output_dir

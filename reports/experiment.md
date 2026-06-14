@@ -135,6 +135,39 @@ tail -f exp_eeg_image_ablation.log
 | `Single layer 28`    | Middle layer only — mid-level features                              |
 | `Single layer 36`    | Late layer only — high-level semantic features                      |
 
+#### How to run:
+The bounded runner reproduces the five S01 intra-subject variants reported
+in the proposal. It uses seed 42, 15 epochs, and a 110-minute timeout for
+each variant by default.
+
+```bash
+# Foreground
+PROTOCOL=intra SUBJECT=1 EPOCHS=15 GPU=0 \
+OUT_ROOT=outputs/exp3_layer_selection \
+bash ./scripts/exp_bounded_suite.sh exp3
+
+# Detached
+nohup env PROTOCOL=intra SUBJECT=1 EPOCHS=15 GPU=0 \
+OUT_ROOT=outputs/exp3_layer_selection \
+bash ./scripts/exp_bounded_suite.sh exp3 \
+> exp3_layer_selection.log 2>&1 &
+
+tail -f exp3_layer_selection.log
+```
+
+The runner executes:
+
+```text
+image_layer_mode=router
+image_layer_mode=uniform
+image_layer_mode=single image_layer_index=0  # InternViT layer 20
+image_layer_mode=single image_layer_index=2  # InternViT layer 28
+image_layer_mode=single image_layer_index=4  # InternViT layer 36
+```
+
+The pre-extracted five-layer InternViT bank must exist at
+`data/things_eeg/image_feature/internvit_multilevel_20_24_28_32_36/internvit_features.npy`.
+
 ### 4. Shared Encoder Ablation (In-progress)
 **Goal:** Validate that weight sharing between EEG and image paths drives cross-modal alignment.
 
@@ -203,6 +236,48 @@ tail -f exp_share_encoder.log
 | ------------------- | ---------------------------------------------------- |
 | `17-ch` *(current)* | Default electrode setup, `eeg_suffix=""`             |
 | `63-ch`             | Denser coverage, `eeg_suffix="_63"`, `n_channels=63` |
+
+#### How to run:
+First download and extract the 63-channel preprocessed EEG data. The
+standard 17-channel data and image features are prepared by
+`scripts/download_data.sh`.
+
+```bash
+bash ./scripts/download_data.sh
+bash ./scripts/download_dataset_full.sh
+```
+
+Run both variants with identical intra-subject settings:
+
+```bash
+# 17 channels (default subject folders: sub-01 ... sub-10)
+python train.py protocol=intra subject=-1 \
+  n_channels=17 \
+  eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70 \
+  hydra.run.dir=outputs/exp5_channels/intra_17ch
+
+# 63 channels (subject folders: sub-01_63 ... sub-10_63)
+python train.py protocol=intra subject=-1 \
+  eeg_suffix=_63 n_channels=63 \
+  eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70 \
+  hydra.run.dir=outputs/exp5_channels/intra_63ch
+```
+
+For detached execution:
+
+```bash
+nohup bash -c '
+python train.py protocol=intra subject=-1 \
+  n_channels=17 eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70 \
+  hydra.run.dir=outputs/exp5_channels/intra_17ch
+python train.py protocol=intra subject=-1 \
+  eeg_suffix=_63 n_channels=63 \
+  eeg_t_start=0.0 eeg_t_end=0.7 n_timepoints=70 \
+  hydra.run.dir=outputs/exp5_channels/intra_63ch
+' > exp5_channels.log 2>&1 &
+
+tail -f exp5_channels.log
+```
 
 ### 6. Higher Sampling Rate (Block, taking too long to run)
 Experiment with using the full 1000Hz sampling rate instead of downsampling to 100Hz. This may capture more temporal dynamics in the EEG signals.

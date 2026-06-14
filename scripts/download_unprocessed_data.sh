@@ -4,12 +4,6 @@ set -e
 BASE="https://files.osf.io/v1/resources/crxs4/providers/googledrive"
 DIR="data/things_eeg"
 
-if ! command -v aria2c >/dev/null 2>&1; then
-  echo "aria2c is required but was not found in PATH."
-  echo "Install it first, for example: sudo apt-get install aria2"
-  exit 1
-fi
-
 mkdir -p $DIR
 
 download() {
@@ -24,14 +18,19 @@ download() {
     return 0
   fi
   echo "Downloading $out..."
-  aria2c \
-    --allow-overwrite=true \
-    --auto-file-renaming=false \
-    --continue=true \
-    --dir "$out_dir" \
-    --out "$out_name" \
-    --summary-interval=0 \
-    "$url" || { echo "FAILED: $out"; exit 1; }
+  if command -v aria2c >/dev/null 2>&1; then
+    aria2c \
+      --allow-overwrite=true \
+      --auto-file-renaming=false \
+      --continue=true \
+      --dir "$out_dir" \
+      --out "$out_name" \
+      --summary-interval=0 \
+      "$url"
+  else
+    curl --fail --location --retry 5 --retry-delay 5 \
+      --continue-at - --output "$out" "$url"
+  fi || { echo "FAILED: $out"; exit 1; }
 }
 
 declare -A _URLS=(
@@ -47,7 +46,8 @@ declare -A _URLS=(
   [10]="sub-10.zip"
 )
 
-for i in {01..10}; do
+SUBJECTS="${SUBJECTS:-01 02 03 04 05 06 07 08 09 10}"
+for i in $SUBJECTS; do
   zip_file="$DIR/sub-${i}_unprocessed.zip"
   sub_dir="$DIR/sub-${i}_unprocessed"
 
