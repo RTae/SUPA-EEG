@@ -135,7 +135,7 @@ tail -f exp_eeg_image_ablation.log
 | `Single layer 28`    | Middle layer only — mid-level features                              |
 | `Single layer 36`    | Late layer only — high-level semantic features                      |
 
-### 4. Shared Encoder Ablation (In-progress)
+### 4. Shared Encoder Ablation (Done)
 **Goal:** Validate that weight sharing between EEG and image paths drives cross-modal alignment.
 
 | Variant              | Description                                                                                  |
@@ -186,7 +186,6 @@ tail -f exp_share_encoder.log
 |               | Top-5  | 97.5% | 93.0% | 96.0% | 96.5% | 83.5% | 96.0% | 94.5% | 95.5% | 80.5% | 89.0% | 92.2% |
 | jepa          | Top-1  | 61.5% | 36.5% | 58.5% | 64.5% | 30.0% | 50.5% | 61.5% | 62.0% | 24.5% | 50.5% | 50.0% |
 |               | Top-5  | 91.0% | 66.5% | 84.0% | 90.5% | 58.0% | 83.5% | 86.0% | 89.0% | 48.0% | 77.5% | 77.4% |
-
 
 
 ### 5. EEG Channels (Done)
