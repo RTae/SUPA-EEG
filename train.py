@@ -545,11 +545,13 @@ def train(cfg: DictConfig) -> None:
     feature_path = config.image_feature_path or os.path.join(
         config.internvit_dir, "internvit_features.npy"
     )
-    if config.skip_feature_extraction and not os.path.isfile(feature_path):
-        raise FileNotFoundError(
-            f"Timed experiment requires pre-extracted features: {feature_path}"
-        )
-    if not config.image_feature_path:
+    if not os.path.isfile(feature_path):
+        if config.skip_feature_extraction:
+            raise FileNotFoundError(
+                f"Timed experiment requires pre-extracted features: {feature_path}"
+            )
+        if config.image_feature_path:
+            raise FileNotFoundError(f"image_feature_path not found: {feature_path}")
         ensure_internvit_features(
             internvit_dir  = config.internvit_dir,
             layer_ids      = config.layer_ids,
