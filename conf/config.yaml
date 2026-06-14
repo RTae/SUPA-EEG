@@ -60,7 +60,7 @@ eeg_encoder_type: "eegproject"  # eegproject | eegnet | tsconv | eegconformer | 
 image_layer_mode: "router"      # router | uniform | single
 image_layer_index: 0            # zero-based index when image_layer_mode=single
 temporal_compression: 0         # >0: learnable full-rate stem then adaptive pool
-image_feature_path: ""          # optional pre-extracted .npy feature bank
+image_feature_path: ""          # optional pre-extracted .npy/.pt feature bank (overrides internvit_dir)
 skip_feature_extraction: false  # fail fast instead of extracting during timed runs
 
 # --- EEG augmentation (training only) -------------------------------------
