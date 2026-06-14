@@ -117,7 +117,7 @@ class InternViTFeatureLookup:
         concepts: list[str],
         image_files: list[str],
     ) -> torch.Tensor:
-        """Return ``(batch, n_layers, 3200)`` float32 tensor."""
+        """Return ``(batch, n_layers, d)`` float32 tensor (d depends on feature bank)."""
         arrs = [
             np.asarray(self.features[(c, f)], dtype=np.float32)
             for c, f in zip(concepts, image_files)
